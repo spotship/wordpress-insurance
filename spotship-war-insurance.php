@@ -64,6 +64,26 @@ spl_autoload_register(
  * @return void
  */
 function spotship_wi_boot(): void {
+	/*
+	 * ON `init`, NOT `plugins_loaded`, AND THAT MATTERS MORE THAN IT LOOKS.
+	 *
+	 * wp_register_script() and wp_register_style() call
+	 * _wp_scripts_maybe_doing_it_wrong(), which raises _doing_it_wrong() when
+	 * neither `init` nor an enqueue hook has fired. On a site with
+	 * WP_DEBUG_DISPLAY on, that notice PRINTS — before headers — and WordPress
+	 * can then no longer set a cookie. The visible symptom is that nobody can
+	 * log in: wp-login.php answers "Cookies are blocked due to unexpected
+	 * output" and returns the form.
+	 *
+	 * That is a customer-visible outage on any install with debug display
+	 * enabled, which staging sites routinely have. It surfaced here as the
+	 * browser suite failing to reach wp-admin, and was diagnosed as three
+	 * different test faults before the notice in the CI log turned out to be
+	 * the plugin's own.
+	 *
+	 * load_plugin_textdomain() moves for the same reason: since WordPress 6.7
+	 * it warns when translations are loaded before `init`.
+	 */
 	load_plugin_textdomain(
 		'spotship-war-insurance',
 		false,
@@ -97,7 +117,7 @@ function spotship_wi_boot(): void {
 	);
 }
 
-add_action( 'plugins_loaded', 'spotship_wi_boot' );
+add_action( 'init', 'spotship_wi_boot' );
 
 /**
  * Wire the update checker against the private repository's Releases feed.

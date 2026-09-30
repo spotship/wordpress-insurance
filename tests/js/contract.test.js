@@ -415,3 +415,30 @@ test( 'the renderer namespaces ids per instance', () => {
 	assert.match( RENDERER, /\+\+self::\$instances;/, 'and be advanced on every render' );
 	assert.match( RENDERER, /'uid'\s*=>\s*'sswi-' \. self::\$instances,/, 'and be published to the templates' );
 } );
+
+test( 'assets are registered no earlier than init', () => {
+	/*
+	 * wp_register_script() raises _doing_it_wrong() when neither `init` nor an
+	 * enqueue hook has fired. With WP_DEBUG_DISPLAY on — which staging sites
+	 * routinely have — that notice prints BEFORE HEADERS, and WordPress can no
+	 * longer set a cookie. Nobody can log in; wp-login.php answers "Cookies are
+	 * blocked due to unexpected output" and hands back the form.
+	 *
+	 * It shipped on `plugins_loaded`. The browser suite found it only because
+	 * an admin spec could not reach wp-admin, and it was misdiagnosed three
+	 * times first. A structural assertion is cheap next to that.
+	 */
+	const plugin = read( 'spotship-war-insurance.php' );
+
+	assert.match(
+		plugin,
+		/add_action\( 'init', 'spotship_wi_boot' \);/,
+		'spotship_wi_boot registers assets, so it must not run before init'
+	);
+
+	assert.ok(
+		! /add_action\(\s*'plugins_loaded'/.test( plugin ),
+		'nothing here may hook plugins_loaded: it is before init, and registering ' +
+			'a script there prints a notice that breaks cookie-setting site-wide'
+	);
+} );

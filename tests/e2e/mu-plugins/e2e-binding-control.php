@@ -25,6 +25,38 @@
 
 defined( 'ABSPATH' ) || exit;
 
+/*
+ * THE PER-IP SUBMIT LIMIT IS FIVE AN HOUR, AND THE SUITE NEEDS MORE THAN THAT.
+ *
+ * Every spec runs twice — once per Playwright project, desktop and narrow —
+ * from one runner with one IP, and several of them submit. The second project
+ * therefore ran into the limiter and every submit answered 429.
+ *
+ * That went unnoticed because the assertions it broke were too weak to see it:
+ * the error-summary test was wrapped in `if ( await summary.isVisible() )`, and
+ * the re-bind test asserted only that the message did not say "unavailable" —
+ * which "Too many requests. Please wait 3488 seconds and try again." satisfies.
+ * Strengthening both is what surfaced this.
+ *
+ * Resetting the buckets on every REST request effectively takes the limiter out
+ * of the browser suite. That is the right trade here: the limiter's own
+ * behaviour — counting, window expiry, the honest retry_after, the Cloudflare
+ * header rules — is covered by tests/integration/RateLimiterTest.php, and the
+ * 429 the visitor sees is covered in the jsdom suite. Neither needs a browser,
+ * and neither should be hostage to how many times an unrelated spec submits.
+ *
+ * Test environment only: this file is mounted by .wp-env.json and excluded from
+ * the release zip by bin/build-dist.sh's allow-list.
+ */
+add_action(
+	'rest_api_init',
+	static function (): void {
+		Spotship_WI_Rate_Limiter::reset( 'submit' );
+		Spotship_WI_Rate_Limiter::reset( 'search' );
+	},
+	1
+);
+
 add_action(
 	'admin_init',
 	static function (): void {

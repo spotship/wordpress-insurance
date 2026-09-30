@@ -85,19 +85,29 @@ fi
 # Non-fatal: a wordpress.org outage must not turn the whole browser suite red.
 # The spec skips when the page is absent rather than failing.
 if wp plugin install elementor --activate; then
-	if ! wp post list --post_type=page --name=insurance-elementor --format=count | grep -q '^1$'; then
-		ELEMENTOR_PAGE=$(wp post create --post_type=page --post_status=publish \
-			--post_title='Insurance Elementor' --post_name='insurance-elementor' \
+	# BOTH products, because they are different templates: cargo carries the
+	# destinations chip list and two selects that hull does not, and a page
+	# builder wrapping only the simpler one proves less than it appears to.
+	for product in hull cargo; do
+		slug="insurance-elementor-${product}"
+
+		if wp post list --post_type=page --name="$slug" --format=count | grep -q '^1$'; then
+			continue
+		fi
+
+		page_id=$(wp post create --post_type=page --post_status=publish \
+			--post_title="Insurance Elementor ${product}" --post_name="$slug" \
 			--post_content='' --porcelain)
 
 		# Elementor renders from _elementor_data, not post_content. A shortcode
 		# widget is the supported way to place a third-party shortcode.
-		wp post meta update "$ELEMENTOR_PAGE" _elementor_edit_mode builder
-		wp post meta update "$ELEMENTOR_PAGE" _elementor_template_type wp-page
-		wp post meta update "$ELEMENTOR_PAGE" _elementor_data '[{"id":"s1","elType":"section","elements":[{"id":"c1","elType":"column","settings":{"_column_size":100},"elements":[{"id":"w1","elType":"widget","widgetType":"shortcode","settings":{"shortcode":"[spotship_war_hull]"}}],"isInner":false}],"isInner":false}]'
-	fi
+		wp post meta update "$page_id" _elementor_edit_mode builder
+		wp post meta update "$page_id" _elementor_template_type wp-page
+		wp post meta update "$page_id" _elementor_data \
+			"[{\"id\":\"s1\",\"elType\":\"section\",\"elements\":[{\"id\":\"c1\",\"elType\":\"column\",\"settings\":{\"_column_size\":100},\"elements\":[{\"id\":\"w1\",\"elType\":\"widget\",\"widgetType\":\"shortcode\",\"settings\":{\"shortcode\":\"[spotship_war_${product}]\"}}],\"isInner\":false}],\"isInner\":false}]"
+	done
 else
-	echo "WARNING: Elementor could not be installed; its spec will skip."
+	echo "WARNING: Elementor could not be installed; its specs will skip."
 fi
 
 wp rewrite structure '/%postname%/'

@@ -6,7 +6,8 @@
   "scripts": {
     "test:js": "node --test tests/js/*.test.js",
     "env:start": "wp-env start",
-    "env:stop": "wp-env stop"
+    "env:stop": "wp-env stop",
+    "test:mutation": "node bin/mutation-check.js"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.0",

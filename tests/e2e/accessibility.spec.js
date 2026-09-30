@@ -11,13 +11,36 @@
 const { test, expect } = require( '@playwright/test' );
 const AxeBuilder = require( '@axe-core/playwright' ).default;
 
+/**
+ * axe over the page, minus the theme chrome.
+ *
+ * NO RULES ARE DISABLED. The exclusions are the theme's own header and footer
+ * template parts, and they are a scope decision rather than a suppression: this
+ * plugin renders a component into sites whose themes it does not control and
+ * cannot fix. WordPress 6.8's default theme ships a `list` / `only-listitems`
+ * violation in its navigation block, and failing this plugin's conformance
+ * claim on that would make the suite a report on whatever theme wp-env
+ * installed this month.
+ *
+ * Everything the plugin actually emits lives in the main content region and is
+ * still scanned in full, in its real page context — so landmark, heading-order
+ * and contrast rules still apply to it.
+ *
+ * @param {object} page Playwright page.
+ */
+function axeOf( page ) {
+	return new AxeBuilder( { page } )
+		.exclude( 'header' )
+		.exclude( 'footer' )
+		.withTags( [ 'wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa' ] );
+}
+
 for ( const [ label, path ] of [ [ 'hull', '/insurance/' ], [ 'cargo', '/insurance-cargo/' ] ] ) {
 	test( `${ label }: axe reports zero violations`, async ( { page } ) => {
 		await page.goto( path );
 		await page.waitForLoadState( 'networkidle' );
 
-		const results = await new AxeBuilder( { page } )
-			.withTags( [ 'wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa' ] )
+		const results = await axeOf( page )
 			.analyze();
 
 		expect( results.violations ).toEqual( [] );
@@ -30,8 +53,7 @@ for ( const [ label, path ] of [ [ 'hull', '/insurance/' ], [ 'cargo', '/insuran
 		await input.fill( 'rot' );
 		await page.waitForTimeout( 400 );
 
-		const results = await new AxeBuilder( { page } )
-			.withTags( [ 'wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa' ] )
+		const results = await axeOf( page )
 			.analyze();
 
 		expect( results.violations ).toEqual( [] );
@@ -88,8 +110,7 @@ for ( const [ label, path ] of [
 
 		await expect( page.locator( '[data-sswi-root]' ) ).toHaveCount( 2 );
 
-		const results = await new AxeBuilder( { page } )
-			.withTags( [ 'wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa' ] )
+		const results = await axeOf( page )
 			.analyze();
 
 		expect( results.violations ).toEqual( [] );
@@ -139,31 +160,32 @@ for ( const [ label, path ] of [
 	} );
 }
 
-test( 'Elementor: the shortcode renders and axe is clean inside a page builder', async ( { page } ) => {
-	/*
-	 * Skips rather than fails when Elementor could not be installed — a
-	 * wordpress.org outage is not a defect in this plugin. seed-e2e.sh warns.
-	 *
-	 * The status is NOT a sufficient absence check: WordPress guesses at 404
-	 * permalinks and redirects to a near match with a 200, so a missing page
-	 * arrives looking like a different page that happens to have no form. Test
-	 * the landing URL as well.
-	 */
-	const response = await page.goto( '/insurance-elementor/' );
+for ( const product of [ 'hull', 'cargo' ] ) {
+	test( `Elementor (${ product }): the shortcode renders and axe is clean inside a page builder`, async ( { page } ) => {
+		/*
+		 * Skips rather than fails when Elementor could not be installed — a
+		 * wordpress.org outage is not a defect in this plugin. seed-e2e.sh warns.
+		 *
+		 * The status is NOT a sufficient absence check: WordPress guesses at 404
+		 * permalinks and redirects to a near match with a 200, so a missing page
+		 * arrives looking like a different page that happens to have no form. Test
+		 * the landing URL as well.
+		 */
+		const response = await page.goto( `/insurance-elementor-${ product }/` );
 
-	test.skip(
-		! response || 404 === response.status() || ! page.url().includes( 'insurance-elementor' ),
-		'Elementor page absent; see the warning from seed-e2e.sh'
-	);
+		test.skip(
+			! response || 404 === response.status() || ! page.url().includes( 'insurance-elementor' ),
+			'Elementor page absent; see the warning from seed-e2e.sh'
+		);
 
-	await page.waitForLoadState( 'networkidle' );
+		await page.waitForLoadState( 'networkidle' );
 
-	await expect( page.locator( '[data-sswi-root]' ) ).toHaveCount( 1 );
-	await expect( page.locator( '.sswi-submit' ) ).toBeEnabled();
+		await expect( page.locator( '[data-sswi-root]' ) ).toHaveCount( 1 );
+		await expect( page.locator( '.sswi-submit' ) ).toBeEnabled();
 
-	const results = await new AxeBuilder( { page } )
-		.withTags( [ 'wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa' ] )
-		.analyze();
+		const results = await axeOf( page )
+			.analyze();
 
-	expect( results.violations ).toEqual( [] );
-} );
+		expect( results.violations ).toEqual( [] );
+	} );
+}

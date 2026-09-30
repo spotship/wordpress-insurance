@@ -45,7 +45,14 @@ tasks:
 
   test:
     desc: "lint + stan + PHP unit tests + front-end unit tests"
-    cmds: [{ task: lint }, { task: stan }, { task: 'test:unit' }, { task: 'test:js' }]
+    cmds:
+      [
+        { task: lint },
+        { task: stan },
+        { task: 'test:unit' },
+        { task: 'test:js' },
+        { task: 'test:mutation' },
+      ]
 
   test:unit:
     desc: "PHPUnit unit suite (no WordPress bootstrap)"
@@ -59,6 +66,14 @@ tasks:
     # browser runner will not start (ENG-6418). It does not replace the e2e
     # suite: layout, focus order and assistive technology still need a browser.
     cmds: ["npm run test:js"]
+
+  test:mutation:
+    desc: "prove the regression tests still detect the defects they describe"
+    # Reintroduces each shipped defect and fails unless the named tests go red.
+    # A test that has quietly stopped detecting anything looks exactly like a
+    # test that passes, and "verified red before the fix" is a claim about a
+    # moment that has passed. This checks it on every run instead.
+    cmds: ["npm run test:mutation"]
 
   test:integration:
     desc: "PHPUnit integration suite inside wp-env (needs Docker)"

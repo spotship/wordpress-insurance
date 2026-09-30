@@ -361,6 +361,53 @@ test( 'no template hard-codes an element id', () => {
 	);
 } );
 
+test( 'every partial derives its element ids from the instance prefix', () => {
+	/*
+	 * The sibling test above scans for literal id="..." attributes, and CANNOT
+	 * see this: the partials write id="<?php echo esc_attr( $sswi_id ); ?>",
+	 * which is dynamic markup whatever $sswi_id holds. Reverting the assignment
+	 * to a constant therefore left that test green — found by
+	 * bin/mutation-check.js, which is the whole reason it exists.
+	 *
+	 * So assert the assignment itself.
+	 */
+	const partials = {
+		'templates/partials/text-field.php': '$sswi_name',
+		'templates/partials/combobox.php': '$sswi_combo_name',
+	};
+
+	Object.entries( partials ).forEach( ( [ file, nameVar ] ) => {
+		const src = read( file );
+		const assignment = /\$sswi_id\s*=\s*(.+);/.exec( src );
+
+		assert.ok( assignment, `${ file } must assign $sswi_id` );
+		assert.ok(
+			assignment[ 1 ].includes( '$sswi_uid' ),
+			`${ file } builds $sswi_id as ${ assignment[ 1 ] } — a constant prefix collides ` +
+				'with a second form on the page'
+		);
+		assert.ok(
+			assignment[ 1 ].includes( nameVar ),
+			`${ file } must still distinguish fields by ${ nameVar }`
+		);
+	} );
+
+	// The two templates that build ids inline rather than through a partial.
+	[ 'templates/hull.php', 'templates/cargo.php', 'templates/partials/consent.php' ].forEach( ( file ) => {
+		const src = read( file );
+		const locals = [ ...src.matchAll( /^\$sswi_\w*(?:_id|_err|_list)\s*=\s*(.+);$/gm ) ];
+
+		assert.ok( locals.length > 0, `${ file } must build its ids as named locals` );
+
+		locals.forEach( ( m ) => {
+			assert.ok(
+				m[ 1 ].includes( '$sswi_uid' ) || m[ 1 ].includes( '_id .' ),
+				`${ file } builds an id as ${ m[ 1 ] }, which is not instance-scoped`
+			);
+		} );
+	} );
+} );
+
 test( 'the renderer namespaces ids per instance', () => {
 	// The counter is the mechanism the templates depend on. If it goes away,
 	// every id above silently becomes constant again.

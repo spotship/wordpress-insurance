@@ -190,7 +190,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          node bin/e2e-upstream.js &
+          node bin/e2e-upstream.js &   # port 8080 — see the note in that file
           UPSTREAM_PID=$!
           trap 'kill "$UPSTREAM_PID" 2>/dev/null || true' EXIT
 
@@ -203,7 +203,7 @@ jobs:
             --format '{{ (index .IPAM.Config 0).Gateway }}')
           echo "bridge gateway: $GATEWAY"
 
-          SPOTSHIP_UPSTREAM="http://${GATEWAY}:9911" bash bin/seed-e2e.sh
+          SPOTSHIP_UPSTREAM="http://${GATEWAY}:8080" bash bin/seed-e2e.sh
 
           # PROVE REACHABILITY FROM WHERE THE PLUGIN ACTUALLY RUNS, before the
           # browser starts. wp_safe_remote_get() is the exact call the API

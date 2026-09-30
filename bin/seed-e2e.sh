@@ -14,7 +14,7 @@ set -euo pipefail
 # inside a Linux container, which is what CI runs. Hardcoding it made every
 # search in the browser suite answer "unavailable", and three specs failed for
 # a reason that looked like a combobox bug.
-SPOTSHIP_UPSTREAM="${SPOTSHIP_UPSTREAM:-http://host.docker.internal:9911}"
+SPOTSHIP_UPSTREAM="${SPOTSHIP_UPSTREAM:-http://host.docker.internal:8080}"
 echo "upstream: $SPOTSHIP_UPSTREAM"
 
 wp() { npx wp-env run cli wp "$@"; }

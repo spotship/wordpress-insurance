@@ -15,7 +15,15 @@
 
 const http = require( 'http' );
 
-const PORT = Number( process.env.PORT || 9911 );
+/**
+ * 8080, and it is not arbitrary.
+ *
+ * wp_safe_remote_get() runs wp_http_validate_url(), which rejects any port
+ * outside { 80, 443, 8080 } outright — before the host checks, and with no
+ * filter to override it. On 9911 the plugin never made a request at all; it got
+ * "A valid URL was not provided" and the browser specs saw empty searches.
+ */
+const PORT = Number( process.env.PORT || 8080 );
 
 const LOCATIONS = [
 	{ id: 11, name: 'Rotterdam', country: 'NL', locode: 'NLRTM', latitude: 51.9, sedna_region_id: 4 },

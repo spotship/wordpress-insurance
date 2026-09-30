@@ -36,6 +36,20 @@ repos:
         files: '\.php$'
         pass_filenames: true
 
+      - id: workflow-shell
+        name: workflow shell blocks parse
+        entry: python bin/check-workflow-shell.py
+        # `python`, not `system`: pre-commit.ci has no guarantee of PyYAML on
+        # the host interpreter, and this hook is not in the `skip` list below
+        # because — unlike phpcs — it needs neither PHP nor Docker and so can
+        # genuinely run there.
+        language: python
+        additional_dependencies: [pyyaml]
+        # The script walks every workflow itself, so a change to one is enough
+        # to re-check them all.
+        files: '^\.github/workflows/.*\.ya?ml$|^bin/check-workflow-shell\.py$'
+        pass_filenames: false
+
 ci:
   autoupdate_schedule: weekly
   # pre-commit.ci has neither PHP nor Docker, so it cannot run the local phpcs

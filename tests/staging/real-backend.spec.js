@@ -39,8 +39,8 @@ const path = require( 'path' );
 const { test, expect, request: playwrightRequest } = require( '@playwright/test' );
 const { login } = require( '../support/wp-admin.js' );
 
-const API = ( process.env.SPOTSHIP_STAGING_URL || '' ).replace( /\/+$/, '' );
-const KEY = process.env.SPOTSHIP_STAGING_KEY || '';
+const API = ( process.env.SPOTSHIP_API_URL || '' ).replace( /\/+$/, '' );
+const KEY = process.env.SPOTSHIP_API_KEY || '';
 const EVIDENCE = path.join( __dirname, '..', '..', 'staging-evidence' );
 
 fs.mkdirSync( EVIDENCE, { recursive: true } );
@@ -145,8 +145,8 @@ async function replay( product, submissionId, extra = {} ) {
 test.beforeAll( () => {
 	// The workflow refuses to start without these, but a local invocation has
 	// no such gate and would otherwise fail deep inside a request.
-	expect( API, 'SPOTSHIP_STAGING_URL is required' ).not.toBe( '' );
-	expect( KEY, 'SPOTSHIP_STAGING_KEY is required' ).not.toBe( '' );
+	expect( API, 'SPOTSHIP_API_URL is required' ).not.toBe( '' );
+	expect( KEY, 'SPOTSHIP_API_KEY is required' ).not.toBe( '' );
 } );
 
 for ( const [ product, urlPath, label ] of [

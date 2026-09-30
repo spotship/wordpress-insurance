@@ -23,6 +23,15 @@ jobs:
   staging:
     name: Real backend
     runs-on: ubuntu-latest
+    # DECLARING THE ENVIRONMENT IS WHAT MAKES THE SECRETS RESOLVE.
+    #
+    # SPOTSHIP_API_URL/KEY are environment secrets: the same two names hold the
+    # staging values here and the production values in release.yaml. One name
+    # per value, the environment says which deployment - rather than a
+    # STAGING_/PROD_ prefix pair that has to be kept in step by hand. A job
+    # that does not name an environment sees only repository and organisation
+    # secrets, so removing this line makes both empty and the guard below
+    # fails the run.
     environment: staging
     steps:
       - uses: actions/checkout@v4
@@ -33,18 +42,26 @@ jobs:
       # about.
       - name: Require credentials
         env:
-          URL: ${{ secrets.SPOTSHIP_STAGING_URL }}
-          KEY: ${{ secrets.SPOTSHIP_STAGING_KEY }}
+          URL: ${{ secrets.SPOTSHIP_API_URL }}
+          KEY: ${{ secrets.SPOTSHIP_API_KEY }}
         run: |
           missing=""
-          [ -n "$URL" ] || missing="$missing SPOTSHIP_STAGING_URL"
-          [ -n "$KEY" ] || missing="$missing SPOTSHIP_STAGING_KEY"
+          [ -n "$URL" ] || missing="$missing SPOTSHIP_API_URL"
+          [ -n "$KEY" ] || missing="$missing SPOTSHIP_API_KEY"
 
           if [ -n "$missing" ]; then
-            echo "::error::Missing repository secret(s):$missing"
+            echo "::error::Missing secret(s) on the 'staging' environment:$missing"
             echo "This suite verifies persistence, attribution and consent provenance"
             echo "against the real backend. It cannot be faked, and it must not pass"
-            echo "without running. Add the secrets and dispatch again."
+            echo "without running."
+            echo
+            echo "These are ENVIRONMENT secrets on 'staging', not repository secrets:"
+            echo "  gh secret set SPOTSHIP_API_URL --env staging   # https://<host>/api"
+            echo "  gh secret set SPOTSHIP_API_KEY --env staging   # a Customer.api_key uuid"
+            echo
+            echo "SPOTSHIP_API_URL is the BASE, ending at /api - the same value the"
+            echo "plugin stores in api_base_url. The endpoint paths are appended by"
+            echo "the code, not baked into the secret."
             exit 1
           fi
 
@@ -57,19 +74,22 @@ jobs:
 
       - name: Run against the real backend
         env:
-          SPOTSHIP_STAGING_URL: ${{ secrets.SPOTSHIP_STAGING_URL }}
-          SPOTSHIP_STAGING_KEY: ${{ secrets.SPOTSHIP_STAGING_KEY }}
+          # The specs read SPOTSHIP_API_URL/KEY; bin/seed-e2e.sh reads
+          # SPOTSHIP_UPSTREAM/SPOTSHIP_API_KEY. Setting all three here rather
+          # than re-exporting them inline keeps the credential out of the
+          # shell's argument list.
+          #
+          # Seeded against the REAL endpoint, so no stand-in is involved and no
+          # mu-plugin host allowance is needed: staging is a public host.
+          SPOTSHIP_API_URL: ${{ secrets.SPOTSHIP_API_URL }}
+          SPOTSHIP_API_KEY: ${{ secrets.SPOTSHIP_API_KEY }}
+          SPOTSHIP_UPSTREAM: ${{ secrets.SPOTSHIP_API_URL }}
           REASON: ${{ inputs.reason }}
         run: |
           set -euo pipefail
 
           npx wp-env start
-
-          # Seeded against the REAL endpoint, so no stand-in is involved and
-          # no mu-plugin host allowance is needed: staging is a public host.
-          SPOTSHIP_UPSTREAM="$SPOTSHIP_STAGING_URL" \
-          SPOTSHIP_API_KEY="$SPOTSHIP_STAGING_KEY" \
-            bash bin/seed-e2e.sh
+          bash bin/seed-e2e.sh
 
           npx playwright test --config=playwright.staging.config.js
 
@@ -113,7 +133,7 @@ jobs:
             echo "and records no flag, so nothing in the API can be asked. Confirming"
             echo "them needs the staging mailbox and the Slack channel. Check both by"
             echo "hand for the markers in the receipts above, and note that a REPLAY"
-            echo "deliberately does not re-send either.""
+            echo "deliberately does not re-send either."
           } > staging-evidence/RUN.md
 
       - uses: actions/upload-artifact@v4

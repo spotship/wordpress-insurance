@@ -13,13 +13,25 @@
 
 set -euo pipefail
 
-: "${RATES_URL:?RATES_URL is required}"
-: "${RATES_KEY:?RATES_KEY is required}"
+# THE SECRET IS A BASE URL, NOT AN ENDPOINT.
+#
+# SPOTSHIP_API_URL holds the same shape the plugin stores in api_base_url -
+# https://<host>/api - so one pair of environment secrets serves this script
+# and the staging E2E suite. The endpoint path is built here, in code that is
+# reviewed, rather than baked into a secret nobody can see.
+#
+# The trailing slash is load-bearing: Django's APPEND_SLASH answers a slashless
+# path with a 301, curl without -L does not follow it, and the guard below
+# would then report an empty table rather than a redirect.
+: "${SPOTSHIP_API_URL:?SPOTSHIP_API_URL is required}"
+: "${SPOTSHIP_API_KEY:?SPOTSHIP_API_KEY is required}"
+
+RATES_URL="${SPOTSHIP_API_URL%/}/insurance/rates/"
 
 ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )
 TARGET="$ROOT/includes/data/rates-fallback.php"
 
-body=$( curl -fsS -H "Authorization: Bearer $RATES_KEY" -H 'Accept: application/json' "$RATES_URL" )
+body=$( curl -fsS -H "Authorization: Bearer $SPOTSHIP_API_KEY" -H 'Accept: application/json' "$RATES_URL" )
 
 if [ -z "$body" ] || [ "$body" = '{}' ]; then
 	echo "generate-fallback-rates: refusing to write an empty table" >&2

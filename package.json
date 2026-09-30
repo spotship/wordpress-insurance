@@ -2,9 +2,9 @@
   "name": "spotship-wordpress-insurance",
   "version": "0.0.0-development",
   "private": true,
-  "description": "Tooling only. This repo ships PHP; package.json exists for semantic-release, wp-env and the jsdom suite — same as every other repo in the org.",
+  "description": "Tooling only. This repo ships PHP; package.json exists for semantic-release, wp-env and the jsdom suite \u2014 same as every other repo in the org.",
   "scripts": {
-    "test:js": "node --test tests/js/",
+    "test:js": "node --test tests/js/*.test.js",
     "env:start": "wp-env start",
     "env:stop": "wp-env stop"
   },
@@ -16,7 +16,10 @@
   "release": {
     "branches": [
       "main",
-      { "name": "dev", "prerelease": true }
+      {
+        "name": "dev",
+        "prerelease": true
+      }
     ]
   }
 }

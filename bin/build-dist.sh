@@ -55,6 +55,35 @@ rm -f "$OUT/$SLUG-$VERSION.zip"
 
 echo "built $OUT/$SLUG-$VERSION.zip"
 
+# WHAT SHIPS IS AN ALLOW-LIST, CHECKED AGAINST THE BUILT ZIP.
+#
+# .distignore is a blocklist, and a blocklist fails open: a file added to the
+# repo ships unless someone remembers to exclude it. A dry run of this script
+# found .claude/, CLAUDE.md, TESTING.md, renovate.json, .coderabbit.yml,
+# playwright.config.js and phpunit-integration.xml.dist all reaching the zip —
+# internal documentation of the architecture and the known gaps, bound for a
+# customer's public web server.
+#
+# So the artifact is checked against what it is ALLOWED to contain. A new
+# top-level entry fails the release until someone decides which side it is on.
+ALLOWED="assets blocks includes languages readme.txt spotship-war-insurance.php templates uninstall.php vendor"
+
+unexpected=""
+while read -r entry; do
+	case " $ALLOWED " in
+		*" $entry "*) ;;
+		*) unexpected="$unexpected $entry" ;;
+	esac
+done < <( unzip -Z1 "$OUT/$SLUG-$VERSION.zip" | sed "s|^$SLUG/||" | cut -d/ -f1 | sort -u | grep -v '^$' )
+
+if [ -n "$unexpected" ]; then
+	echo "build-dist: these are not on the ship list and would reach a customer's server:$unexpected" >&2
+	echo "build-dist: add them to .distignore, or to ALLOWED in this script if they genuinely belong." >&2
+	exit 1
+fi
+
+echo "build-dist: ship list clean"
+
 # A build that shipped a credential would be unrecoverable once a customer had
 # the zip, so the artifact is scanned before it is handed over. tests/ is
 # excluded from the zip already, so any hit here is in shipped code.

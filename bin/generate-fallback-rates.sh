@@ -17,7 +17,7 @@ set -euo pipefail
 #
 # SPOTSHIP_API_URL holds the same shape the plugin stores in api_base_url -
 # https://<host>/api - so one pair of environment secrets serves this script
-# and the staging E2E suite. The endpoint path is built here, in code that is
+# and the real-backend E2E suite. The endpoint path is built here, in code that is
 # reviewed, rather than baked into a secret nobody can see.
 #
 # The trailing slash is load-bearing: Django's APPEND_SLASH answers a slashless

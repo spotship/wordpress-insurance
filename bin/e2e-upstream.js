@@ -1,7 +1,8 @@
 /**
  * A stand-in for the Spot Ship API, for the e2e suite only.
  *
- * The e2e environment points the plugin at this rather than at staging, so the
+ * The e2e environment points the plugin at this rather than at a real
+ * deployment, so the
  * specs are deterministic and a browser test never depends on a live service or
  * a real credential.
  *

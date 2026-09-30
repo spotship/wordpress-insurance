@@ -1,4 +1,4 @@
-name: Staging E2E
+name: Real backend E2E
 
 # MANUAL ONLY, and never on a pull request.
 #
@@ -16,23 +16,27 @@ on:
 concurrency:
   # Never two at once: concurrent runs would interleave submissions and make
   # the resulting records ambiguous about which run produced them.
-  group: staging-e2e
+  group: real-backend-e2e
   cancel-in-progress: false
 
 jobs:
-  staging:
+  real-backend:
     name: Real backend
     runs-on: ubuntu-latest
     # DECLARING THE ENVIRONMENT IS WHAT MAKES THE SECRETS RESOLVE.
     #
     # SPOTSHIP_API_URL/KEY are environment secrets: the same two names hold the
-    # staging values here and the production values in release.yaml. One name
-    # per value, the environment says which deployment - rather than a
-    # STAGING_/PROD_ prefix pair that has to be kept in step by hand. A job
-    # that does not name an environment sees only repository and organisation
-    # secrets, so removing this line makes both empty and the guard below
-    # fails the run.
-    environment: staging
+    # dev values here and the prod values in release.yaml. One name per value,
+    # the environment says which deployment - rather than a DEV_/PROD_ prefix
+    # pair that has to be kept in step by hand. A job that does not name an
+    # environment sees only repository and organisation secrets, so removing
+    # this line makes both empty and the guard below fails the run.
+    #
+    # `dev`, not `staging`: the org names its deployments dev and prod
+    # throughout - backend-dev.spot-ship-app.com, flower-dev, entity-search-dev,
+    # dev.spotship.internal. This file said `staging`, which named no real
+    # environment.
+    environment: dev
     steps:
       - uses: actions/checkout@v4
 
@@ -50,18 +54,24 @@ jobs:
           [ -n "$KEY" ] || missing="$missing SPOTSHIP_API_KEY"
 
           if [ -n "$missing" ]; then
-            echo "::error::Missing secret(s) on the 'staging' environment:$missing"
+            echo "::error::Missing secret(s) on the 'dev' environment:$missing"
             echo "This suite verifies persistence, attribution and consent provenance"
             echo "against the real backend. It cannot be faked, and it must not pass"
             echo "without running."
             echo
-            echo "These are ENVIRONMENT secrets on 'staging', not repository secrets:"
-            echo "  gh secret set SPOTSHIP_API_URL --env staging   # https://<host>/api"
-            echo "  gh secret set SPOTSHIP_API_KEY --env staging   # a Customer.api_key uuid"
+            echo "These are ENVIRONMENT secrets on 'dev', not repository secrets:"
+            echo "  gh secret set SPOTSHIP_API_URL --env dev"
+            echo "    https://backend-dev.spot-ship-app.com/api"
+            echo "  gh secret set SPOTSHIP_API_KEY --env dev"
+            echo "    a Customer.api_key uuid, minted in the dev Django admin"
             echo
             echo "SPOTSHIP_API_URL is the BASE, ending at /api - the same value the"
             echo "plugin stores in api_base_url. The endpoint paths are appended by"
-            echo "the code, not baked into the secret."
+            echo "the code, not baked into the secret. Confirm a candidate with:"
+            echo "  curl -s -o /dev/null -w '%{http_code}' \\"
+            echo "    https://backend-dev.spot-ship-app.com/api/insurance/rates/"
+            echo "401 means the endpoint is there and wants a key; 404 means the"
+            echo "base is wrong."
             exit 1
           fi
 
@@ -80,7 +90,8 @@ jobs:
           # shell's argument list.
           #
           # Seeded against the REAL endpoint, so no stand-in is involved and no
-          # mu-plugin host allowance is needed: staging is a public host.
+          # mu-plugin host allowance is needed: the dev deployment is a public
+          # host.
           SPOTSHIP_API_URL: ${{ secrets.SPOTSHIP_API_URL }}
           SPOTSHIP_API_KEY: ${{ secrets.SPOTSHIP_API_KEY }}
           SPOTSHIP_UPSTREAM: ${{ secrets.SPOTSHIP_API_URL }}
@@ -91,14 +102,14 @@ jobs:
           npx wp-env start
           bash bin/seed-e2e.sh
 
-          npx playwright test --config=playwright.staging.config.js
+          npx playwright test --config=playwright.real-backend.config.js
 
       - name: Record what was run
         if: always()
         env:
           REASON: ${{ inputs.reason }}
         run: |
-          mkdir -p staging-evidence
+          mkdir -p real-backend-evidence
           {
             echo "# Staging E2E evidence"
             echo
@@ -131,18 +142,18 @@ jobs:
             echo "DOES NOT PROVE: that the referral email or the Slack message fired."
             echo "backend/insurance/notifications.py dispatches both fire-and-forget"
             echo "and records no flag, so nothing in the API can be asked. Confirming"
-            echo "them needs the staging mailbox and the Slack channel. Check both by"
+            echo "them needs the dev mailbox and the Slack channel. Check both by"
             echo "hand for the markers in the receipts above, and note that a REPLAY"
             echo "deliberately does not re-send either."
-          } > staging-evidence/RUN.md
+          } > real-backend-evidence/RUN.md
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: staging-evidence
+          name: real-backend-evidence
           path: |
-            staging-evidence/
-            staging-report/
+            real-backend-evidence/
+            real-backend-report/
             test-results/
           if-no-files-found: warn
           retention-days: 30

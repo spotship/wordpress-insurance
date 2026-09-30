@@ -73,7 +73,7 @@ add_action(
 		}
 
 		/*
-		 * Swapping the credential is how the staging job drives a revoked key
+		 * Swapping the credential is how the real-backend job drives a revoked key
 		 * against the REAL backend, so the 401 under test is genuinely the
 		 * backend's rather than a fixture imitating one.
 		 */

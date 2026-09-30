@@ -1,10 +1,15 @@
 /**
- * Playwright against the REAL staging backend.
+ * Playwright against a REAL deployed backend.
+ *
+ * Named for what it does rather than for one environment, because which
+ * deployment it hits is decided by whichever environment's SPOTSHIP_API_URL /
+ * SPOTSHIP_API_KEY the workflow resolves - `dev` today, and nothing here would
+ * have to change to point it at another.
  *
  * Separate from playwright.config.js on purpose. These specs need a live
  * credential, they write real records, and they must never run on a pull
  * request or a fork. They are driven only by the manually dispatched
- * staging-e2e workflow, which refuses to start without both secrets.
+ * real-backend-e2e workflow, which refuses to start without both secrets.
  *
  * What this CAN evidence: that a submission reaches the real API, persists, and
  * comes back with the attribution and consent provenance the milestone
@@ -21,7 +26,7 @@
 const { defineConfig, devices } = require( '@playwright/test' );
 
 module.exports = defineConfig( {
-	testDir: './tests/staging',
+	testDir: './tests/real-backend',
 	timeout: 60000,
 	expect: { timeout: 15000 },
 	fullyParallel: false,
@@ -30,7 +35,7 @@ module.exports = defineConfig( {
 	// duplicate lead in a real inbox.
 	retries: 0,
 	workers: 1,
-	reporter: [ [ 'list' ], [ 'html', { open: 'never', outputFolder: 'staging-report' } ] ],
+	reporter: [ [ 'list' ], [ 'html', { open: 'never', outputFolder: 'real-backend-report' } ] ],
 
 	use: {
 		baseURL: process.env.WP_BASE_URL || 'http://localhost:8888',

@@ -497,7 +497,7 @@ test( 'no tracked file reaches the customer zip without a decision', () => {
 	 * the right shape — a blocklist fails open. But that check runs only in
 	 * the release workflow, on a tag, and the release workflow has never run.
 	 *
-	 * So playwright.staging.config.js sat in the repo unaccounted for: absent
+	 * So playwright.real-backend.config.js sat in the repo unaccounted for: absent
 	 * from .distignore, absent from ALLOWED. The next release tag would have
 	 * failed the build, at the least convenient moment. This runs the same
 	 * decision against the tracked tree on every push instead.

@@ -33,7 +33,7 @@ plugin's central constraint, not an implementation detail.
 | `includes/class-rates-cache.php` | Cache tiers: live → 7-day backup → bundled → hide |
 | `includes/class-renderer.php` | One markup path, shared by shortcode and block |
 | `templates/`, `assets/` | Markup, vanilla-JS front end (no build step), scoped CSS |
-| `tests/` | Unit, integration, jsdom, browser, staging — see `TESTING.md` |
+| `tests/` | Unit, integration, jsdom, browser, real-backend — see `TESTING.md` |
 
 Shortcode and block render through **one** renderer, so there is exactly one
 markup path to keep accessible.
@@ -105,14 +105,25 @@ customer who has the zip.
 
 ## Known gaps
 
-- **The staging suite has never run.** `tests/staging/` talks to the real
-  backend and needs `SPOTSHIP_API_URL` / `SPOTSHIP_API_KEY` on the `staging`
-  GitHub environment, which do not exist yet. Until then, persistence,
+- **The real-backend suite has never run.** `tests/real-backend/` talks to a
+  live deployment and needs `SPOTSHIP_API_URL` / `SPOTSHIP_API_KEY` on the
+  `dev` GitHub environment, which do not exist yet. Until then, persistence,
   attribution and consent provenance are verified only against a stand-in
   upstream. Treat those specs as unverified code.
+
+  ```sh
+  gh secret set SPOTSHIP_API_URL --env dev    # https://backend-dev.spot-ship-app.com/api
+  gh secret set SPOTSHIP_API_KEY --env dev    # a Customer.api_key uuid
+  gh workflow run real-backend-e2e.yaml -f reason="first real run"
+  ```
+
+  The key is minted by creating a `Customer` in the dev Django admin. Two
+  things to know first: `Customer.delete()` raises `ProtectedError`
+  unconditionally, so the row is permanent and can only be deactivated; and
+  saving one posts "New customer created" into Slack `#support`.
 - **Referral email and Slack delivery are not covered by any automated run.**
   `backend/insurance/notifications.py` dispatches both fire-and-forget and
   records no flag, so nothing in the API can be asked. Confirming them needs
-  the staging mailbox and the Slack channel, by hand.
+  the dev mailbox and the Slack channel, by hand.
 - **ENG-6383** — the rate values have never been confirmed against the
   commercial Google Sheet.

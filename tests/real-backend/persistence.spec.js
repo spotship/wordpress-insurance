@@ -1,9 +1,9 @@
 /**
- * Persistence, attribution and provenance against the REAL staging backend.
+ * Persistence, attribution and provenance against the REAL dev backend.
  *
  * ⚠️ THIS FILE HAS NEVER BEEN EXECUTED. The secrets it needs do not exist, so
  * no CI run has ever reached it. Treat it as unverified code until a dispatch
- * of .github/workflows/staging-e2e.yaml comes back green. It is written against
+ * of .github/workflows/real-backend-e2e.yaml comes back green. It is written against
  * the backend contract as read from source, not against observed behaviour.
  *
  * PROVENANCE CANNOT BE ASSERTED FROM THE BROWSER, AND THAT IS DELIBERATE.
@@ -37,7 +37,7 @@
  * NOT COVERED, AND NOT COVERABLE FROM HERE: that the referral email and Slack
  * message actually fire. backend/insurance/notifications.py dispatches both
  * fire-and-forget and records no flag, so nothing in the API can be asked. It
- * needs a staging mailbox and the Slack channel. Do not read a green run here
+ * needs the dev mailbox and the Slack channel. Do not read a green run here
  * as evidence either fired.
  */
 'use strict';
@@ -49,7 +49,7 @@ const { login } = require( '../support/wp-admin.js' );
 
 const API = ( process.env.SPOTSHIP_API_URL || '' ).replace( /\/+$/, '' );
 const KEY = process.env.SPOTSHIP_API_KEY || '';
-const EVIDENCE = path.join( __dirname, '..', '..', 'staging-evidence' );
+const EVIDENCE = path.join( __dirname, '..', '..', 'real-backend-evidence' );
 
 fs.mkdirSync( EVIDENCE, { recursive: true } );
 
@@ -101,7 +101,7 @@ async function submit( page, urlPath, marker ) {
 	const notes = page.locator( 'textarea[name="notes"]' );
 
 	if ( await notes.count() ) {
-		await notes.fill( `Automated staging verification ${ marker }. Not a real enquiry.` );
+		await notes.fill( `Automated dev verification ${ marker }. Not a real enquiry.` );
 	}
 
 	await page.locator( '[data-sswi-consent]' ).check();
@@ -194,7 +194,7 @@ for ( const [ product, urlPath, label ] of [
 		if ( 'cargo' === product ) {
 			// destinations is required and must be non-empty, so the replay
 			// needs a real Port id. Taken from the same API rather than
-			// hardcoded, because staging ids are not ours to assume.
+			// hardcoded, because the deployment's ids are not ours to assume.
 			const client = await api();
 			const found = await client.get( '/insurance/location_search/?query=rot' );
 			const rows = ( await found.json().catch( () => ( {} ) ) ).results || [];

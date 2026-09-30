@@ -85,7 +85,7 @@ const MUTATIONS = [
 		file: '.distignore',
 		from: 'playwright*.config.js',
 		to: 'playwright.config.js',
-		// The shipped state. playwright.staging.config.js was unaccounted for
+		// The shipped state. playwright.real-backend.config.js was unaccounted for
 		// and would have failed the next release tag's ship-list check.
 		mustFail: [ 'no tracked file reaches the customer zip without a decision' ],
 	},

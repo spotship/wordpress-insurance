@@ -18,7 +18,7 @@ SPOTSHIP_UPSTREAM="${SPOTSHIP_UPSTREAM:-http://host.docker.internal:8080}"
 echo "upstream: $SPOTSHIP_UPSTREAM"
 
 # A throwaway uuid by default, because the stand-in upstream does not check it.
-# The staging workflow passes a REAL credential here instead. Never echoed.
+# The real-backend workflow passes a REAL credential here instead. Never echoed.
 SPOTSHIP_API_KEY="${SPOTSHIP_API_KEY:-3f2504e0-4f89-41d3-9a0c-0305e82c3301}"
 
 # Kept in step with tests/e2e/origin-binding.spec.js. Test fixture, local only.

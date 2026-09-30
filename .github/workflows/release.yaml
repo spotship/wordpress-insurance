@@ -15,17 +15,23 @@ jobs:
     # DECLARING THE ENVIRONMENT IS WHAT MAKES THE SECRETS RESOLVE.
     #
     # SPOTSHIP_API_URL/KEY are environment secrets, not repository secrets:
-    # the same two names hold the production values here and the staging
-    # values in staging-e2e.yaml. A job that does not name an environment
-    # sees only repository and organisation secrets, so removing this line
-    # makes both values empty and the rate fetch below fails.
+    # the same two names hold the prod values here and the dev values in
+    # real-backend-e2e.yaml. A job that does not name an environment sees only
+    # repository and organisation secrets, so removing this line makes both
+    # values empty and the rate fetch below fails.
     #
-    # Production, not staging: the bundled table must be what a customer's
-    # own install will actually receive. The figures are static Decimals in
+    # `prod`, not `production`: the org names its deployments dev and prod
+    # throughout - backend-prod.spot-ship-app.com, flower-prod,
+    # prod.spotship.internal.
+    #
+    # prod rather than dev: the bundled table must be what a customer's own
+    # install will actually receive. The figures are static Decimals in
     # backend/insurance/rates.py rather than rows, so the two environments
-    # agree for a given commit - but staging runs ahead of production, and a
-    # release should not bundle rates that are not live yet.
-    environment: production
+    # agree for a given commit - but dev runs ahead of prod, and a release
+    # should not bundle rates that are not live yet.
+    #
+    #   SPOTSHIP_API_URL = https://backend-prod.spot-ship-app.com/api
+    environment: prod
     steps:
       - uses: actions/checkout@v4
 

@@ -53,7 +53,7 @@ autocomplete. It happened to be what each field wanted. The next field added
 would have inherited whatever sat above it. Every call site now sets every
 variable its partial reads.
 
-**Internal documentation in the release zip.** A staging dry-run of
+**Internal documentation in the release zip.** A dry run of
 `bin/build-dist.sh` showed `.claude/`, `CLAUDE.md`, `TESTING.md`,
 `renovate.json`, `.coderabbit.yml`, `playwright.config.js` and
 `phpunit-integration.xml.dist` all reaching an artifact that is unpacked

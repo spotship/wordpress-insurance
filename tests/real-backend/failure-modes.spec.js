@@ -1,5 +1,5 @@
 /**
- * The §9 failure matrix, driven against the REAL staging backend.
+ * The §9 failure matrix, driven against the REAL dev backend.
  *
  * ⚠️ NEVER EXECUTED — see real-backend.spec.js. The secrets do not exist.
  *
@@ -23,7 +23,7 @@ test.setTimeout( 120000 );
 
 // Reserved by RFC 2606: guaranteed never to resolve. A real DNS failure inside
 // the same wp_safe_remote_post() a real outage would hit.
-const UNREACHABLE = 'https://spotship-staging-outage.invalid';
+const UNREACHABLE = 'https://spotship-backend-outage.invalid';
 
 /**
  * @param {object} page   Playwright page.
@@ -97,11 +97,11 @@ test( 'autocomplete resolves against real data and commits the id it displayed',
 
 test( 'axe is clean on the real rate table', async ( { page } ) => {
 	/*
-	 * Worth running twice. The stand-in serves ONE hull row; staging serves the
-	 * full commercially-approved table — 15 hull zones, 6 cargo — plus the real
-	 * disclaimers. That is a materially different DOM: more rows, longer
-	 * strings, real wrapping. Contrast and reflow are exactly the rules that
-	 * behave differently on it.
+	 * Worth running twice. The stand-in serves ONE hull row; the real backend
+	 * serves the full commercially-approved table — 15 hull zones, 6 cargo —
+	 * plus the real disclaimers. That is a materially different DOM: more rows,
+	 * longer strings, real wrapping. Contrast and reflow are exactly the rules
+	 * that behave differently on it.
 	 */
 	for ( const path of [ '/insurance/', '/insurance-cargo/' ] ) {
 		await page.goto( path );
@@ -215,7 +215,7 @@ test.describe( 'with JavaScript blocked', () => {
 	test( 'the form stays inert and says why, on a real deployment', async ( { page } ) => {
 		/*
 		 * Same assertion as tests/e2e/no-js.spec.js, re-driven here because the
-		 * rate table on staging is server-rendered from real data: a visitor
+		 * rate table on the dev deployment is server-rendered from real data: a visitor
 		 * without JavaScript still sees the real commercial figures, and must
 		 * still be told plainly that the form cannot be used.
 		 */

@@ -56,6 +56,24 @@ final class Spotship_WI_Rate_Limiter {
 	/**
 	 * Consume one unit from a bucket.
 	 *
+	 * THE WINDOW'S EXPIRY IS CARRIED IN THE VALUE, not delegated to the storage
+	 * layer's TTL. That is deliberate and it is what makes this correct on every
+	 * install rather than only on some:
+	 *
+	 *   - WordPress exposes no portable way to read a transient's REMAINING TTL,
+	 *     so re-setting with the full window on each request would let a steady
+	 *     stream of requests extend the block indefinitely. A one-minute limit
+	 *     would become permanent for anyone who keeps trying — including a
+	 *     legitimate visitor retrying a form.
+	 *
+	 *   - Writing the counter straight into the cache to avoid that is worse: on
+	 *     an install with a PERSISTENT object cache (Redis, Memcached) a value
+	 *     written without a TTL never expires at all, so the block becomes
+	 *     genuinely permanent and only a cache flush clears it.
+	 *
+	 * Holding `expires` in the value sidesteps both. The stored TTL is a cleanup
+	 * hint; the window ends when the timestamp says so, whatever the storage did.
+	 *
 	 * @param string $bucket Logical bucket, e.g. 'search' or 'submit'.
 	 * @param int    $limit  Requests permitted per window.
 	 * @param int    $window Window length in seconds.
@@ -63,10 +81,21 @@ final class Spotship_WI_Rate_Limiter {
 	 */
 	public static function consume( string $bucket, int $limit, int $window ): array {
 		$key   = self::key( $bucket );
-		$count = get_transient( $key );
+		$now   = time();
+		$state = get_transient( $key );
 
-		if ( false === $count ) {
-			set_transient( $key, 1, $window );
+		$expires = is_array( $state ) && isset( $state['expires'] ) ? (int) $state['expires'] : 0;
+
+		// No window, or the previous one has ended.
+		if ( $expires <= $now ) {
+			set_transient(
+				$key,
+				array(
+					'count'   => 1,
+					'expires' => $now + $window,
+				),
+				$window
+			);
 
 			return array(
 				'allowed'     => true,
@@ -74,23 +103,26 @@ final class Spotship_WI_Rate_Limiter {
 			);
 		}
 
-		$count = (int) $count;
+		$count     = isset( $state['count'] ) ? (int) $state['count'] : 0;
+		$remaining = max( 1, $expires - $now );
 
 		if ( $count >= $limit ) {
+			// The honest wait, not the full window — telling a visitor to wait an
+			// hour when the window ends in ten seconds loses a real enquiry.
 			return array(
 				'allowed'     => false,
-				'retry_after' => $window,
+				'retry_after' => $remaining,
 			);
 		}
 
-		/*
-		 * set_transient with the remaining window is not available — WordPress
-		 * does not expose a transient's remaining TTL portably. Re-setting with
-		 * the full window would let a steady stream of requests extend the
-		 * block indefinitely, so the counter is updated in place via the
-		 * timeout-preserving path instead.
-		 */
-		self::increment( $key, $count + 1 );
+		set_transient(
+			$key,
+			array(
+				'count'   => $count + 1,
+				'expires' => $expires,
+			),
+			$remaining
+		);
 
 		return array(
 			'allowed'     => true,
@@ -107,30 +139,6 @@ final class Spotship_WI_Rate_Limiter {
 	 */
 	public static function reset( string $bucket ): void {
 		delete_transient( self::key( $bucket ) );
-	}
-
-	/**
-	 * Update a counter without extending its expiry.
-	 *
-	 * @param string $key   Transient key.
-	 * @param int    $value New value.
-	 */
-	private static function increment( string $key, int $value ): void {
-		global $wpdb;
-
-		if ( wp_using_ext_object_cache() ) {
-			wp_cache_set( $key, $value, 'transient' );
-
-			return;
-		}
-
-		$wpdb->update(
-			$wpdb->options,
-			array( 'option_value' => (string) $value ),
-			array( 'option_name' => '_transient_' . $key )
-		);
-
-		wp_cache_delete( '_transient_' . $key, 'options' );
 	}
 
 	/**

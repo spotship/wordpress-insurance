@@ -105,7 +105,27 @@ function hullEcho( body ) {
  * @param {object} body     Parsed request body.
  * @returns {{status: number, body: object}}
  */
-function route( pathname, body ) {
+function route( pathname, body, fault ) {
+	/*
+	 * FAULT INJECTION, so the browser suite can evidence the failure modes the
+	 * spec requires: the backend being down, and the API key being revoked.
+	 *
+	 * Both must be driven from the upstream rather than from Playwright's
+	 * network interception, because the proxy is SERVER-side: the browser never
+	 * talks to the API, so there is no request in the page for Playwright to
+	 * intercept. Faking it in the browser would prove nothing about the PHP
+	 * path that actually handles the failure.
+	 */
+	if ( 'revoked' === fault ) {
+		// What DRF returns for a key that no longer resolves. The plugin must
+		// turn this into the neutral sentence and never echo the word "key".
+		return { status: 401, body: { detail: 'Invalid token.' } };
+	}
+
+	if ( 'down' === fault ) {
+		return { status: 502, body: { detail: 'Bad gateway' } };
+	}
+
 	if ( pathname.startsWith( '/insurance/rates' ) ) {
 		return { status: 200, body: RATES };
 	}
@@ -132,6 +152,8 @@ module.exports = { route, hullEcho, cargoEcho, provenance, RATES, LOCATIONS, VES
 
 /* istanbul ignore next — only reached when run as a server, not when required. */
 if ( require.main === module ) {
+	let fault = '';
+
 	const server = http.createServer( ( req, res ) => {
 		let raw = '';
 
@@ -150,7 +172,20 @@ if ( require.main === module ) {
 				body = {};
 			}
 
-			const answer = route( url.pathname, body );
+			/*
+			 * A control route rather than a restart: the plugin caches rates and
+			 * binds to a site URL, and tearing the server down and back up
+			 * between specs loses that state and makes the failure specs pass
+			 * for the wrong reason.
+			 */
+			if ( '/__fault' === url.pathname ) {
+				fault = url.searchParams.get( 'mode' ) || '';
+				res.writeHead( 200, { 'Content-Type': 'application/json' } );
+				res.end( JSON.stringify( { fault: fault } ) );
+				return;
+			}
+
+			const answer = route( url.pathname, body, fault );
 
 			res.writeHead( answer.status, { 'Content-Type': 'application/json' } );
 			res.end( JSON.stringify( answer.body ) );

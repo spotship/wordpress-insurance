@@ -6,7 +6,7 @@
  * screen reader's echo of what the user typed. Focus stays on the input and
  * `aria-activedescendant` moves instead.
  *
- * Expects: $sswi_combo_name, $sswi_combo_label, $sswi_combo_kind, optional $sswi_combo_hint.
+ * Expects: $sswi_uid, $sswi_combo_name, $sswi_combo_label, $sswi_combo_kind, optional $sswi_combo_hint.
  *
  * @package Spotship_WI
  */
@@ -19,13 +19,14 @@ defined( 'ABSPATH' ) || exit;
  * Declared because PHPStan cannot follow variables through include(), and
  * because writing the shape down beats inferring it by reading the renderer.
  *
+ * @var string $sswi_uid
  * @var string $sswi_combo_name
  * @var string $sswi_combo_label
  * @var string $sswi_combo_kind
  * @var string $sswi_combo_hint
  */
 
-$sswi_id      = 'sswi-' . $sswi_combo_name;
+$sswi_id      = $sswi_uid . '-' . $sswi_combo_name;
 $sswi_list    = $sswi_id . '-list';
 $sswi_err     = $sswi_id . '-error';
 $sswi_live    = $sswi_id . '-live';

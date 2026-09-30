@@ -368,3 +368,99 @@ test( 'the destinations listbox names the option it actually rendered', async ()
 	assert.equal( target.getAttribute( 'aria-selected' ), 'true' );
 	assert.equal( target, h.document.querySelectorAll( '#sswi-destinations-list [role="option"]' )[ 0 ] );
 } );
+
+/*
+ * The three tests below cover defects found by review after the suite was
+ * already green. Each was invisible to every existing test for the same reason:
+ * the harness modelled a Response as `{status, json}` and the script only ever
+ * read the body, so an error STATUS carrying a perfectly well-formed body was
+ * indistinguishable from success.
+ */
+
+test( 'a lookup refused by our own proxy blocks submission rather than reading as zero results', async () => {
+	/*
+	 * An upstream miss is 200 + `unavailable: true`, and was handled. These are
+	 * different: the proxy's own per-IP limiter returns a real 429, and a
+	 * binding failure a real 4xx, each with a body that has no `unavailable`
+	 * key. Reading only the body turns both into "No matches found" with the
+	 * submit button still live — the visitor is told their vessel does not
+	 * exist, and can send a form whose combobox never resolved.
+	 */
+	const refusals = [
+		{ what: 'the per-IP throttle', status: 429, body: { success: false, code: 'throttled', retry: 30 } },
+		{ what: 'a binding failure', status: 403, body: { success: false, code: 'unavailable' } },
+		{ what: 'an unparseable body', status: 500, body: null, invalidJson: true },
+	];
+
+	for ( const refusal of refusals ) {
+		const h = boot( {
+			fetch: ( url ) =>
+				url.includes( '-search' )
+					? refusal
+					: { status: 201, body: { success: true, message: 'ok', data: {} } },
+		} );
+
+		await h.ready();
+		await typeInto( h, '#sswi-vessel', 'ever' );
+
+		assert.equal(
+			h.form.querySelector( '.sswi-submit' ).disabled,
+			true,
+			`${ refusal.what } must block submission`
+		);
+
+		const list = h.document.querySelector( '#sswi-vessel-list' );
+		assert.ok(
+			! list.textContent.includes( 'NO RESULTS' ),
+			`${ refusal.what } must not be reported to the visitor as an empty result set`
+		);
+	}
+} );
+
+test( 'a throttled submission tells the visitor how long to wait', async () => {
+	/*
+	 * The proxy computes the wait and sends it twice — `retry` in the body and
+	 * Retry-After on the response. Showing the generic "temporarily
+	 * unavailable" discards both and leaves the visitor unable to tell a
+	 * seconds-long wait from an outage.
+	 */
+	const h = boot( {
+		fetch: router( {
+			submit: {
+				status: 429,
+				body: { success: false, code: 'throttled', retry: 45 },
+				headers: { 'retry-after': '45' },
+			},
+		} ),
+	} );
+
+	await h.ready();
+	h.form.dispatchEvent( new h.window.Event( 'submit', { bubbles: true, cancelable: true } ) );
+	await h.settle( 10 );
+
+	assert.equal(
+		h.document.querySelector( '[data-sswi-result]' ).textContent,
+		'WAIT 45 SECONDS',
+		'the computed wait must reach the visitor'
+	);
+} );
+
+test( 'a throttled submission falls back to the Retry-After header when the body carries no wait', async () => {
+	// A refusal generated above our handler — by a WAF or the host — still
+	// carries the header, and it is the only number available.
+	const h = boot( {
+		fetch: router( {
+			submit: { status: 429, body: { success: false }, headers: { 'retry-after': '12' } },
+		} ),
+	} );
+
+	await h.ready();
+	h.form.dispatchEvent( new h.window.Event( 'submit', { bubbles: true, cancelable: true } ) );
+	await h.settle( 10 );
+
+	assert.equal(
+		h.document.querySelector( '[data-sswi-result]' ).textContent,
+		'WAIT 12 SECONDS',
+		'the header is the fallback when the body has no retry'
+	);
+} );

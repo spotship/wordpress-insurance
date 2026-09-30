@@ -1,6 +1,6 @@
 <?php
 /**
- * War hull quote form.
+ * War cargo quote form.
  *
  * Expects $data from Spotship_WI_Renderer::render().
  *
@@ -17,6 +17,7 @@ defined( 'ABSPATH' ) || exit;
  *
  * @var array{
  *     product: string,
+ *     uid: string,
  *     form_id: string,
  *     timestamp: int,
  *     signature: string,
@@ -27,6 +28,23 @@ defined( 'ABSPATH' ) || exit;
 
 $sswi_serving = $data['serving'];
 $sswi_rates   = $sswi_serving['rates'];
+
+/*
+ * Every element id below is namespaced with this. A page may carry more than
+ * one form, and duplicate ids silently re-point each label at the first form's
+ * input. See the $instances counter in class-renderer.php.
+ */
+$sswi_uid = $data['uid'];
+
+$sswi_dest_id   = $sswi_uid . '-destinations';
+$sswi_dest_list = $sswi_dest_id . '-list';
+$sswi_dest_err  = $sswi_dest_id . '-error';
+$sswi_ccy_id    = $sswi_uid . '-cargoCurrency';
+$sswi_ccy_err   = $sswi_ccy_id . '-error';
+$sswi_zone_id   = $sswi_uid . '-riskZone';
+$sswi_zone_err  = $sswi_zone_id . '-error';
+$sswi_notes_id  = $sswi_uid . '-notes';
+$sswi_notes_err = $sswi_notes_id . '-error';
 ?>
 <div class="spotship-wi" data-sswi-root data-sswi-config="<?php echo esc_attr( (string) wp_json_encode( $data['config'] ) ); ?>">
 
@@ -87,14 +105,14 @@ $sswi_rates   = $sswi_serving['rates'];
 
 		<?php /* Ordered, multi-select. Each chip carries its own labelled remove button. */ ?>
 		<div class="sswi-field sswi-destinations" data-sswi-destinations data-sswi-field="destinations">
-			<label for="sswi-destinations"><?php esc_html_e( 'Destinations', 'spotship-war-insurance' ); ?></label>
+			<label for="<?php echo esc_attr( $sswi_dest_id ); ?>"><?php esc_html_e( 'Destinations', 'spotship-war-insurance' ); ?></label>
 			<ul class="sswi-chips" data-sswi-chips></ul>
-			<input type="text" id="sswi-destinations" role="combobox" aria-expanded="false"
-				aria-controls="sswi-destinations-list" aria-autocomplete="list"
-				aria-describedby="sswi-destinations-error" autocomplete="off" disabled>
-			<ul class="sswi-listbox" id="sswi-destinations-list" role="listbox" hidden></ul>
+			<input type="text" id="<?php echo esc_attr( $sswi_dest_id ); ?>" role="combobox" aria-expanded="false"
+				aria-controls="<?php echo esc_attr( $sswi_dest_list ); ?>" aria-autocomplete="list"
+				aria-describedby="<?php echo esc_attr( $sswi_dest_err ); ?>" autocomplete="off" disabled>
+			<ul class="sswi-listbox" id="<?php echo esc_attr( $sswi_dest_list ); ?>" role="listbox" hidden></ul>
 			<p class="sswi-sr" role="status" aria-live="polite" data-sswi-chip-live></p>
-			<p class="sswi-error" id="sswi-destinations-error" data-sswi-error hidden></p>
+			<p class="sswi-error" id="<?php echo esc_attr( $sswi_dest_err ); ?>" data-sswi-error hidden></p>
 		</div>
 
 		<?php
@@ -137,33 +155,33 @@ $sswi_rates   = $sswi_serving['rates'];
 
 		<?php /* Selects, not text inputs — maxlength is meaningless on a select. */ ?>
 		<div class="sswi-field" data-sswi-field="cargoCurrency">
-			<label for="sswi-cargoCurrency"><?php esc_html_e( 'Currency', 'spotship-war-insurance' ); ?></label>
-			<select id="sswi-cargoCurrency" name="cargoCurrency" aria-describedby="sswi-cargoCurrency-error" required disabled>
+			<label for="<?php echo esc_attr( $sswi_ccy_id ); ?>"><?php esc_html_e( 'Currency', 'spotship-war-insurance' ); ?></label>
+			<select id="<?php echo esc_attr( $sswi_ccy_id ); ?>" name="cargoCurrency" aria-describedby="<?php echo esc_attr( $sswi_ccy_err ); ?>" required disabled>
 				<option value=""><?php esc_html_e( 'Choose a currency', 'spotship-war-insurance' ); ?></option>
 				<option value="USD">USD</option>
 				<option value="GBP">GBP</option>
 				<option value="EUR">EUR</option>
 			</select>
-			<p class="sswi-error" id="sswi-cargoCurrency-error" data-sswi-error hidden></p>
+			<p class="sswi-error" id="<?php echo esc_attr( $sswi_ccy_err ); ?>" data-sswi-error hidden></p>
 		</div>
 
 		<div class="sswi-field" data-sswi-field="riskZone">
-			<label for="sswi-riskZone"><?php esc_html_e( 'Risk zone', 'spotship-war-insurance' ); ?></label>
-			<select id="sswi-riskZone" name="riskZone" aria-describedby="sswi-riskZone-error" data-sswi-risk-zone required disabled>
+			<label for="<?php echo esc_attr( $sswi_zone_id ); ?>"><?php esc_html_e( 'Risk zone', 'spotship-war-insurance' ); ?></label>
+			<select id="<?php echo esc_attr( $sswi_zone_id ); ?>" name="riskZone" aria-describedby="<?php echo esc_attr( $sswi_zone_err ); ?>" data-sswi-risk-zone required disabled>
 				<option value=""><?php esc_html_e( 'Choose a risk zone', 'spotship-war-insurance' ); ?></option>
 			</select>
-			<p class="sswi-error" id="sswi-riskZone-error" data-sswi-error hidden></p>
+			<p class="sswi-error" id="<?php echo esc_attr( $sswi_zone_err ); ?>" data-sswi-error hidden></p>
 		</div>
 
 		<div class="sswi-field">
-			<label for="sswi-notes"><?php esc_html_e( 'Notes', 'spotship-war-insurance' ); ?></label>
-			<textarea id="sswi-notes" name="notes" maxlength="5000" rows="4" aria-describedby="sswi-notes-error" disabled></textarea>
-			<p class="sswi-error" id="sswi-notes-error" data-sswi-error hidden></p>
+			<label for="<?php echo esc_attr( $sswi_notes_id ); ?>"><?php esc_html_e( 'Notes', 'spotship-war-insurance' ); ?></label>
+			<textarea id="<?php echo esc_attr( $sswi_notes_id ); ?>" name="notes" maxlength="5000" rows="4" aria-describedby="<?php echo esc_attr( $sswi_notes_err ); ?>" disabled></textarea>
+			<p class="sswi-error" id="<?php echo esc_attr( $sswi_notes_err ); ?>" data-sswi-error hidden></p>
 		</div>
 
 		<?php require SPOTSHIP_WI_PATH . 'templates/partials/consent.php'; ?>
 
-		<?php echo Spotship_WI_Renderer::honeypot(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Markup built and escaped in the renderer. ?>
+		<?php echo Spotship_WI_Renderer::honeypot( $sswi_uid ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Markup built and escaped in the renderer. ?>
 
 		<input type="hidden" name="_sswi_ts" value="<?php echo esc_attr( (string) $data['timestamp'] ); ?>">
 		<input type="hidden" name="_sswi_form_id" value="<?php echo esc_attr( $data['form_id'] ); ?>">

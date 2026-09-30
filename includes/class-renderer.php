@@ -24,6 +24,21 @@ defined( 'ABSPATH' ) || exit;
 final class Spotship_WI_Renderer {
 
 	/**
+	 * How many forms this request has already rendered.
+	 *
+	 * Element ids must be unique within a DOCUMENT, and a page may legitimately
+	 * carry more than one form: hull and cargo on one "Insurance" page, or the
+	 * same shortcode twice. Every id below is therefore namespaced with this
+	 * counter. Without it the second form's labels resolve to the first form's
+	 * inputs -- clicking a label focuses the wrong field -- which is a WCAG
+	 * 1.3.1 and 4.1.2 failure, not a cosmetic one.
+	 *
+	 * A counter rather than the form uuid because ids only need to be unique
+	 * within one render pass, and short readable ids keep the markup legible.
+	 */
+	private static int $instances = 0;
+
+	/**
 	 * Render a product form.
 	 *
 	 * @param string $product 'hull' or 'cargo'.
@@ -42,8 +57,11 @@ final class Spotship_WI_Renderer {
 		$timestamp = time();
 		$form_id   = wp_generate_uuid4();
 
+		++self::$instances;
+
 		$data = array(
 			'product'   => $product,
+			'uid'       => 'sswi-' . self::$instances,
 			'form_id'   => $form_id,
 			'timestamp' => $timestamp,
 			'signature' => Spotship_WI_Request_Guard::sign( $timestamp, $form_id ),
@@ -106,6 +124,8 @@ final class Spotship_WI_Renderer {
 				/* translators: %d: number of autocomplete results. */
 				'resultCount'  => __( '%d results available.', 'spotship-war-insurance' ),
 				'expired'      => __( 'This form has been open too long. Please reload the page and try again.', 'spotship-war-insurance' ),
+				/* translators: %d: number of seconds to wait before retrying. */
+				'throttled'    => __( 'Too many requests. Please wait %d seconds and try again.', 'spotship-war-insurance' ),
 			),
 		);
 	}
@@ -133,13 +153,17 @@ final class Spotship_WI_Renderer {
 	 * leave it blank rather than silently failing the check. `autocomplete=off`
 	 * and a name a password manager will not recognise keep browsers from
 	 * filling it on a real visitor's behalf.
+	 *
+	 * @param string $uid Per-instance id prefix from `$data['uid']`.
 	 */
-	public static function honeypot(): string {
+	public static function honeypot( string $uid ): string {
+		$field_id = $uid . '-website';
+
 		ob_start();
 		?>
 		<div class="sswi-hp" aria-hidden="false">
-			<label for="sswi_website"><?php esc_html_e( 'Leave this field empty', 'spotship-war-insurance' ); ?></label>
-			<input type="text" id="sswi_website" name="sswi_website" value="" autocomplete="off" tabindex="-1">
+			<label for="<?php echo esc_attr( $field_id ); ?>"><?php esc_html_e( 'Leave this field empty', 'spotship-war-insurance' ); ?></label>
+			<input type="text" id="<?php echo esc_attr( $field_id ); ?>" name="sswi_website" value="" autocomplete="off" tabindex="-1">
 		</div>
 		<?php
 		return (string) ob_get_clean();

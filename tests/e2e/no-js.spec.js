@@ -15,5 +15,5 @@ test( 'the form stays inert and explains itself without JavaScript', async ( { p
 
 	await expect( page.locator( '[data-sswi-noscript]' ) ).toBeVisible();
 	await expect( page.locator( '.sswi-submit' ) ).toBeDisabled();
-	await expect( page.locator( '#sswi-userName' ) ).toBeDisabled();
+	await expect( page.locator( '[data-sswi-field="userName"] input' ) ).toBeDisabled();
 } );

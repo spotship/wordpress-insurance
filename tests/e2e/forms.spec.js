@@ -8,7 +8,7 @@ const { test, expect } = require( '@playwright/test' );
 test( 'the hull combobox keeps focus on the input and moves aria-activedescendant', async ( { page } ) => {
 	await page.goto( '/insurance/' );
 
-	const input = page.locator( '#sswi-fromPort' );
+	const input = page.locator( '[data-sswi-field="fromPort"] input[role="combobox"]' );
 
 	await input.fill( 'rot' );
 	await page.waitForTimeout( 400 );
@@ -26,7 +26,7 @@ test( 'the hull combobox keeps focus on the input and moves aria-activedescendan
 test( 'choosing a location submits the id that was displayed', async ( { page } ) => {
 	await page.goto( '/insurance/' );
 
-	const input = page.locator( '#sswi-fromPort' );
+	const input = page.locator( '[data-sswi-field="fromPort"] input[role="combobox"]' );
 
 	await input.fill( 'rot' );
 	await page.waitForTimeout( 400 );
@@ -45,7 +45,7 @@ test( 'choosing a location submits the id that was displayed', async ( { page } 
 test( 'cargo destinations can be added and removed, and removal is announced', async ( { page } ) => {
 	await page.goto( '/insurance-cargo/' );
 
-	const input = page.locator( '#sswi-destinations' );
+	const input = page.locator( '[data-sswi-destinations] input[role="combobox"]' );
 
 	await input.fill( 'rot' );
 	await page.waitForTimeout( 400 );

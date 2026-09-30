@@ -11,11 +11,19 @@
 
 defined( 'ABSPATH' ) || exit;
 
-$sswi_privacy = (string) Spotship_WI_Settings::get( 'privacy_notice_url', '' );
+/**
+ * What the including scope hands this template.
+ *
+ * @var string $sswi_uid
+ */
+
+$sswi_privacy      = (string) Spotship_WI_Settings::get( 'privacy_notice_url', '' );
+$sswi_consent_id   = $sswi_uid . '-consent';
+$sswi_consent_err  = $sswi_consent_id . '-error';
 ?>
 <div class="sswi-field sswi-consent" data-sswi-field="dataConsent">
-	<label for="sswi-consent">
-		<input type="checkbox" id="sswi-consent" name="dataConsent" value="1" required aria-describedby="sswi-consent-error" disabled>
+	<label for="<?php echo esc_attr( $sswi_consent_id ); ?>">
+		<input type="checkbox" id="<?php echo esc_attr( $sswi_consent_id ); ?>" name="dataConsent" value="1" required aria-describedby="<?php echo esc_attr( $sswi_consent_err ); ?>" data-sswi-consent disabled>
 		<span><?php echo esc_html( Spotship_WI_Renderer::consent_text() ); ?></span>
 	</label>
 
@@ -27,5 +35,5 @@ $sswi_privacy = (string) Spotship_WI_Settings::get( 'privacy_notice_url', '' );
 		</p>
 	<?php endif; ?>
 
-	<p class="sswi-error" id="sswi-consent-error" data-sswi-error hidden></p>
+	<p class="sswi-error" id="<?php echo esc_attr( $sswi_consent_err ); ?>" data-sswi-error hidden></p>
 </div>

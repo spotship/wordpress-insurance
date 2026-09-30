@@ -2,7 +2,7 @@
 /**
  * A labelled text input with accessible error wiring.
  *
- * Expects: $sswi_name, $sswi_label, $sswi_type, $sswi_maxlength, $sswi_required, $sswi_autocomplete, $sswi_hint.
+ * Expects: $sswi_uid, $sswi_name, $sswi_label, $sswi_type, $sswi_maxlength, $sswi_required, $sswi_autocomplete, $sswi_hint.
  *
  * @package Spotship_WI
  */
@@ -15,6 +15,7 @@ defined( 'ABSPATH' ) || exit;
  * Declared because PHPStan cannot follow variables through include(), and
  * because writing the shape down beats inferring it by reading the renderer.
  *
+ * @var string $sswi_uid
  * @var string $sswi_name
  * @var string $sswi_label
  * @var string $sswi_type
@@ -24,7 +25,7 @@ defined( 'ABSPATH' ) || exit;
  * @var string $sswi_hint
  */
 
-$sswi_id      = 'sswi-' . $sswi_name;
+$sswi_id      = $sswi_uid . '-' . $sswi_name;
 $sswi_err     = $sswi_id . '-error';
 $sswi_hint_id = '' !== $sswi_hint ? $sswi_id . '-hint' : '';
 ?>

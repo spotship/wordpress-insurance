@@ -219,6 +219,9 @@ msgstr ""
 msgid "To location"
 msgstr ""
 
+msgid "Too many requests. Please wait %d seconds and try again."
+msgstr ""
+
 msgid "Type at least two characters, then choose from the list."
 msgstr ""
 

@@ -17,6 +17,7 @@ defined( 'ABSPATH' ) || exit;
  *
  * @var array{
  *     product: string,
+ *     uid: string,
  *     form_id: string,
  *     timestamp: int,
  *     signature: string,
@@ -27,6 +28,16 @@ defined( 'ABSPATH' ) || exit;
 
 $sswi_serving = $data['serving'];
 $sswi_rates   = $sswi_serving['rates'];
+
+/*
+ * Every element id below is namespaced with this. A page may carry more than
+ * one form, and duplicate ids silently re-point each label at the first form's
+ * input. See the $instances counter in class-renderer.php.
+ */
+$sswi_uid = $data['uid'];
+
+$sswi_notes_id  = $sswi_uid . '-notes';
+$sswi_notes_err = $sswi_notes_id . '-error';
 ?>
 <div class="spotship-wi" data-sswi-root data-sswi-config="<?php echo esc_attr( (string) wp_json_encode( $data['config'] ) ); ?>">
 
@@ -112,14 +123,14 @@ $sswi_rates   = $sswi_serving['rates'];
 		?>
 
 		<div class="sswi-field">
-			<label for="sswi-notes"><?php esc_html_e( 'Notes', 'spotship-war-insurance' ); ?></label>
-			<textarea id="sswi-notes" name="notes" maxlength="5000" rows="4" aria-describedby="sswi-notes-error" disabled></textarea>
-			<p class="sswi-error" id="sswi-notes-error" data-sswi-error hidden></p>
+			<label for="<?php echo esc_attr( $sswi_notes_id ); ?>"><?php esc_html_e( 'Notes', 'spotship-war-insurance' ); ?></label>
+			<textarea id="<?php echo esc_attr( $sswi_notes_id ); ?>" name="notes" maxlength="5000" rows="4" aria-describedby="<?php echo esc_attr( $sswi_notes_err ); ?>" disabled></textarea>
+			<p class="sswi-error" id="<?php echo esc_attr( $sswi_notes_err ); ?>" data-sswi-error hidden></p>
 		</div>
 
 		<?php require SPOTSHIP_WI_PATH . 'templates/partials/consent.php'; ?>
 
-		<?php echo Spotship_WI_Renderer::honeypot(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Markup built and escaped in the renderer. ?>
+		<?php echo Spotship_WI_Renderer::honeypot( $sswi_uid ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Markup built and escaped in the renderer. ?>
 
 		<input type="hidden" name="_sswi_ts" value="<?php echo esc_attr( (string) $data['timestamp'] ); ?>">
 		<input type="hidden" name="_sswi_form_id" value="<?php echo esc_attr( $data['form_id'] ); ?>">

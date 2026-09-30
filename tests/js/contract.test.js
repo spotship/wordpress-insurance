@@ -50,7 +50,7 @@ const HOOKS = [
 	'data-sswi-chips',
 	'data-sswi-chip-live',
 	'data-sswi-risk-zone',
-	'sswi-consent',
+	'data-sswi-consent',
 	'sswi-submit',
 	'role="combobox"',
 	'role="listbox"',
@@ -316,4 +316,55 @@ test( 'the rate table renders the disclaimers the endpoint serves', () => {
 	// table that renders none.
 	const fixture = read( 'bin/e2e-upstream.js' );
 	assert.match( fixture, /disclaimers:/, 'the e2e upstream must serve disclaimers' );
+} );
+
+test( 'no template hard-codes an element id', () => {
+	/*
+	 * Element ids must be unique within a DOCUMENT, and a page may carry more
+	 * than one form — hull and cargo on one "Insurance" page is the expected
+	 * layout, and the same shortcode twice is legal. A hard-coded id therefore
+	 * collides, and a colliding id silently re-points every later label at the
+	 * FIRST form's input: clicking "Email" on the second form focuses the first.
+	 *
+	 * That is WCAG 1.3.1 and 4.1.2, and no axe run could have caught it, because
+	 * every Playwright page rendered exactly one form. The suite was green and
+	 * the defect was real.
+	 *
+	 * Admin markup is exempt: wp-admin renders one settings screen per request.
+	 */
+	const offenders = [];
+
+	[
+		'templates/hull.php',
+		'templates/cargo.php',
+		'templates/partials/text-field.php',
+		'templates/partials/combobox.php',
+		'templates/partials/consent.php',
+		'templates/partials/rates-table.php',
+	].forEach( ( file ) => {
+		const src = read( file );
+		const re = /\b(?:id|for|aria-controls|aria-describedby|aria-labelledby)="([^"<]*)"/g;
+		let m;
+
+		while ( ( m = re.exec( src ) ) !== null ) {
+			// A literal value with no PHP in it is a constant id.
+			if ( ! m[ 1 ].includes( '<?php' ) && '' !== m[ 1 ].trim() ) {
+				offenders.push( `${ file }: ${ m[ 0 ] }` );
+			}
+		}
+	} );
+
+	assert.deepEqual(
+		offenders,
+		[],
+		'these ids are constant, so a second form on the page duplicates them:\n' + offenders.join( '\n' )
+	);
+} );
+
+test( 'the renderer namespaces ids per instance', () => {
+	// The counter is the mechanism the templates depend on. If it goes away,
+	// every id above silently becomes constant again.
+	assert.match( RENDERER, /private static int \$instances = 0;/, 'the per-instance counter must exist' );
+	assert.match( RENDERER, /\+\+self::\$instances;/, 'and be advanced on every render' );
+	assert.match( RENDERER, /'uid'\s*=>\s*'sswi-' \. self::\$instances,/, 'and be published to the templates' );
 } );

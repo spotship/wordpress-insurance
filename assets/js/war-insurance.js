@@ -296,20 +296,51 @@
 						credentials: 'same-origin',
 					} )
 					.then( function ( response ) {
-						return response.json();
+						/*
+						 * THE STATUS MATTERS HERE, not just the body. An upstream
+						 * miss comes back 200 with `unavailable: true` and is
+						 * handled below -- but OUR OWN proxy refusing (its per-IP
+						 * limiter returning 429, a binding failure) is a real
+						 * error status carrying no `unavailable` key. Reading
+						 * only the body turns those into a successful lookup of
+						 * zero rows, which leaves submit enabled and tells the
+						 * visitor "No matches found" for a vessel that exists.
+						 */
+						return response.json().then(
+							function ( body ) {
+								return { ok: response.ok, body: body };
+							},
+							function () {
+								return { ok: false, body: null };
+							}
+						);
 					} )
-					.then( function ( body ) {
-						if ( body && body.unavailable ) {
+					.then( function ( answer ) {
+						if ( ! answer.ok || ( answer.body && answer.body.unavailable ) ) {
 							reportLookup( kind, false );
 							throw new Error( 'unavailable' );
 						}
 
 						reportLookup( kind, true );
 
-						return ( body && body.results ) || [];
+						return ( answer.body && answer.body.results ) || [];
 					} );
 			},
 		};
+
+		/**
+		 * Seconds to wait, from the throttled response.
+		 *
+		 * The body is authoritative because the proxy always sets it; the header
+		 * is the fallback for a refusal generated above our own handler. The
+		 * floor of 1 keeps "wait 0 seconds" off the screen.
+		 */
+		function retryAfter( answer ) {
+			var fromBody = answer.body && answer.body.retry;
+			var seconds = parseInt( fromBody || answer.retryHeader || '', 10 );
+
+			return isNaN( seconds ) || seconds < 1 ? 60 : seconds;
+		}
 
 		function reportLookup( kind, ok ) {
 			var at = brokenLookups.indexOf( kind );
@@ -616,7 +647,7 @@
 				payload[ key ] = value;
 			} );
 
-			payload.dataConsent = form.querySelector( '#sswi-consent' ).checked;
+			payload.dataConsent = form.querySelector( '[data-sswi-consent]' ).checked;
 
 			if ( destinationsField ) {
 				// Ordered: the backend stores position, so this is not a set.
@@ -635,9 +666,16 @@
 					body: JSON.stringify( payload ),
 				} )
 				.then( function ( response ) {
-					return response.json().then( function ( body ) {
-						return { status: response.status, body: body };
-					} );
+					var retryHeader = response.headers && response.headers.get( 'Retry-After' );
+
+					return response.json().then(
+						function ( body ) {
+							return { status: response.status, body: body, retryHeader: retryHeader };
+						},
+						function () {
+							return { status: response.status, body: null, retryHeader: retryHeader };
+						}
+					);
 				} )
 				.then( function ( answer ) {
 					pending = false;
@@ -666,6 +704,19 @@
 						show( summary );
 						summary.focus();
 						text( result, '' );
+					} else if ( 429 === answer.status ) {
+						/*
+						 * The proxy computed a wait and sent it, in the body as
+						 * `retry` and in the Retry-After header. Falling through
+						 * to the generic "temporarily unavailable" throws that
+						 * away and leaves the visitor with no idea whether to
+						 * wait seconds or give up.
+						 */
+						text(
+							result,
+							String( i18n.throttled || 'Too many requests. Please wait %d seconds and try again.' )
+								.replace( '%d', String( retryAfter( answer ) ) )
+						);
 					} else {
 						text( result, String( answer.body && answer.body.message ? answer.body.message : i18n.unavailable ) );
 					}

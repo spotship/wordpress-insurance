@@ -34,6 +34,7 @@ const CONFIG = {
 		removeChip: 'Remove %s',
 		resultCount: '%d results available.',
 		expired: 'EXPIRED',
+		throttled: 'WAIT %d SECONDS',
 	},
 };
 
@@ -92,7 +93,7 @@ function markup( product, config ) {
 			${ 'cargo' === product ? cargoOnly : '' }
 			<div class="sswi-field sswi-consent" data-sswi-field="dataConsent">
 				<label for="sswi-consent">
-					<input type="checkbox" id="sswi-consent" name="dataConsent" value="1" required disabled>
+					<input type="checkbox" id="sswi-consent" name="dataConsent" value="1" required data-sswi-consent disabled>
 					<span>Consent</span>
 				</label>
 				<p class="sswi-error" id="sswi-consent-error" data-sswi-error hidden></p>
@@ -133,9 +134,23 @@ function boot( options = {} ) {
 		const handler = options.fetch || ( () => ( { status: 200, body: {} } ) );
 		const answer = handler( String( url ), init || {} );
 
+		/*
+		 * `ok` and `headers` are modelled because the script reads both. The
+		 * harness omitted them once, and a bug that turned a 429 lookup into an
+		 * empty successful result set survived the whole suite: every assertion
+		 * about the body passed, because the body was never the problem.
+		 */
 		return Promise.resolve( {
 			status: answer.status,
-			json: () => Promise.resolve( answer.body ),
+			ok: answer.status >= 200 && answer.status < 300,
+			headers: {
+				get: ( name ) =>
+					( answer.headers || {} )[ String( name ).toLowerCase() ] ?? null,
+			},
+			json: () =>
+				answer.invalidJson
+					? Promise.reject( new Error( 'not json' ) )
+					: Promise.resolve( answer.body ),
 		} );
 	};
 

@@ -59,7 +59,9 @@ Playwright never executed.
 
 ## Known gaps
 
-- **ENG-6418** — the Playwright and axe suites have never executed. Until that CI
-  job runs green, no WCAG 2.1 AA conformance claim can be made.
+- **ENG-6418** — the Playwright and axe suites do not run on a development
+  machine; the runner will not start locally. They DO run in CI (the `e2e` job),
+  with no axe rules disabled, so the conformance claim rests on those logs. Treat
+  a green local run as unavailable, never as a green suite.
 - **ENG-6383** — the rate values have never been confirmed against the
   commercial Google Sheet.

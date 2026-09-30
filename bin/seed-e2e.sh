@@ -49,6 +49,52 @@ if ! wp post list --post_type=page --name=insurance-cargo --format=count | grep 
 		--post_content='[spotship_war_cargo]'
 fi
 
+# BOTH FORMS ON ONE PAGE.
+#
+# The expected customer layout, and the case no spec covered: every other page
+# renders exactly one form, so duplicate element ids were invisible to axe. A
+# colliding id re-points the second form's labels at the first form's inputs.
+if ! wp post list --post_type=page --name=insurance-both --format=count | grep -q '^1$'; then
+	wp post create --post_type=page --post_status=publish \
+		--post_title='Insurance Both' --post_name='insurance-both' \
+		--post_content='[spotship_war_hull]
+[spotship_war_cargo]'
+fi
+
+# THE SAME SHORTCODE TWICE. Legal, and a stricter collision test than two
+# different products, which at least differ in their product-specific fields.
+if ! wp post list --post_type=page --name=insurance-twice --format=count | grep -q '^1$'; then
+	wp post create --post_type=page --post_status=publish \
+		--post_title='Insurance Twice' --post_name='insurance-twice' \
+		--post_content='[spotship_war_hull]
+[spotship_war_hull]'
+fi
+
+# ELEMENTOR.
+#
+# Named in the spec because it is what the first customer builds pages with, and
+# because a page builder is the realistic source of conflict: it enqueues its own
+# CSS reset and JS, and renders the shortcode inside its own wrapper markup
+# rather than in the_content directly.
+#
+# Non-fatal: a wordpress.org outage must not turn the whole browser suite red.
+# The spec skips when the page is absent rather than failing.
+if wp plugin install elementor --activate; then
+	if ! wp post list --post_type=page --name=insurance-elementor --format=count | grep -q '^1$'; then
+		ELEMENTOR_PAGE=$(wp post create --post_type=page --post_status=publish \
+			--post_title='Insurance Elementor' --post_name='insurance-elementor' \
+			--post_content='' --porcelain)
+
+		# Elementor renders from _elementor_data, not post_content. A shortcode
+		# widget is the supported way to place a third-party shortcode.
+		wp post meta update "$ELEMENTOR_PAGE" _elementor_edit_mode builder
+		wp post meta update "$ELEMENTOR_PAGE" _elementor_template_type wp-page
+		wp post meta update "$ELEMENTOR_PAGE" _elementor_data '[{"id":"s1","elType":"section","elements":[{"id":"c1","elType":"column","settings":{"_column_size":100},"elements":[{"id":"w1","elType":"widget","widgetType":"shortcode","settings":{"shortcode":"[spotship_war_hull]"}}],"isInner":false}],"isInner":false}]'
+	fi
+else
+	echo "WARNING: Elementor could not be installed; its spec will skip."
+fi
+
 wp rewrite structure '/%postname%/'
 wp rewrite flush --hard
 

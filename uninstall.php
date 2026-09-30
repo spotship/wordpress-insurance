@@ -70,13 +70,21 @@ function spotship_wi_uninstall_site(): void {
 	 * exact key, and the per-IP rate-limit keys are not enumerable. This runs once,
 	 * at uninstall, after which the plugin is gone; a cache layer would be warming
 	 * rows that are being deleted.
+	 *
+	 * The third pattern is NOT a transient. The per-IP rate-limit counters are
+	 * plain options — they have to be, because their increment is an atomic SQL
+	 * statement and a transient on an object-cache install never reaches the
+	 * database — so they carry no `_transient_` prefix and the first two
+	 * patterns cannot see them.
 	 */
 	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- see above.
 	$wpdb->query(
 		$wpdb->prepare(
-			"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+			"DELETE FROM {$wpdb->options}
+			 WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
 			$wpdb->esc_like( '_transient_spotship_wi_' ) . '%',
-			$wpdb->esc_like( '_transient_timeout_spotship_wi_' ) . '%'
+			$wpdb->esc_like( '_transient_timeout_spotship_wi_' ) . '%',
+			$wpdb->esc_like( 'spotship_wi_rl_' ) . '%'
 		)
 	);
 

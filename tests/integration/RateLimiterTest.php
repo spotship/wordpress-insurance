@@ -2,9 +2,9 @@
 /**
  * Per-IP rate limiting.
  *
- * Integration rather than unit because the behaviour under test is how the
- * counter survives the transient layer, and faking that layer would test the
- * fake.
+ * Integration rather than unit because the behaviour under test is the counter
+ * itself — incremented by a conditional SQL statement rather than by PHP — and
+ * faking the database would test the fake.
  *
  * @package Spotship_WI
  */
@@ -24,6 +24,33 @@ final class RateLimiterTest extends WP_UnitTestCase {
 	public function tear_down(): void {
 		Spotship_WI_Rate_Limiter::reset( 'test' );
 		parent::tear_down();
+	}
+
+	/** The option the limiter counts in. */
+	private function key(): string {
+		return 'spotship_wi_rl_test_' . md5( Spotship_WI_Rate_Limiter::client_ip() );
+	}
+
+	/**
+	 * Put the bucket into a given state directly.
+	 *
+	 * @param int $expires When the window ends.
+	 * @param int $count   Requests already counted.
+	 */
+	private function store( int $expires, int $count ): void {
+		update_option( $this->key(), $expires . ':' . $count, false );
+	}
+
+	/** When the current window ends. */
+	private function expires(): int {
+		return (int) strtok( (string) get_option( $this->key(), '0:0' ), ':' );
+	}
+
+	/** How many requests the current window has counted. */
+	private function count(): int {
+		$parts = explode( ':', (string) get_option( $this->key(), '0:0' ) );
+
+		return (int) end( $parts );
 	}
 
 	public function test_requests_are_allowed_up_to_the_limit_then_refused(): void {
@@ -49,26 +76,20 @@ final class RateLimiterTest extends WP_UnitTestCase {
 	public function test_consuming_does_not_extend_the_window(): void {
 		Spotship_WI_Rate_Limiter::consume( 'test', 10, 60 );
 
-		$key   = 'spotship_wi_rl_test_' . md5( Spotship_WI_Rate_Limiter::client_ip() );
-		$first = get_transient( $key );
+		$expiry_after_one = $this->expires();
 
-		$this->assertIsArray( $first );
-		$this->assertArrayHasKey( 'expires', $first );
-
-		$expiry_after_one = (int) $first['expires'];
+		$this->assertGreaterThan( 0, $expiry_after_one, 'the first request must open a window' );
 
 		for ( $i = 0; $i < 5; $i++ ) {
 			Spotship_WI_Rate_Limiter::consume( 'test', 10, 60 );
 		}
 
-		$later = get_transient( $key );
-
 		$this->assertSame(
 			$expiry_after_one,
-			(int) $later['expires'],
+			$this->expires(),
 			'a steady stream of requests must not push the window out in front of itself'
 		);
-		$this->assertSame( 6, (int) $later['count'] );
+		$this->assertSame( 6, $this->count() );
 	}
 
 	/**
@@ -77,18 +98,9 @@ final class RateLimiterTest extends WP_UnitTestCase {
 	 * object cache that ignored the TTL.
 	 */
 	public function test_an_elapsed_window_starts_again_even_if_the_row_survives(): void {
-		$key = 'spotship_wi_rl_test_' . md5( Spotship_WI_Rate_Limiter::client_ip() );
-
-		// A full, EXPIRED window left behind by a storage layer that did not
-		// honour the TTL.
-		set_transient(
-			$key,
-			array(
-				'count'   => 999,
-				'expires' => time() - 1,
-			),
-			3600
-		);
+		// A full, EXPIRED window. An option has no TTL, so a row whose window
+		// has ended is the normal resting state rather than an anomaly.
+		$this->store( time() - 1, 999 );
 
 		$verdict = Spotship_WI_Rate_Limiter::consume( 'test', 3, 60 );
 
@@ -103,22 +115,94 @@ final class RateLimiterTest extends WP_UnitTestCase {
 	 * loses a real enquiry.
 	 */
 	public function test_retry_after_is_the_remaining_wait_not_the_whole_window(): void {
-		$key = 'spotship_wi_rl_test_' . md5( Spotship_WI_Rate_Limiter::client_ip() );
-
-		set_transient(
-			$key,
-			array(
-				'count'   => 5,
-				'expires' => time() + 10,
-			),
-			3600
-		);
+		$this->store( time() + 10, 5 );
 
 		$verdict = Spotship_WI_Rate_Limiter::consume( 'test', 5, 3600 );
 
 		$this->assertFalse( $verdict['allowed'] );
 		$this->assertLessThanOrEqual( 10, $verdict['retry_after'] );
 		$this->assertGreaterThan( 0, $verdict['retry_after'] );
+	}
+
+	/**
+	 * THE DEFECT THIS GUARDS AGAINST: a count incremented in PHP rather than by
+	 * the database.
+	 *
+	 * The old implementation read the counter, added one, and wrote it back. N
+	 * concurrent requests all read the same value and all write the same
+	 * increment, so the bucket advances by one instead of N and the limit is
+	 * exceeded by as much as an abuser cares to arrange — concurrency being the
+	 * one thing they get for free.
+	 *
+	 * A PHPUnit process cannot issue two genuinely simultaneous requests, so
+	 * this reproduces what the race PRODUCES rather than its timing: a caller
+	 * deciding from a count it read earlier. Every consume() below is handed a
+	 * bucket whose stored count is already at the limit, which is exactly the
+	 * state a loser of the race holds a stale reading of. Under the old code the
+	 * write was unconditional and went through; here the limit lives in the
+	 * statement's WHERE clause, so no row changes and the caller is refused.
+	 */
+	public function test_the_count_cannot_be_advanced_from_a_stale_read(): void {
+		$expires = time() + 60;
+
+		$this->store( $expires, 3 );
+
+		for ( $i = 0; $i < 5; $i++ ) {
+			$this->assertFalse(
+				Spotship_WI_Rate_Limiter::consume( 'test', 3, 60 )['allowed'],
+				"a full bucket must refuse request {$i}, however many arrive together"
+			);
+		}
+
+		$this->assertSame( 3, $this->count(), 'a refused request must not advance the count' );
+		$this->assertSame( $expires, $this->expires(), 'nor move the window' );
+	}
+
+	/**
+	 * The boundary the WHERE clause encodes: the limit-th request is allowed and
+	 * the one after it is not.
+	 *
+	 * Worth its own test because `<` and `<=` are one character apart and the
+	 * difference is an off-by-one in an abuse control, in whichever direction.
+	 */
+	public function test_the_last_permitted_request_is_the_limit_th(): void {
+		$this->store( time() + 60, 2 );
+
+		$this->assertTrue(
+			Spotship_WI_Rate_Limiter::consume( 'test', 3, 60 )['allowed'],
+			'the third of three must be allowed'
+		);
+		$this->assertSame( 3, $this->count() );
+
+		$this->assertFalse(
+			Spotship_WI_Rate_Limiter::consume( 'test', 3, 60 )['allowed'],
+			'the fourth must not'
+		);
+		$this->assertSame( 3, $this->count() );
+	}
+
+	/**
+	 * The counter must not autoload.
+	 *
+	 * There is one row per IP per bucket. Autoloading them would put every
+	 * visitor who has ever searched into the alloptions blob, which is read on
+	 * every single request — a slow, quiet, cumulative regression that would
+	 * present as "the site got slower" long after the cause shipped.
+	 */
+	public function test_the_counter_does_not_autoload(): void {
+		global $wpdb;
+
+		Spotship_WI_Rate_Limiter::consume( 'test', 3, 60 );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- `autoload` is a column no WordPress API exposes.
+		$autoload = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT autoload FROM {$wpdb->options} WHERE option_name = %s",
+				$this->key()
+			)
+		);
+
+		$this->assertNotSame( 'yes', $autoload, 'per-IP counters must never autoload' );
 	}
 
 	/**

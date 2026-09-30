@@ -35,6 +35,8 @@ final class Spotship_WI_Renderer {
 	 *
 	 * A counter rather than the form uuid because ids only need to be unique
 	 * within one render pass, and short readable ids keep the markup legible.
+	 *
+	 * @var int
 	 */
 	private static int $instances = 0;
 

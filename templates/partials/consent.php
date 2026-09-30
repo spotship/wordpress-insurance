@@ -17,9 +17,9 @@ defined( 'ABSPATH' ) || exit;
  * @var string $sswi_uid
  */
 
-$sswi_privacy      = (string) Spotship_WI_Settings::get( 'privacy_notice_url', '' );
-$sswi_consent_id   = $sswi_uid . '-consent';
-$sswi_consent_err  = $sswi_consent_id . '-error';
+$sswi_privacy     = (string) Spotship_WI_Settings::get( 'privacy_notice_url', '' );
+$sswi_consent_id  = $sswi_uid . '-consent';
+$sswi_consent_err = $sswi_consent_id . '-error';
 ?>
 <div class="sswi-field sswi-consent" data-sswi-field="dataConsent">
 	<label for="<?php echo esc_attr( $sswi_consent_id ); ?>">

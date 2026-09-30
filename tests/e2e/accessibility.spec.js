@@ -140,10 +140,21 @@ for ( const [ label, path ] of [
 }
 
 test( 'Elementor: the shortcode renders and axe is clean inside a page builder', async ( { page } ) => {
-	// Skips rather than fails when Elementor could not be installed — a
-	// wordpress.org outage is not a defect in this plugin. seed-e2e.sh warns.
+	/*
+	 * Skips rather than fails when Elementor could not be installed — a
+	 * wordpress.org outage is not a defect in this plugin. seed-e2e.sh warns.
+	 *
+	 * The status is NOT a sufficient absence check: WordPress guesses at 404
+	 * permalinks and redirects to a near match with a 200, so a missing page
+	 * arrives looking like a different page that happens to have no form. Test
+	 * the landing URL as well.
+	 */
 	const response = await page.goto( '/insurance-elementor/' );
-	test.skip( ! response || 404 === response.status(), 'Elementor page absent; see seed-e2e.sh' );
+
+	test.skip(
+		! response || 404 === response.status() || ! page.url().includes( 'insurance-elementor' ),
+		'Elementor page absent; see the warning from seed-e2e.sh'
+	);
 
 	await page.waitForLoadState( 'networkidle' );
 

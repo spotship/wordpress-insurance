@@ -77,6 +77,11 @@ fi
 # CSS reset and JS, and renders the shortcode inside its own wrapper markup
 # rather than in the_content directly.
 #
+# Elementor requires WordPress >= 6.8, which is why .wp-env.json pins 6.8 rather
+# than the plugin's 6.4 floor. The floor is still enforced, on four PHP/WP
+# combinations, by the PHPUnit integration matrix; nothing is lost by running the
+# BROWSER suite on a version customers actually have.
+#
 # Non-fatal: a wordpress.org outage must not turn the whole browser suite red.
 # The spec skips when the page is absent rather than failing.
 if wp plugin install elementor --activate; then

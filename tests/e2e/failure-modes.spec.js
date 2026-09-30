@@ -37,6 +37,16 @@ test( 'with the backend down, a submission is refused rather than reported as se
 	await page.locator( '[data-sswi-field="userEmail"] input' ).fill( 'visitor@example.test' );
 	await page.locator( '[data-sswi-consent]' ).check();
 
+	/*
+	 * WAIT OUT THE MINIMUM FORM AGE FIRST. A submission younger than
+	 * Request_Guard::MIN_AGE is treated as a bot and answered with the decoy —
+	 * a 200 built by the same receipt() call as a real success, byte-identical
+	 * to one, that sends nothing upstream. Submitting immediately would make
+	 * these specs assert against the decoy and pass or fail for reasons that
+	 * have nothing to do with the injected fault.
+	 */
+	await page.waitForTimeout( 3500 );
+
 	await page.locator( '.sswi-submit' ).click();
 	await page.waitForTimeout( 800 );
 
@@ -80,6 +90,16 @@ test( 'a revoked key produces the neutral sentence and never names the credentia
 	await page.locator( '[data-sswi-field="userName"] input' ).fill( 'A Visitor' );
 	await page.locator( '[data-sswi-field="userEmail"] input' ).fill( 'visitor@example.test' );
 	await page.locator( '[data-sswi-consent]' ).check();
+
+	/*
+	 * WAIT OUT THE MINIMUM FORM AGE FIRST. A submission younger than
+	 * Request_Guard::MIN_AGE is treated as a bot and answered with the decoy —
+	 * a 200 built by the same receipt() call as a real success, byte-identical
+	 * to one, that sends nothing upstream. Submitting immediately would make
+	 * these specs assert against the decoy and pass or fail for reasons that
+	 * have nothing to do with the injected fault.
+	 */
+	await page.waitForTimeout( 3500 );
 
 	await page.locator( '.sswi-submit' ).click();
 	await page.waitForTimeout( 800 );

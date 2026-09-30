@@ -20,7 +20,11 @@ module.exports = defineConfig( {
 	forbidOnly: !! process.env.CI,
 	retries: process.env.CI ? 1 : 0,
 	workers: 1,
-	reporter: process.env.CI ? [ [ 'github' ], [ 'list' ] ] : [ [ 'list' ] ],
+	// The html reporter is what the ci.yaml artifact uploads. Without it the
+	// artifact uploads an empty directory and the evidence is only the log.
+	reporter: process.env.CI
+		? [ [ 'github' ], [ 'list' ], [ 'html', { open: 'never' } ], [ 'json', { outputFile: 'playwright-report/results.json' } ] ]
+		: [ [ 'list' ] ],
 
 	use: {
 		baseURL: process.env.WP_BASE_URL || 'http://localhost:8888',

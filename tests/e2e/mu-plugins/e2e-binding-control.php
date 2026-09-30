@@ -29,23 +29,52 @@ add_action(
 	'admin_init',
 	static function (): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- See the file docblock: test-only, capability-gated, never shipped.
-		if ( ! isset( $_GET['spotship_e2e_bind'] ) || ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
 
-		$requested = sanitize_text_field( wp_unslash( (string) $_GET['spotship_e2e_bind'] ) );
-		// phpcs:enable WordPress.Security.NonceVerification.Recommended
-
 		$settings = get_option( 'spotship_wi_settings', array() );
 		$settings = is_array( $settings ) ? $settings : array();
+		$dirty    = false;
 
-		// An empty value means "bind to wherever we actually are", which is how
-		// a test restores the environment it borrowed.
-		$settings['bound_site_url'] = '' === $requested
-			? Spotship_WI_Settings::current_site_url()
-			: $requested;
+		if ( isset( $_GET['spotship_e2e_bind'] ) ) {
+			$requested = sanitize_text_field( wp_unslash( (string) $_GET['spotship_e2e_bind'] ) );
+
+			// An empty value means "bind to wherever we actually are", which is
+			// how a test restores the environment it borrowed.
+			$settings['bound_site_url'] = '' === $requested
+				? Spotship_WI_Settings::current_site_url()
+				: $requested;
+
+			$dirty = true;
+		}
+
+		/*
+		 * Swapping the credential is how the staging job drives a revoked key
+		 * against the REAL backend, so the 401 under test is genuinely the
+		 * backend's rather than a fixture imitating one.
+		 */
+		if ( isset( $_GET['spotship_e2e_key'] ) ) {
+			$settings['api_key'] = sanitize_text_field( wp_unslash( (string) $_GET['spotship_e2e_key'] ) );
+			$dirty               = true;
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		if ( ! $dirty ) {
+			return;
+		}
 
 		update_option( 'spotship_wi_settings', $settings );
+
+		/*
+		 * The rates cache is keyed on neither the binding nor the credential, so
+		 * both tiers would survive a swap and answer from before the change. The
+		 * BACKUP tier matters most: it has a seven-day life, so without this a
+		 * revoked-key test would keep rendering a table it is no longer entitled
+		 * to and read as a pass.
+		 */
+		delete_transient( Spotship_WI_Rates_Cache::FRESH );
+		delete_transient( Spotship_WI_Rates_Cache::BACKUP );
 	},
 	1
 );

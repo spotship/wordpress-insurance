@@ -17,6 +17,10 @@ set -euo pipefail
 SPOTSHIP_UPSTREAM="${SPOTSHIP_UPSTREAM:-http://host.docker.internal:8080}"
 echo "upstream: $SPOTSHIP_UPSTREAM"
 
+# A throwaway uuid by default, because the stand-in upstream does not check it.
+# The staging workflow passes a REAL credential here instead. Never echoed.
+SPOTSHIP_API_KEY="${SPOTSHIP_API_KEY:-3f2504e0-4f89-41d3-9a0c-0305e82c3301}"
+
 wp() { npx wp-env run cli wp "$@"; }
 
 echo "activating the plugin"
@@ -27,7 +31,7 @@ echo "configuring and binding"
 wp option update spotship_wi_settings --format=json "$(cat <<JSON
 {
   "api_base_url": "${SPOTSHIP_UPSTREAM}",
-  "api_key": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "api_key": "${SPOTSHIP_API_KEY}",
   "privacy_notice_url": "https://example.test/privacy/",
   "support_email": "insurance@example.test",
   "rates_cache_ttl": 3600,

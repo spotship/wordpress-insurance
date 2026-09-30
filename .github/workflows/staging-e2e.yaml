@@ -1,0 +1,106 @@
+name: Staging E2E
+
+# MANUAL ONLY, and never on a pull request.
+#
+# This is the only suite that talks to the real API. It needs a live credential
+# and it writes real records, so it must not be reachable from a fork, a
+# pull_request event, or an automatic push trigger.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why this run is being made (recorded in the evidence)'
+        required: true
+        default: 'Verify ENG-5587 against the real backend'
+
+concurrency:
+  # Never two at once: concurrent runs would interleave submissions and make
+  # the resulting records ambiguous about which run produced them.
+  group: staging-e2e
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: Real backend
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      # FAIL LOUDLY RATHER THAN SKIP. A job that silently passes because its
+      # secrets are absent is worse than no job: it reports green for a suite
+      # that never ran, which is the exact failure this whole ticket has been
+      # about.
+      - name: Require credentials
+        env:
+          URL: ${{ secrets.SPOTSHIP_STAGING_URL }}
+          KEY: ${{ secrets.SPOTSHIP_STAGING_KEY }}
+        run: |
+          missing=""
+          [ -n "$URL" ] || missing="$missing SPOTSHIP_STAGING_URL"
+          [ -n "$KEY" ] || missing="$missing SPOTSHIP_STAGING_KEY"
+
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            echo "This suite verifies persistence, attribution and consent provenance"
+            echo "against the real backend. It cannot be faked, and it must not pass"
+            echo "without running. Add the secrets and dispatch again."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run against the real backend
+        env:
+          SPOTSHIP_STAGING_URL: ${{ secrets.SPOTSHIP_STAGING_URL }}
+          SPOTSHIP_STAGING_KEY: ${{ secrets.SPOTSHIP_STAGING_KEY }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          set -euo pipefail
+
+          npx wp-env start
+
+          # Seeded against the REAL endpoint, so no stand-in is involved and
+          # no mu-plugin host allowance is needed: staging is a public host.
+          SPOTSHIP_UPSTREAM="$SPOTSHIP_STAGING_URL" \
+          SPOTSHIP_API_KEY="$SPOTSHIP_STAGING_KEY" \
+            bash bin/seed-e2e.sh
+
+          npx playwright test --config=playwright.staging.config.js
+
+      - name: Record what was run
+        if: always()
+        env:
+          REASON: ${{ inputs.reason }}
+        run: |
+          mkdir -p staging-evidence
+          {
+            echo "# Staging E2E evidence"
+            echo
+            echo "- Reason: ${REASON}"
+            echo "- Commit: ${GITHUB_SHA}"
+            echo "- Run:    ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- When:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            echo "## Not covered by this run"
+            echo
+            echo "Referral email and Slack delivery are side effects on the Spot Ship"
+            echo "side of the API. This job has no mailbox and no Slack access, so it"
+            echo "cannot confirm either fired. They remain a manual check."
+          } > staging-evidence/RUN.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: staging-evidence
+          path: |
+            staging-evidence/
+            staging-report/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 30

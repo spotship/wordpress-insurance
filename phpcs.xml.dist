@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<ruleset name="Spot Ship War Insurance">
+	<description>WordPress Coding Standards + PHP 8.1 compatibility.</description>
+
+	<file>.</file>
+
+	<exclude-pattern>/vendor/*</exclude-pattern>
+	<exclude-pattern>/node_modules/*</exclude-pattern>
+	<exclude-pattern>/dist/*</exclude-pattern>
+	<exclude-pattern>/.ship/*</exclude-pattern>
+
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+	<arg value="ps"/>
+	<arg name="parallel" value="8"/>
+
+	<rule ref="WordPress">
+		<!--
+		  DELIBERATE, NOT AN OVERSIGHT. See .ship/TICKET.md §2 and the design doc.
+
+		  This plugin does not use WP nonces on its public proxy routes. For a
+		  logged-out visitor a nonce adds no CSRF value, and under a Cloudflare
+		  "cache everything" rule a nonce baked into cached HTML goes stale and
+		  EVERY submit 403s. The replacement is a deterministic HMAC over a
+		  timestamp and form id (`_sswi_ts` / `_sswi_sig`), which survives caching,
+		  plus an origin/referer check, a visually-hidden honeypot and per-IP
+		  transient limits.
+
+		  Without this commented exclusion a future maintainer sees a security
+		  warning on every handler, adds a nonce, and reintroduces the bug.
+		  Do not remove it without reading §2 first.
+		-->
+		<exclude name="WordPress.Security.NonceVerification"/>
+
+		<!-- Short array syntax is fine; the long-array sniff is noise here. -->
+		<exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
+	</rule>
+
+	<!--
+	  Kept ON deliberately: these two mechanically enforce the escaping and
+	  sanitisation rules in §7/§8, so those controls stop depending on reviewer
+	  diligence. WordPress.Security.EscapeOutput and ValidatedSanitizedInput are
+	  the reason the ruleset is worth running at all.
+	-->
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array" value="spotship-war-insurance"/>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array" value="spotship_wi,SPOTSHIP_WI,Spotship_WI"/>
+		</properties>
+	</rule>
+
+	<config name="minimum_wp_version" value="6.4"/>
+	<config name="testVersion" value="8.1-"/>
+	<rule ref="PHPCompatibilityWP"/>
+</ruleset>

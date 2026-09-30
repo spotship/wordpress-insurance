@@ -268,6 +268,31 @@ test( 'the translation catalogue covers every translatable string in the source'
 	);
 } );
 
+test( 'the scrollable rate table is reachable by keyboard', () => {
+	/*
+	 * At 320px the table overflows horizontally, and a scroll container that
+	 * cannot be focused is pointer-only — a keyboard visitor cannot read the
+	 * columns past the fold. axe caught this as scrollable-region-focusable
+	 * (WCAG 2.1.1 and 2.1.3) in the narrow project, and only there: the desktop
+	 * project was green on the same markup.
+	 */
+	const table = read( 'templates/partials/rates-table.php' );
+	const css = read( 'assets/css/war-insurance.css' );
+
+	assert.match( table, /class="sswi-rates-scroll"[^>]*tabindex="0"/, 'the scroll container must be focusable' );
+	assert.match( table, /role="region"/, 'and be a landmark' );
+	assert.match( table, /aria-label="<\?php esc_attr_e\( 'Indicative war risk rates'/, 'with an accessible name' );
+
+	// The overflow must live on the focusable element, not on an ancestor —
+	// moving it back up is what recreates the violation.
+	assert.match( css, /\.sswi-rates-scroll \{\s*overflow-x: auto;/, 'overflow belongs to the focusable container' );
+	assert.ok(
+		! /\.spotship-wi \.sswi-rates \{[^}]*overflow-x/.test( css ),
+		'.sswi-rates must not scroll: it also holds the date, the stale warning and the disclaimers'
+	);
+	assert.match( css, /\.sswi-rates-scroll:focus-visible/, 'a focusable element needs a visible focus ring' );
+} );
+
 test( 'the rate table renders the disclaimers the endpoint serves', () => {
 	/*
 	 * These are not decoration. They state the figures are indicative only, not

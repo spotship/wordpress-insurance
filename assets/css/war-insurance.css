@@ -55,6 +55,7 @@
 .spotship-wi select:focus-visible,
 .spotship-wi textarea:focus-visible,
 .spotship-wi button:focus-visible,
+.spotship-wi .sswi-rates-scroll:focus-visible,
 .spotship-wi [role="option"]:focus-visible {
 	outline: 3px solid var( --spotship-wi-accent );
 	outline-offset: 2px;
@@ -152,6 +153,14 @@
 
 .spotship-wi .sswi-rates {
 	margin-block-end: 1.5rem;
+}
+
+/*
+ * Only the table scrolls, and the container is focusable so a keyboard-only
+ * visitor can reach the columns past the fold at 320px. See the note in
+ * templates/partials/rates-table.php.
+ */
+.spotship-wi .sswi-rates-scroll {
 	overflow-x: auto;
 }
 

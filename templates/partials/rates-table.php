@@ -67,6 +67,23 @@ $sswi_stale = in_array( $sswi_tier, array( 'backup', 'bundled' ), true );
 		</p>
 	<?php endif; ?>
 
+	<?php
+	/*
+	 * THE SCROLLING REGION IS FOCUSABLE, AND IT WRAPS THE TABLE ONLY.
+	 *
+	 * At 320px the rate table overflows horizontally. A scroll container that
+	 * cannot be focused can only be scrolled by pointer, so a keyboard-only
+	 * visitor cannot read the columns past the fold — axe flags it as
+	 * scrollable-region-focusable, WCAG 2.1.1 and 2.1.3, and it is right.
+	 *
+	 * Previously `overflow-x: auto` sat on .sswi-rates, which also contains the
+	 * publication date, the stale warning and the disclaimers. Those should not
+	 * scroll sideways, and the region's accessible name should describe the
+	 * table, so the container now wraps the table alone.
+	 */
+	?>
+	<div class="sswi-rates-scroll" tabindex="0" role="region"
+		aria-label="<?php esc_attr_e( 'Indicative war risk rates', 'spotship-war-insurance' ); ?>">
 	<table>
 		<caption><?php esc_html_e( 'Indicative war risk rates', 'spotship-war-insurance' ); ?></caption>
 		<thead>
@@ -94,6 +111,7 @@ $sswi_stale = in_array( $sswi_tier, array( 'backup', 'bundled' ), true );
 			<?php endforeach; ?>
 		</tbody>
 	</table>
+	</div>
 
 	<?php
 	/*

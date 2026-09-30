@@ -39,6 +39,17 @@ final class Spotship_WI_Rates_Cache {
 	private const LOCK_TTL = 10;
 
 	/**
+	 * The fetch lock value this request wrote, if it holds the lock.
+	 *
+	 * Request-scoped on purpose: it is proof of ownership for THIS process, and
+	 * a release that cannot prove ownership must not delete the row. See
+	 * release_lock().
+	 *
+	 * @var string|null
+	 */
+	private static $lock_token = null;
+
+	/**
 	 * The rate table and the tier that produced it.
 	 *
 	 * @return array{tier: string, rates: array<string, mixed>}
@@ -139,9 +150,12 @@ final class Spotship_WI_Rates_Cache {
 	 * add_option has no TTL.
 	 */
 	private static function acquire_lock(): bool {
-		$now = time();
+		$now   = time();
+		$token = self::mint_token( $now );
 
-		if ( add_option( self::LOCK, (string) $now, '', false ) ) {
+		if ( add_option( self::LOCK, $token, '', false ) ) {
+			self::$lock_token = $token;
+
 			return true;
 		}
 
@@ -150,31 +164,81 @@ final class Spotship_WI_Rates_Cache {
 		 * at the backup tier until someone noticed. Anything older than the TTL is
 		 * treated as abandoned and taken over.
 		 */
-		$held = (int) get_option( self::LOCK, '0' );
+		$held = (int) strtok( (string) get_option( self::LOCK, '0' ), ':' );
 
 		if ( $held > 0 && ( $now - $held ) > self::LOCK_TTL ) {
-			self::release_lock();
+			delete_option( self::LOCK );
 
-			return (bool) add_option( self::LOCK, (string) $now, '', false );
+			// A NEW token for the takeover: if two requests judge the same lock
+			// abandoned, only the one whose value is actually in the row may
+			// release it, and reusing the value minted above would make the two
+			// indistinguishable.
+			$retry = self::mint_token( $now );
+
+			if ( add_option( self::LOCK, $retry, '', false ) ) {
+				self::$lock_token = $retry;
+
+				return true;
+			}
 		}
 
 		return false;
 	}
 
 	/**
-	 * Release the fetch lock.
+	 * A value unique to this request.
+	 *
+	 * The timestamp stays FIRST and colon-separated because takeover reads the
+	 * age straight back off it; the random half is what makes the value an
+	 * identity rather than just a clock reading. Two requests in the same second
+	 * would otherwise mint the same "token" and each be able to release the
+	 * other's lock, which is the bug this is here to close.
+	 *
+	 * @param int $now Current time.
+	 */
+	private static function mint_token( int $now ): string {
+		return $now . ':' . wp_generate_password( 12, false );
+	}
+
+	/**
+	 * Release the fetch lock — ONLY IF WE STILL HOLD IT.
+	 *
+	 * An unconditional `delete_option()` here is a correctness bug, not a
+	 * tidiness one. Request A takes the lock and is merely slow; after LOCK_TTL
+	 * request B judges it abandoned and takes over; A then finishes and deletes
+	 * the lock row — which now belongs to B — so a third request acquires
+	 * immediately and fetches while B is still fetching. The stampede guard
+	 * hands out two concurrent upstream calls at exactly the moment the upstream
+	 * is already slow, which is when it can least afford them.
+	 *
+	 * Comparing the stored value against our own token makes the release a no-op
+	 * once we have been taken over.
 	 */
 	private static function release_lock(): void {
-		delete_option( self::LOCK );
+		if ( null === self::$lock_token ) {
+			return;
+		}
+
+		if ( (string) get_option( self::LOCK, '' ) === self::$lock_token ) {
+			delete_option( self::LOCK );
+		}
+
+		self::$lock_token = null;
 	}
 
 	/**
 	 * Drop every cached copy. Used by the 401 rule and by uninstall.
+	 *
+	 * The lock goes unconditionally here, unlike release_lock(): purge means
+	 * "leave nothing behind", and a caller clearing a revoked customer's cache
+	 * does not hold the fetch lock and must not be blocked by one.
 	 */
 	public static function purge(): void {
 		delete_transient( self::FRESH );
 		delete_transient( self::BACKUP );
-		self::release_lock();
+		delete_option( self::LOCK );
+
+		self::$lock_token = null;
 	}
 
 	/**

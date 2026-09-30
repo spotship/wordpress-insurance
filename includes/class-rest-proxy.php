@@ -116,7 +116,15 @@ final class Spotship_WI_Rest_Proxy {
 			return false;
 		}
 
-		return Spotship_WI_Settings::normalise_site_url( $origin ) === Spotship_WI_Settings::current_site_url();
+		/*
+		 * HOSTS, not normalised URLs. `Origin` is scheme+host, but `Referer` is a
+		 * FULL URL including the path — so comparing whole URLs matches on Origin
+		 * and never on Referer, which silently disables the fallback this check
+		 * depends on for browsers and proxies that strip Origin.
+		 */
+		$host = Spotship_WI_Settings::host_of( $origin );
+
+		return '' !== $host && $host === Spotship_WI_Settings::current_host();
 	}
 
 	/**

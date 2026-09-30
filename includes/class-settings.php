@@ -229,6 +229,43 @@ final class Spotship_WI_Settings {
 	}
 
 	/**
+	 * The host of a URL, lowercased, with a non-default port kept.
+	 *
+	 * Used for same-origin checks, where ONLY the host may be compared. An
+	 * `Origin` header is scheme+host, but a `Referer` is a full URL including the
+	 * path — so comparing normalised URLs matches on Origin and never matches on
+	 * Referer, silently disabling the fallback the check depends on.
+	 *
+	 * The port is retained because host:8080 is a different origin from host:443,
+	 * and dropping it would let a dev server on the same hostname pass.
+	 *
+	 * @param string $url Candidate URL.
+	 */
+	public static function host_of( string $url ): string {
+		$parts = wp_parse_url( trim( $url ) );
+
+		if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
+			return '';
+		}
+
+		$host = strtolower( (string) $parts['host'] );
+		$port = isset( $parts['port'] ) ? (int) $parts['port'] : 0;
+
+		if ( 0 !== $port && 80 !== $port && 443 !== $port ) {
+			$host .= ':' . $port;
+		}
+
+		return $host;
+	}
+
+	/**
+	 * This site's host, for same-origin comparison.
+	 */
+	public static function current_host(): string {
+		return self::host_of( home_url() );
+	}
+
+	/**
 	 * The URL this install is bound to, or '' when unbound.
 	 */
 	public static function bound_site_url(): string {

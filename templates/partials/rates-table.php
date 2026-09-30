@@ -5,12 +5,17 @@
  * `updatedAt` is rendered PROMINENTLY, not as a subtle badge: war-risk rates
  * move fast and a stale table reads cheap.
  *
+ * Expects $data (for the product) and $sswi_rates.
+ *
  * @package Spotship_WI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-$sswi_table   = $sswi_rates['hull'] ?? array();
+// Keyed off the product being rendered. A literal here renders the hull
+// table under the cargo form, which is wrong AND commercially misleading:
+// cargo and hull rates are different numbers for the same zone.
+$sswi_table   = $sswi_rates[ $data['config']['product'] ] ?? array();
 $sswi_columns = $sswi_rates['columns'] ?? array();
 $sswi_updated = isset( $sswi_rates['updatedAt'] ) ? (string) $sswi_rates['updatedAt'] : '';
 ?>

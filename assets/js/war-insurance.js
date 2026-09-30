@@ -346,6 +346,244 @@
 			} );
 		}
 
+		/**
+		 * The ordered destination multi-select.
+		 *
+		 * Chips carry their own labelled remove button and every add/remove is
+		 * announced, because a silent list change is invisible to a screen reader.
+		 * ORDER IS MEANINGFUL — the backend stores position — so removal splices
+		 * rather than rebuilding from a set.
+		 */
+		function destinations( wrap ) {
+			var input = wrap.querySelector( 'input[role="combobox"]' );
+			var list = wrap.querySelector( '[role="listbox"]' );
+			var chips = wrap.querySelector( '[data-sswi-chips]' );
+			var live = wrap.querySelector( '[data-sswi-chip-live]' );
+			var listId = list.id;
+
+			var chosen = [];
+			var rows = [];
+			var active = -1;
+			var timer = null;
+
+			function announce( message ) {
+				if ( live ) {
+					text( live, message );
+				}
+			}
+
+			function paint() {
+				chips.innerHTML = '';
+
+				chosen.forEach( function ( row, index ) {
+					var li = document.createElement( 'li' );
+					var label = document.createElement( 'span' );
+					var button = document.createElement( 'button' );
+
+					label.textContent = row.name;
+
+					button.type = 'button';
+					button.textContent = '\u00D7';
+					button.setAttribute(
+						'aria-label',
+						String( i18n.removeChip || 'Remove %s' ).replace( '%s', row.name )
+					);
+
+					button.addEventListener( 'click', function () {
+						chosen.splice( index, 1 );
+						state.forget();
+						paint();
+						announce(
+							String( i18n.removeChip || 'Remove %s' ).replace( '%s', row.name )
+						);
+						input.focus();
+					} );
+
+					li.appendChild( label );
+					li.appendChild( button );
+					chips.appendChild( li );
+				} );
+			}
+
+			function close() {
+				hide( list );
+				input.setAttribute( 'aria-expanded', 'false' );
+				input.removeAttribute( 'aria-activedescendant' );
+				active = -1;
+			}
+
+			function add( row ) {
+				var already = chosen.some( function ( item ) {
+					return item.id === row.id;
+				} );
+
+				if ( already || chosen.length >= ( config.maxDestinations || 50 ) ) {
+					return;
+				}
+
+				chosen.push( row );
+				state.forget();
+				paint();
+				announce( row.name );
+				input.value = '';
+				close();
+			}
+
+			function highlight( index ) {
+				active = index;
+
+				list.querySelectorAll( '[role="option"]' ).forEach( function ( node, i ) {
+					node.setAttribute( 'aria-selected', i === index ? 'true' : 'false' );
+				} );
+
+				if ( index < 0 ) {
+					input.removeAttribute( 'aria-activedescendant' );
+					return;
+				}
+
+				// Same single derivation as every other listbox. See optionId().
+				input.setAttribute( 'aria-activedescendant', optionId( listId, index ) );
+			}
+
+			function render() {
+				list.innerHTML = '';
+
+				rows.forEach( function ( row, index ) {
+					var li = document.createElement( 'li' );
+
+					li.setAttribute( 'role', 'option' );
+					li.id = optionId( listId, index );
+					li.setAttribute( 'aria-selected', 'false' );
+					li.textContent = row.name + ( row.locode ? ' (' + row.locode + ')' : '' );
+
+					li.addEventListener( 'mousedown', function ( event ) {
+						event.preventDefault();
+						add( row );
+					} );
+
+					list.appendChild( li );
+				} );
+
+				if ( rows.length ) {
+					show( list );
+					input.setAttribute( 'aria-expanded', 'true' );
+				} else {
+					close();
+				}
+			}
+
+			input.addEventListener( 'input', function () {
+				var term = input.value.trim();
+
+				window.clearTimeout( timer );
+
+				if ( term.length < ( config.minQueryLength || 2 ) ) {
+					rows = [];
+					close();
+					return;
+				}
+
+				timer = window.setTimeout( function () {
+					state.lookup( 'location', term ).then(
+						function ( results ) {
+							rows = results;
+							render();
+							highlight( -1 );
+						},
+						function () {
+							rows = [];
+							close();
+						}
+					);
+				}, 200 );
+			} );
+
+			input.addEventListener( 'keydown', function ( event ) {
+				if ( list.hidden ) {
+					return;
+				}
+
+				if ( 'ArrowDown' === event.key ) {
+					event.preventDefault();
+					highlight( Math.min( active + 1, rows.length - 1 ) );
+				} else if ( 'ArrowUp' === event.key ) {
+					event.preventDefault();
+					highlight( Math.max( active - 1, 0 ) );
+				} else if ( 'Enter' === event.key && active >= 0 ) {
+					event.preventDefault();
+					add( rows[ active ] );
+				} else if ( 'Escape' === event.key ) {
+					close();
+				}
+			} );
+
+			return {
+				ids: function () {
+					return chosen.map( function ( row ) {
+						return row.id;
+					} );
+				},
+				reset: function () {
+					chosen = [];
+					rows = [];
+					input.value = '';
+					paint();
+					close();
+				},
+			};
+		}
+
+		/**
+		 * Populate the cargo risk-zone select from the served rate table.
+		 *
+		 * The zone list is the backend's, not ours — hardcoding it here would be a
+		 * second copy of a commercially-owned list, which is exactly the drift the
+		 * rates endpoint exists to end.
+		 */
+		function populateRiskZones() {
+			var select = root.querySelector( '[data-sswi-risk-zone]' );
+
+			if ( ! select ) {
+				return;
+			}
+
+			window
+				.fetch( config.root + '/rates', {
+					headers: { Accept: 'application/json' },
+					credentials: 'same-origin',
+				} )
+				.then( function ( response ) {
+					return response.json();
+				} )
+				.then( function ( body ) {
+					var zones = ( body && body.rates && body.rates.cargo ) || [];
+
+					zones.forEach( function ( row ) {
+						if ( ! row || ! row.zone ) {
+							return;
+						}
+
+						var option = document.createElement( 'option' );
+						option.value = row.zone;
+						option.textContent = row.zone;
+						select.appendChild( option );
+					} );
+				} )
+				.catch( function () {
+					/* The select stays at its placeholder; submission fails validation
+					   upstream rather than sending a zone we invented. */
+				} );
+		}
+
+		var destinationsField = null;
+
+		root.querySelectorAll( '[data-sswi-destinations]' ).forEach( function ( wrap ) {
+			destinationsField = destinations( wrap );
+			clearers.push( destinationsField.reset );
+		} );
+
+		populateRiskZones();
+
 		root.querySelectorAll( '[data-sswi-combo]' ).forEach( function ( wrap ) {
 			clearers.push( combobox( root, wrap, state ).reset );
 		} );
@@ -371,6 +609,12 @@
 			} );
 
 			payload.dataConsent = form.querySelector( '#sswi-consent' ).checked;
+
+			if ( destinationsField ) {
+				// Ordered: the backend stores position, so this is not a set.
+				payload.destinations = destinationsField.ids();
+			}
+
 			payload.submissionId = submissionId;
 
 			var endpoint = 'cargo' === config.product ? '/cargo-quote-request' : '/quote-request';

@@ -29,7 +29,7 @@ $sswi_id      = 'sswi-' . $sswi_combo_name;
 $sswi_list    = $sswi_id . '-list';
 $sswi_err     = $sswi_id . '-error';
 $sswi_live    = $sswi_id . '-live';
-$sswi_hint_id = isset( $sswi_combo_hint ) && '' !== $sswi_combo_hint ? $sswi_id . '-hint' : '';
+$sswi_hint_id = '' !== $sswi_combo_hint ? $sswi_id . '-hint' : '';
 ?>
 <div class="sswi-field sswi-combo" data-sswi-combo="<?php echo esc_attr( $sswi_combo_kind ); ?>" data-sswi-field="<?php echo esc_attr( $sswi_combo_name ); ?>">
 	<label for="<?php echo esc_attr( $sswi_id ); ?>"><?php echo esc_html( $sswi_combo_label ); ?></label>

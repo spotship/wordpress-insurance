@@ -58,6 +58,7 @@ $sswi_rates   = $sswi_serving['rates'];
 		$sswi_maxlength    = 254;
 		$sswi_required     = true;
 		$sswi_autocomplete = 'email';
+		$sswi_hint         = '';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 
 		$sswi_name         = 'userPhone';
@@ -66,6 +67,7 @@ $sswi_rates   = $sswi_serving['rates'];
 		$sswi_maxlength    = 20;
 		$sswi_required     = false;
 		$sswi_autocomplete = 'tel';
+		$sswi_hint         = '';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 		?>
 
@@ -79,11 +81,13 @@ $sswi_rates   = $sswi_serving['rates'];
 		$sswi_combo_name  = 'fromPort';
 		$sswi_combo_label = __( 'From location', 'spotship-war-insurance' );
 		$sswi_combo_kind  = 'location';
+		$sswi_combo_hint  = __( 'Type at least two characters, then choose from the list.', 'spotship-war-insurance' );
 		require SPOTSHIP_WI_PATH . 'templates/partials/combobox.php';
 
 		$sswi_combo_name  = 'toPort';
 		$sswi_combo_label = __( 'To location', 'spotship-war-insurance' );
 		$sswi_combo_kind  = 'location';
+		$sswi_combo_hint  = __( 'Type at least two characters, then choose from the list.', 'spotship-war-insurance' );
 		require SPOTSHIP_WI_PATH . 'templates/partials/combobox.php';
 		?>
 
@@ -97,9 +101,13 @@ $sswi_rates   = $sswi_serving['rates'];
 		$sswi_hint         = '';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 
-		$sswi_name      = 'increasedValue';
-		$sswi_label     = __( 'Increased value', 'spotship-war-insurance' );
-		$sswi_maxlength = 40;
+		$sswi_name         = 'increasedValue';
+		$sswi_label        = __( 'Increased value', 'spotship-war-insurance' );
+		$sswi_type         = 'text';
+		$sswi_maxlength    = 40;
+		$sswi_required     = false;
+		$sswi_autocomplete = '';
+		$sswi_hint         = '';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 		?>
 

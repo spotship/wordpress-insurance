@@ -36,7 +36,7 @@ defined( 'ABSPATH' ) || exit;
 $sswi_table   = $sswi_rates[ $data['config']['product'] ] ?? array();
 $sswi_columns = $sswi_rates['columns'] ?? array();
 $sswi_updated = isset( $sswi_rates['updatedAt'] ) ? (string) $sswi_rates['updatedAt'] : '';
-$sswi_tier    = (string) ( $sswi_serving['tier'] ?? '' );
+$sswi_tier    = $sswi_serving['tier'];
 
 /*
  * A table served from the backup or bundled tier is NOT current, and the

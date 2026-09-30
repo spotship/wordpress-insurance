@@ -58,6 +58,7 @@ $sswi_rates   = $sswi_serving['rates'];
 		$sswi_maxlength    = 254;
 		$sswi_required     = true;
 		$sswi_autocomplete = 'email';
+		$sswi_hint         = '';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 
 		$sswi_name         = 'userPhone';
@@ -66,6 +67,7 @@ $sswi_rates   = $sswi_serving['rates'];
 		$sswi_maxlength    = 20;
 		$sswi_required     = false;
 		$sswi_autocomplete = 'tel';
+		$sswi_hint         = '';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 		?>
 
@@ -79,6 +81,7 @@ $sswi_rates   = $sswi_serving['rates'];
 		$sswi_combo_name  = 'fromPort';
 		$sswi_combo_label = __( 'From location', 'spotship-war-insurance' );
 		$sswi_combo_kind  = 'location';
+		$sswi_combo_hint  = __( 'Type at least two characters, then choose from the list.', 'spotship-war-insurance' );
 		require SPOTSHIP_WI_PATH . 'templates/partials/combobox.php';
 		?>
 
@@ -104,22 +107,31 @@ $sswi_rates   = $sswi_serving['rates'];
 		$sswi_hint         = '';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 
-		$sswi_name      = 'cargoWeight';
-		$sswi_label     = __( 'Cargo weight', 'spotship-war-insurance' );
-		$sswi_maxlength = 100;
-		$sswi_hint      = __( 'For example, 50,000 MT.', 'spotship-war-insurance' );
+		$sswi_name         = 'cargoWeight';
+		$sswi_label        = __( 'Cargo weight', 'spotship-war-insurance' );
+		$sswi_type         = 'text';
+		$sswi_maxlength    = 100;
+		$sswi_required     = true;
+		$sswi_autocomplete = '';
+		$sswi_hint         = __( 'For example, 50,000 MT.', 'spotship-war-insurance' );
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 
-		$sswi_name      = 'cargoValue';
-		$sswi_label     = __( 'Cargo value', 'spotship-war-insurance' );
-		$sswi_maxlength = 20;
-		$sswi_hint      = '';
+		$sswi_name         = 'cargoValue';
+		$sswi_label        = __( 'Cargo value', 'spotship-war-insurance' );
+		$sswi_type         = 'text';
+		$sswi_maxlength    = 20;
+		$sswi_required     = true;
+		$sswi_autocomplete = '';
+		$sswi_hint         = '';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 
-		$sswi_name      = 'insuredParty';
-		$sswi_label     = __( 'Insured party', 'spotship-war-insurance' );
-		$sswi_maxlength = 255;
-		$sswi_required  = false;
+		$sswi_name         = 'insuredParty';
+		$sswi_label        = __( 'Insured party', 'spotship-war-insurance' );
+		$sswi_type         = 'text';
+		$sswi_maxlength    = 255;
+		$sswi_required     = false;
+		$sswi_autocomplete = '';
+		$sswi_hint         = '';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 		?>
 

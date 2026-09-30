@@ -26,7 +26,7 @@ defined( 'ABSPATH' ) || exit;
 
 $sswi_id      = 'sswi-' . $sswi_name;
 $sswi_err     = $sswi_id . '-error';
-$sswi_hint_id = isset( $sswi_hint ) && '' !== $sswi_hint ? $sswi_id . '-hint' : '';
+$sswi_hint_id = '' !== $sswi_hint ? $sswi_id . '-hint' : '';
 ?>
 <div class="sswi-field" data-sswi-field="<?php echo esc_attr( $sswi_name ); ?>">
 	<label for="<?php echo esc_attr( $sswi_id ); ?>">
@@ -42,7 +42,7 @@ $sswi_hint_id = isset( $sswi_hint ) && '' !== $sswi_hint ? $sswi_id . '-hint' : 
 	<?php endif; ?>
 
 	<input
-		type="<?php echo esc_attr( $sswi_type ?? 'text' ); ?>"
+		type="<?php echo esc_attr( $sswi_type ); ?>"
 		id="<?php echo esc_attr( $sswi_id ); ?>"
 		name="<?php echo esc_attr( $sswi_name ); ?>"
 		<?php if ( ! empty( $sswi_maxlength ) ) : ?>

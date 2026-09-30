@@ -87,11 +87,21 @@ jobs:
             echo "- Run:    ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo "- When:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo
-            echo "## Not covered by this run"
+            echo "## What this run does and does not prove"
             echo
-            echo "Referral email and Slack delivery are side effects on the Spot Ship"
-            echo "side of the API. This job has no mailbox and no Slack access, so it"
-            echo "cannot confirm either fired. They remain a manual check."
+            echo "PROVES: both products submit through the shortcode AND through"
+            echo "Elementor; the row persists; and the stored row carries source,"
+            echo "originSiteUrl, consentText, consentGivenAt and dataConsent."
+            echo "Persistence is read back server-side by replaying the submissionId,"
+            echo "which the API answers with the ORIGINAL row. A 201 there would mean"
+            echo "the first submission never persisted."
+            echo
+            echo "DOES NOT PROVE: that the referral email or the Slack message fired."
+            echo "backend/insurance/notifications.py dispatches both fire-and-forget"
+            echo "and records no flag, so nothing in the API can be asked. Confirming"
+            echo "them needs the staging mailbox and the Slack channel. Check both by"
+            echo "hand for the markers in the receipts above, and note that a REPLAY"
+            echo "deliberately does not re-send either.""
           } > staging-evidence/RUN.md
 
       - uses: actions/upload-artifact@v4

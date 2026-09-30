@@ -21,6 +21,9 @@ echo "upstream: $SPOTSHIP_UPSTREAM"
 # The staging workflow passes a REAL credential here instead. Never echoed.
 SPOTSHIP_API_KEY="${SPOTSHIP_API_KEY:-3f2504e0-4f89-41d3-9a0c-0305e82c3301}"
 
+# Kept in step with tests/e2e/origin-binding.spec.js. Test fixture, local only.
+E2E_ADMIN_PASS="${E2E_ADMIN_PASS:-e2e-admin-password}"
+
 wp() { npx wp-env run cli wp "$@"; }
 
 # BRING THE DATABASE UP TO THE CORE VERSION FIRST.
@@ -33,6 +36,21 @@ wp() { npx wp-env run cli wp "$@"; }
 # passing, which reads like a flaky test and is not one.
 echo "updating the database to match core"
 wp core update-db
+
+# A TEST ADMINISTRATOR WITH KNOWN CREDENTIALS.
+#
+# The browser suite needs to reach wp-admin to exercise the origin-mismatch
+# notice and the one-click rebind. Assuming wp-env's default admin/password
+# cost three CI runs: the login POST simply returned to wp-login.php, and the
+# missing admin bar downstream read first as an upgrade screen and then as a
+# navigation race. Create the account instead of guessing at one.
+#
+# Local test fixture only. This runs against a throwaway wp-env database on
+# localhost and never touches a real site.
+echo "ensuring the e2e administrator exists"
+wp user create e2e-admin e2e-admin@example.test \
+	--role=administrator --user_pass="$E2E_ADMIN_PASS" \
+	|| wp user update e2e-admin --user_pass="$E2E_ADMIN_PASS"
 
 echo "activating the plugin"
 wp plugin activate "$(basename "$PWD")" || true

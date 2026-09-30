@@ -25,7 +25,13 @@ test.describe.configure( { mode: 'serial' } );
 // for that, and running out of it reads as a hang rather than as a timeout.
 test.setTimeout( 90000 );
 
-const ADMIN = { user: 'admin', pass: 'password' };
+// Created by bin/seed-e2e.sh, which must agree with this. wp-env's own default
+// account is not assumed: relying on it cost three CI runs to a login that
+// simply bounced back to the form.
+const ADMIN = {
+	user: 'e2e-admin',
+	pass: process.env.E2E_ADMIN_PASS || 'e2e-admin-password',
+};
 
 async function login( page ) {
 	await page.goto( '/wp-login.php' );
@@ -58,10 +64,22 @@ async function login( page ) {
 	 * credentials were accepted, and it says nothing about where WordPress or
 	 * its plugins choose to go next.
 	 */
-	const submitted = page.waitForURL(
-		( url ) => ! url.pathname.endsWith( 'wp-login.php' ),
-		{ timeout: 30000 }
-	);
+	const submitted = page
+		.waitForURL( ( url ) => ! url.pathname.endsWith( 'wp-login.php' ), { timeout: 20000 } )
+		.catch( async () => {
+			/*
+			 * Still on the form means the credentials were refused. Say so, and
+			 * say what WordPress said: a bare navigation timeout here sent me
+			 * looking at upgrade screens and navigation races for three CI runs
+			 * before the actual cause — a wrong password — was visible.
+			 */
+			const error = await page.locator( '#login_error' ).textContent().catch( () => null );
+
+			throw new Error(
+				`login as "${ ADMIN.user }" was refused; WordPress said: ` +
+					( error ? error.trim() : '(no #login_error on the page)' )
+			);
+		} );
 
 	await page.locator( '#wp-submit' ).click();
 	await submitted;
@@ -101,10 +119,19 @@ async function submitForm( page ) {
 }
 
 test.afterAll( async ( { browser } ) => {
-	// Leave the environment as it was found, whatever happened above.
+	// Leave the environment as it was found, whatever happened above. This logs
+	// in from scratch, so it needs the same room a test does — the default 30s
+	// hook timeout fired during an already-failing run and buried the real
+	// error under a second one.
+	test.setTimeout( 90000 );
+
 	const page = await browser.newPage();
-	await bindTo( page, '' );
-	await page.close();
+
+	try {
+		await bindTo( page, '' );
+	} finally {
+		await page.close();
+	}
 } );
 
 test( 'a site bound elsewhere cannot submit', async ( { page } ) => {

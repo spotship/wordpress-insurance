@@ -15,7 +15,13 @@ const fs = require( 'fs' );
 const path = require( 'path' );
 const { test, expect } = require( '@playwright/test' );
 
-const ADMIN = { user: 'admin', pass: 'password' };
+// Created by bin/seed-e2e.sh, which must agree with this. wp-env's own default
+// account is not assumed: relying on it cost three CI runs to a login that
+// simply bounced back to the form.
+const ADMIN = {
+	user: 'e2e-admin',
+	pass: process.env.E2E_ADMIN_PASS || 'e2e-admin-password',
+};
 const EVIDENCE = path.join( __dirname, '..', '..', 'staging-evidence' );
 
 fs.mkdirSync( EVIDENCE, { recursive: true } );

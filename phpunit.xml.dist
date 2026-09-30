@@ -2,32 +2,27 @@
 <phpunit
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+	bootstrap="tests/bootstrap-unit.php"
 	colors="true"
 	beStrictAboutTestsThatDoNotTestAnything="true"
 	failOnWarning="true"
 	failOnRisky="true"
-	cacheResultFile=".phpunit.result.cache"
-	bootstrap="tests/bootstrap-unit.php">
+	cacheResultFile=".phpunit.result.cache">
 
+	<!--
+	  UNIT ONLY. PHPUnit has no per-testsuite bootstrap: a single root `bootstrap`
+	  applies to every suite in the file. Listing both suites here would load the
+	  Brain Monkey bootstrap for the integration tests, where WP_UnitTestCase does
+	  not exist and every test errors before it runs. The integration suite
+	  therefore has its own config — see phpunit-integration.xml.dist.
+
+	  Brain Monkey, no WordPress: the risk in this plugin is concentrated in pure
+	  functions (trimmers, HMAC, cache tiering, payload mapping), and keeping them
+	  out of a WP bootstrap is what makes this suite fast enough to run constantly.
+	-->
 	<testsuites>
-		<!--
-		  `unit` runs with Brain Monkey and NO WordPress bootstrap, so it is fast
-		  and runs anywhere a PHP binary exists. The risk in this plugin is
-		  concentrated in pure functions (trimmers, HMAC, cache tiering, payload
-		  mapping), which is what makes that split worth having.
-		-->
 		<testsuite name="unit">
 			<directory suffix="Test.php">tests/unit</directory>
-		</testsuite>
-
-		<!--
-		  `integration` needs a real WordPress bootstrap and therefore wp-env.
-		  Run it with:
-		    npx wp-env run tests-cli --env-cwd=wp-content/plugins/<slug> \
-		      vendor/bin/phpunit --testsuite integration
-		-->
-		<testsuite name="integration">
-			<directory suffix="Test.php">tests/integration</directory>
 		</testsuite>
 	</testsuites>
 </phpunit>

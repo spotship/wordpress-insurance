@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<phpunit
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+	bootstrap="tests/bootstrap-integration.php"
+	colors="true"
+	beStrictAboutTestsThatDoNotTestAnything="true"
+	failOnWarning="true"
+	cacheResultFile=".phpunit-integration.result.cache">
+
+	<!--
+	  INTEGRATION ONLY, against a real WordPress loaded by wp-env.
+
+	  Separate from phpunit.xml.dist because a root `bootstrap` attribute applies
+	  to every suite in a file, so one config cannot serve both. Listing both
+	  suites in one file loads the Brain Monkey bootstrap for these tests, where
+	  WP_UnitTestCase does not exist and every test errors before it runs.
+
+	  Run it with `task test:integration`, which passes this config explicitly.
+	-->
+	<testsuites>
+		<testsuite name="integration">
+			<directory suffix="Test.php">tests/integration</directory>
+		</testsuite>
+	</testsuites>
+</phpunit>

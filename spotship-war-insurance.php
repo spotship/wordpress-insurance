@@ -99,6 +99,50 @@ function spotship_wi_boot(): void {
 
 add_action( 'plugins_loaded', 'spotship_wi_boot' );
 
+/**
+ * Wire the update checker against the private repository's Releases feed.
+ *
+ * The plugin runs on servers we do not control, against an API we version, so
+ * version skew is the real operational risk — the design names it as such. This
+ * plus the "enable auto-updates" line in the install runbook is what dissolves
+ * most of it.
+ *
+ * The repository is PRIVATE, so an unauthenticated check sees nothing. A token
+ * is read from an OPTIONAL customer-set constant; we never ship one. A Spot Ship
+ * token inside an artifact that is unpacked verbatim onto third-party servers
+ * would be a credential handed to every customer at once.
+ */
+add_action(
+	'init',
+	static function (): void {
+		$autoload = SPOTSHIP_WI_PATH . 'vendor/autoload.php';
+
+		if ( ! is_readable( $autoload ) ) {
+			return;
+		}
+
+		require_once $autoload;
+
+		if ( ! class_exists( '\\YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory' ) ) {
+			return;
+		}
+
+		$checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+			'https://github.com/spotship/wordpress-insurance/',
+			SPOTSHIP_WI_FILE,
+			'spotship-war-insurance'
+		);
+
+		if ( defined( 'SPOTSHIP_WI_GITHUB_TOKEN' ) && is_string( SPOTSHIP_WI_GITHUB_TOKEN ) && '' !== SPOTSHIP_WI_GITHUB_TOKEN ) {
+			$checker->setAuthentication( SPOTSHIP_WI_GITHUB_TOKEN );
+		}
+
+		if ( method_exists( $checker, 'getVcsApi' ) && $checker->getVcsApi() ) {
+			$checker->getVcsApi()->enableReleaseAssets();
+		}
+	}
+);
+
 add_action( 'init', array( 'Spotship_WI_Shortcodes', 'register_blocks' ) );
 
 if ( is_admin() ) {

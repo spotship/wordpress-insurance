@@ -63,7 +63,7 @@ tasks:
   test:integration:
     desc: "PHPUnit integration suite inside wp-env (needs Docker)"
     cmds:
-      - npx wp-env run tests-cli --env-cwd=wp-content/plugins/{{.PLUGIN_SLUG}} vendor/bin/phpunit --testsuite integration
+      - npx wp-env run tests-cli --env-cwd=wp-content/plugins/{{.PLUGIN_SLUG}} vendor/bin/phpunit -c phpunit-integration.xml.dist
 
   test:e2e:
     desc: "Playwright happy paths against wp-env (needs Docker)"

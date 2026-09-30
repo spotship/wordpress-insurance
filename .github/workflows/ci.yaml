@@ -62,8 +62,16 @@ jobs:
       - run: bash bin/assert-version.sh
 
   integration:
-    name: PHPUnit integration (wp-env)
+    name: PHPUnit integration (WP ${{ matrix.wp }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The plugin declares "Requires at least: 6.4" and is installed on sites
+        # we do not control, so both ends of the supported range are tested.
+        wp: ['6.4', 'latest']
+    env:
+      WP_ENV_CORE: ${{ matrix.wp == 'latest' && 'WordPress/WordPress' || format('WordPress/WordPress#{0}', matrix.wp) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -80,7 +88,7 @@ jobs:
       - run: |
           npx wp-env run tests-cli \
             --env-cwd=wp-content/plugins/$(basename "$PWD") \
-            vendor/bin/phpunit --testsuite integration
+            vendor/bin/phpunit -c phpunit-integration.xml.dist
 
   e2e:
     # ⛔ Gated on ENG-6418. These specs are committed but have never executed —
@@ -96,6 +104,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      # The plugin is pointed at this, not at staging: a browser test must not
+      # depend on a live service or a real credential.
+      - run: node bin/e2e-upstream.js &
       - run: npx wp-env start
       - run: bash bin/seed-e2e.sh
       - run: npx playwright test

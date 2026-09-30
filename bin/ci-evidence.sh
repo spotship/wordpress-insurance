@@ -7,19 +7,53 @@
 # weeks later. This writes the per-job conclusions and the suite totals, with
 # the run URL, so the claim and its evidence travel together.
 #
-# Usage: bin/ci-evidence.sh <run-id> [output-file]
+# Usage: bin/ci-evidence.sh [run-id] [output-file]
+#
+# With no run id it resolves the newest run for the CURRENT HEAD and refuses to
+# write evidence for anything else. That default is the point: this file was
+# repeatedly left describing an older commit while the branch moved on, which
+# is worse than having no evidence — it reads as proof of a tree that is no
+# longer the one on the branch. Pass a run id explicitly to override, and it
+# will say so in the output.
 
 set -euo pipefail
 
-RUN="${1:?usage: ci-evidence.sh <run-id> [output-file]}"
-OUT="${2:-ci-evidence.md}"
 REPO="spotship/wordpress-insurance"
+HEAD_SHA=$( git rev-parse HEAD )
+
+if [ "$#" -ge 1 ] && [ -n "${1:-}" ]; then
+	RUN="$1"
+else
+	RUN=$( gh run list --repo "$REPO" --commit "$HEAD_SHA" \
+		--json databaseId,createdAt --jq 'sort_by(.createdAt) | last | .databaseId' )
+
+	if [ -z "$RUN" ] || [ "$RUN" = "null" ]; then
+		echo "ci-evidence: no run found for HEAD ($HEAD_SHA)." >&2
+		echo "ci-evidence: push the branch and let CI start, or pass a run id." >&2
+		exit 1
+	fi
+fi
+
+OUT="${2:-ci-evidence.md}"
 
 meta=$(gh run view "$RUN" --repo "$REPO" --json headSha,conclusion,createdAt,url)
 sha=$(jq -r .headSha <<<"$meta")
 conclusion=$(jq -r .conclusion <<<"$meta")
 created=$(jq -r .createdAt <<<"$meta")
 url=$(jq -r .url <<<"$meta")
+
+# THE GUARD. Evidence for a commit that is not HEAD is a claim about a tree
+# nobody is looking at any more.
+STALE=""
+if [ "$sha" != "$HEAD_SHA" ]; then
+	STALE="yes"
+	echo "ci-evidence: WARNING run $RUN is for $sha, but HEAD is $HEAD_SHA" >&2
+fi
+
+if [ "$conclusion" = "null" ] || [ -z "$conclusion" ]; then
+	echo "ci-evidence: run $RUN has not finished yet — refusing to record a partial result." >&2
+	exit 1
+fi
 
 {
 	echo "# CI evidence"
@@ -30,6 +64,11 @@ url=$(jq -r .url <<<"$meta")
 	echo "| Commit | \`$sha\` |"
 	echo "| Started | $created |"
 	echo "| Result | **$conclusion** |"
+
+	if [ -n "$STALE" ]; then
+		echo "| :warning: | **This run is NOT the current HEAD** (\`$HEAD_SHA\`). Re-run with no arguments. |"
+	fi
+
 	echo
 	echo "Collected by \`bin/ci-evidence.sh\` — re-run it against a newer run id"
 	echo "rather than editing the numbers below by hand."
@@ -46,7 +85,7 @@ url=$(jq -r .url <<<"$meta")
 	echo "## Suite totals"
 	echo
 
-	for job in "Playwright + axe" "Front-end (jsdom)"; do
+	for job in "Playwright + axe" "Front-end (jsdom)" "PHPUnit integration (PHP 8.3 / WP latest)"; do
 		# gh's own --jq takes no --arg, so pipe to jq for the parameterised query.
 		id=$(gh run view "$RUN" --repo "$REPO" --json jobs \
 			| jq -r --arg n "$job" '.jobs[] | select(.name==$n) | .databaseId')
@@ -57,7 +96,7 @@ url=$(jq -r .url <<<"$meta")
 		echo
 		echo '```'
 		gh api "repos/$REPO/actions/jobs/$id/logs" 2>/dev/null \
-			| grep -oE '[0-9]+ (passed|failed|skipped)( \([0-9.]+[ms]+\))?|all [0-9]+ mutations detected|# (tests|pass|fail) [0-9]+' \
+			| grep -oE '[0-9]+ (passed|failed|skipped)( \([0-9.]+[ms]+\))?|all [0-9]+ (js |php )?mutation(\(s\)|s) detected|# (tests|pass|fail) [0-9]+' \
 			| sort -u || echo '(no totals found in log)'
 		echo '```'
 		echo

@@ -32,6 +32,28 @@ final class RebindTest extends WP_UnitTestCase {
 	public function set_up(): void {
 		parent::set_up();
 
+		/*
+		 * SEED FIRST, REGISTER SECOND, and the order is the point.
+		 *
+		 * With the sanitize callback already attached there is no way to write a
+		 * foreign binding at all: on a fresh option there is no existing binding
+		 * to preserve, so sanitize() takes its second branch and binds to the
+		 * CURRENT site. The fixture would then describe a healthy install and
+		 * every assertion below would pass over a site that was never broken.
+		 *
+		 * This is also how the state arises in reality: the clone carries a
+		 * database written elsewhere, before any filter on this installation
+		 * existed.
+		 */
+		update_option(
+			Spotship_WI_Settings::OPTION,
+			array(
+				'api_base_url'   => 'https://api.example.test',
+				'api_key'        => '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+				'bound_site_url' => self::CLONE_URL,
+			)
+		);
+
 		// Exactly what spotship-war-insurance.php does on admin_init.
 		register_setting(
 			'spotship_wi',
@@ -40,15 +62,6 @@ final class RebindTest extends WP_UnitTestCase {
 				'type'              => 'array',
 				'sanitize_callback' => array( 'Spotship_WI_Settings', 'sanitize' ),
 				'default'           => array(),
-			)
-		);
-
-		update_option(
-			Spotship_WI_Settings::OPTION,
-			array(
-				'api_base_url'   => 'https://api.example.test',
-				'api_key'        => '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
-				'bound_site_url' => self::CLONE_URL,
 			)
 		);
 	}
@@ -97,6 +110,62 @@ final class RebindTest extends WP_UnitTestCase {
 			self::CLONE_URL,
 			Spotship_WI_Settings::bound_site_url(),
 			'saving settings must not silently re-point the binding'
+		);
+	}
+
+	public function test_rebinding_does_not_disturb_the_rest_of_the_configuration(): void {
+		/*
+		 * A re-bind must not re-validate everything it did not touch.
+		 *
+		 * sanitize() requires https on the base url — correctly, it carries a
+		 * bearer credential. But a clone's database can hold a value that was
+		 * written before that rule, and routing a re-bind through the full
+		 * sanitizer BLANKS it. The install ends up bound, unconfigured, and
+		 * answering 502 to every visitor, with the admin screen reporting that
+		 * the re-bind succeeded. A recovery action that destroys the
+		 * configuration it is recovering is worse than the original fault.
+		 *
+		 * Written straight to the option, before the filter exists, because
+		 * that is the only way the state arises: a database from elsewhere.
+		 */
+		unregister_setting( 'spotship_wi', Spotship_WI_Settings::OPTION );
+
+		update_option(
+			Spotship_WI_Settings::OPTION,
+			array(
+				'api_base_url'       => 'http://legacy.example.test',
+				'api_key'            => '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+				'bound_site_url'     => self::CLONE_URL,
+				'privacy_notice_url' => 'https://example.test/privacy',
+				'support_email'      => 'insurance@example.test',
+			)
+		);
+
+		register_setting(
+			'spotship_wi',
+			Spotship_WI_Settings::OPTION,
+			array(
+				'type'              => 'array',
+				'sanitize_callback' => array( 'Spotship_WI_Settings', 'sanitize' ),
+				'default'           => array(),
+			)
+		);
+
+		Spotship_WI_Settings::bind_to_current();
+
+		$this->assertSame(
+			Spotship_WI_Settings::current_site_url(),
+			Spotship_WI_Settings::bound_site_url(),
+			'the re-bind must still take effect'
+		);
+		$this->assertSame(
+			'http://legacy.example.test',
+			(string) Spotship_WI_Settings::get( 'api_base_url', '' ),
+			'the re-bind silently blanked the base url and left the install unconfigured'
+		);
+		$this->assertTrue(
+			Spotship_WI_Settings::is_configured(),
+			'an install that was configured before a re-bind must be configured after it'
 		);
 	}
 

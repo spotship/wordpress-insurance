@@ -137,6 +137,39 @@ final class Spotship_WI_Settings {
 	 * @return array<string, mixed>
 	 */
 	public static function sanitize( $input ): array {
+		/*
+		 * AN EXPLICIT RE-BIND CHANGES THE BINDING AND NOTHING ELSE.
+		 *
+		 * Two things forced this short-circuit, and the second is the one that
+		 * matters in production.
+		 *
+		 * First, register_setting()'s sanitize_callback filters EVERY
+		 * update_option() on this option, not only Settings API saves. So
+		 * bind_to_current() wrote the new binding and the branch below put the
+		 * old one straight back, while the admin screen reported "Re-bound to
+		 * this site. Submissions are enabled again." over an option that had
+		 * not changed — a false success on the documented recovery path for a
+		 * cloned site.
+		 *
+		 * Second, and worse: re-validating the WHOLE option during a re-bind
+		 * silently discards anything that would not pass validation today. A
+		 * stored api_base_url that is not https is blanked, which leaves the
+		 * install bound, unconfigured, and answering 502 to every visitor — the
+		 * re-bind having apparently succeeded. A recovery action that can
+		 * destroy the configuration it is recovering is worse than the fault.
+		 *
+		 * So: take the stored settings as they are and move the binding. The
+		 * ordering is what hid the first bug — the filter is registered on
+		 * admin_init at priority 10, so anything writing this option earlier
+		 * persists correctly and makes the write look sound.
+		 */
+		if ( self::$rebinding ) {
+			$rebound                   = self::all();
+			$rebound['bound_site_url'] = self::current_site_url();
+
+			return $rebound;
+		}
+
 		$input    = is_array( $input ) ? $input : array();
 		$existing = self::all();
 		$clean    = self::defaults();
@@ -205,25 +238,7 @@ final class Spotship_WI_Settings {
 		 */
 		$existing_binding = (string) ( $existing['bound_site_url'] ?? '' );
 
-		if ( self::$rebinding ) {
-			/*
-			 * The ONE exception, and the reason this flag exists.
-			 *
-			 * register_setting()'s sanitize_callback filters every
-			 * update_option() on this option, not only Settings API saves. So
-			 * bind_to_current() — the one-click recovery — wrote the new
-			 * binding and this branch put the old one straight back. The admin
-			 * screen then reported "Re-bound to this site. Submissions are
-			 * enabled again." over an option that had not changed: a false
-			 * success on the documented recovery path for a cloned site.
-			 *
-			 * It went unnoticed because the ordering hides it. The filter is
-			 * registered on admin_init at priority 10, so anything writing this
-			 * option earlier than that — including the e2e control mu-plugin at
-			 * priority 1 — persists correctly and makes the write look sound.
-			 */
-			$clean['bound_site_url'] = self::current_site_url();
-		} elseif ( '' !== $existing_binding ) {
+		if ( '' !== $existing_binding ) {
 			$clean['bound_site_url'] = $existing_binding;
 		} elseif ( '' !== $clean['api_base_url'] && '' !== ( self::key_is_constant() ? self::api_key() : $clean['api_key'] ) ) {
 			$clean['bound_site_url'] = self::current_site_url();

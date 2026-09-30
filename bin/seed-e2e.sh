@@ -23,6 +23,17 @@ SPOTSHIP_API_KEY="${SPOTSHIP_API_KEY:-3f2504e0-4f89-41d3-9a0c-0305e82c3301}"
 
 wp() { npx wp-env run cli wp "$@"; }
 
+# BRING THE DATABASE UP TO THE CORE VERSION FIRST.
+#
+# wp-env keeps its database across runs, so changing .wp-env.json's `core`
+# leaves the schema at the old version. WordPress then redirects the FIRST
+# admin request to wp-admin/upgrade.php — a minimal screen with no admin bar
+# and no settings page — and serves everything after it normally. In the
+# browser suite that presents as the first admin spec failing and the rest
+# passing, which reads like a flaky test and is not one.
+echo "updating the database to match core"
+wp core update-db
+
 echo "activating the plugin"
 wp plugin activate "$(basename "$PWD")" || true
 

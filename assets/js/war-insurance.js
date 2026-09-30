@@ -108,16 +108,24 @@
 		var timer = null;
 
 		/**
-		 * Write the chosen id. THE ONLY PLACE `hidden.value` is assigned, so the
-		 * submitted value and the displayed label cannot disagree.
+		 * Write the chosen id, or clear it with `commit( null )`.
+		 *
+		 * THE ONLY PLACE `hidden.value` IS ASSIGNED. Not a style rule: when the
+		 * clear lived in the input handler and the set lived here, the submitted
+		 * value and the displayed label were owned by two different pieces of code
+		 * and drifted — the form submitted one location while showing another.
+		 *
+		 * Both directions invalidate any pending attempt, because both mean the
+		 * control no longer holds what the visitor last confirmed.
 		 */
 		function commit( row ) {
 			hidden.value = row ? String( row.id ) : '';
-			input.value = row ? String( row.name ) : input.value;
 
 			if ( row ) {
-				state.forget();
+				input.value = String( row.name );
 			}
+
+			state.forget();
 		}
 
 		function close() {
@@ -190,9 +198,9 @@
 		}
 
 		input.addEventListener( 'input', function () {
-			// The typed text no longer matches the committed id.
-			hidden.value = '';
-			state.forget();
+			// The typed text no longer matches the committed id. Cleared THROUGH
+			// commit(), so that function remains the only writer.
+			commit( null );
 
 			var term = input.value.trim();
 
@@ -235,8 +243,8 @@
 
 		return {
 			reset: function () {
+				commit( null );
 				input.value = '';
-				hidden.value = '';
 				rows = [];
 				close();
 			},

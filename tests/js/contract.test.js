@@ -187,3 +187,53 @@ test( 'the e2e upstream routes cargo to the cargo shape, not the hull one', () =
 	);
 	assert.ok( ! ( 'handmValue' in cargo.body ), 'hull-only fields must not appear on cargo' );
 } );
+
+/*
+ * The three single-owner invariants below were each stated in a docblock and
+ * each drifted anyway — one of them after being written down. A comment cannot
+ * enforce "only one place assigns this"; these tests can.
+ *
+ * They are deliberately structural. They read the source and count, which is
+ * crude, but it is the only thing that fails when somebody adds a SECOND writer
+ * in a new function that behaves correctly on its own.
+ */
+
+test( 'exactly one place assigns the committed combobox id', () => {
+	const script = read( 'assets/js/war-insurance.js' );
+	const writes = [ ...script.matchAll( /^\s*hidden\.value\s*=/gm ) ];
+
+	assert.equal(
+		writes.length,
+		1,
+		'hidden.value must be written only by commit(); a second writer is how the ' +
+			'submitted id and the displayed label drifted apart last time'
+	);
+} );
+
+test( 'every aria-activedescendant is derived by optionId', () => {
+	const script = read( 'assets/js/war-insurance.js' );
+
+	const sets = [ ...script.matchAll( /setAttribute\(\s*'aria-activedescendant',\s*([^)]+)\)/g ) ];
+
+	assert.ok( sets.length >= 2, 'both listboxes set aria-activedescendant' );
+
+	sets.forEach( ( m ) => {
+		assert.match(
+			m[ 1 ].trim(),
+			/^optionId\(/,
+			'a listbox deriving its own option ids is exactly the stale-id defect'
+		);
+	} );
+} );
+
+test( 'exactly one place mints a submissionId after the first', () => {
+	const script = read( 'assets/js/war-insurance.js' );
+	const mints = [ ...script.matchAll( /^\s*submissionId\s*=\s*uuid\(\)/gm ) ];
+
+	assert.equal(
+		mints.length,
+		1,
+		'startAttempt() is the only place a submissionId may be minted; a second ' +
+			'mint site is how a reused id reported a false success'
+	);
+} );

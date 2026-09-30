@@ -111,6 +111,48 @@ fi
 		echo '```'
 		echo
 	done
+
+	# THE REAL-BACKEND SUITE IS A SEPARATE WORKFLOW, AND ITS ABSENCE IS THE
+	# THING WORTH RECORDING.
+	#
+	# ci.yaml never touches a real deployment, so a green CI run says nothing
+	# about persistence, attribution or consent provenance. Leaving that out of
+	# the evidence lets "all gates green" read as more than it is — which is the
+	# exact failure this file exists to prevent, one workflow over.
+	echo "## Real backend"
+	echo
+
+	rb=$( gh run list --repo "$REPO" --workflow real-backend-e2e.yaml --commit "$HEAD_SHA" \
+		--json databaseId,conclusion,url,displayTitle,event \
+		--jq 'sort_by(.databaseId) | last' 2>/dev/null || echo '' )
+
+	if [ -z "$rb" ] || [ "$rb" = "null" ]; then
+		echo "No real-backend run for this commit."
+		echo
+		echo "Persistence, attribution and consent provenance are therefore"
+		echo "evidenced only against the stand-in upstream. See README's known gaps."
+	else
+		echo "| | |"
+		echo "|---|---|"
+		echo "| Run | $( jq -r .url <<<"$rb" ) |"
+		echo "| Trigger | $( jq -r .event <<<"$rb" ) — $( jq -r .displayTitle <<<"$rb" ) |"
+		echo "| Result | **$( jq -r .conclusion <<<"$rb" )** |"
+		echo
+
+		# A tag run excludes @writes, so it proves the read-only half only.
+		# Saying so matters: a green tick here would otherwise read as though
+		# persistence had been covered, which is the claim most worth not
+		# overstating in this whole file.
+		if [ "$( jq -r .event <<<"$rb" )" = "push" ]; then
+			echo "**Scope: read-only.** A tag run excludes the two \`@writes\` tests that"
+			echo "store a quote row and fire a referral email and Slack post, so"
+			echo "persistence, attribution and consent provenance are NOT covered here."
+			echo "Only \`workflow_dispatch\` with \`writes=true\` covers those."
+		else
+			echo "Scope: a \`workflow_dispatch\` run. It covers the \`@writes\` tests only if"
+			echo "it was dispatched with \`writes=true\`; check the run's inputs."
+		fi
+	fi
 } > "$OUT"
 
 echo "wrote $OUT"

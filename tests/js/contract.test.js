@@ -267,3 +267,28 @@ test( 'the translation catalogue covers every translatable string in the source'
 		'these strings are translatable in the source but absent from the POT — run bin/refresh-pot.sh'
 	);
 } );
+
+test( 'the rate table renders the disclaimers the endpoint serves', () => {
+	/*
+	 * These are not decoration. They state the figures are indicative only, not
+	 * an offer or a quote, and subject to underwriting; they name Spot Ship's
+	 * introducer role and the insurance partner; and they scope the audience to
+	 * commercial shipping businesses. The table is published on a third party's
+	 * public website, so omitting them is a compliance failure.
+	 *
+	 * Serving them from the endpoint is also what makes deferring partner
+	 * sign-off tolerable — a wording change becomes a backend deploy rather than
+	 * a re-release to every install. That argument only holds while the plugin
+	 * renders whatever it is sent, which is what this asserts.
+	 */
+	const table = read( 'templates/partials/rates-table.php' );
+
+	assert.match( table, /\$sswi_rates\[\s*'disclaimers'\s*\]/, 'the template must read the disclaimers' );
+	assert.match( table, /foreach \( \$sswi_disclaimers/, 'and render each of them' );
+	assert.match( table, /esc_html\( \(string\) \$sswi_disclaimer \)/, 'escaped on output' );
+
+	// The e2e fixture must serve them, or the browser suite would pass over a
+	// table that renders none.
+	const fixture = read( 'bin/e2e-upstream.js' );
+	assert.match( fixture, /disclaimers:/, 'the e2e upstream must serve disclaimers' );
+} );

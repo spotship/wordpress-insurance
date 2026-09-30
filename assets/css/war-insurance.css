@@ -208,3 +208,19 @@
 .spotship-wi .sswi-rates-stale::before {
 	content: "\26A0\FE0E  ";
 }
+
+/*
+ * Disclaimers. Deliberately not small print: these state that the figures are
+ * indicative only and name the introducer relationship, on a page published on
+ * a third party's website. Styling them as a footnote would undercut the reason
+ * they are served at all.
+ */
+.spotship-wi .sswi-disclaimers {
+	margin-block-start: 0.75rem;
+	padding-inline-start: 0.75rem;
+	border-inline-start: 3px solid var( --spotship-wi-border );
+}
+
+.spotship-wi .sswi-disclaimers p {
+	margin-block: 0.4rem;
+}

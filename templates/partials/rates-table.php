@@ -72,4 +72,38 @@ $sswi_stale = in_array( $sswi_tier, array( 'backup', 'bundled' ), true );
 			<?php endforeach; ?>
 		</tbody>
 	</table>
+
+	<?php
+	/*
+	 * THE DISCLAIMERS ARE SERVED FROM THE ENDPOINT, AND RENDERING THEM IS THE
+	 * POINT OF THAT.
+	 *
+	 * They are not decoration. They state that the figures are indicative only,
+	 * not an offer or a quote, and subject to underwriting; they name Spot Ship's
+	 * introducer role and the insurance partner; and they scope the audience to
+	 * commercial shipping businesses rather than consumers. This table is
+	 * published on a third party's public website, so omitting them is a
+	 * compliance failure, not a missing flourish.
+	 *
+	 * Serving them from the rates endpoint rather than baking them into the
+	 * plugin is also what makes deferring partner sign-off tolerable: if the
+	 * partner wants different wording it is a backend string change, not a
+	 * re-release to every customer install. That argument only holds while the
+	 * plugin actually renders whatever it is sent.
+	 */
+	$sswi_disclaimers = isset( $sswi_rates['disclaimers'] ) && is_array( $sswi_rates['disclaimers'] )
+		? $sswi_rates['disclaimers']
+		: array();
+	?>
+
+	<?php if ( array() !== $sswi_disclaimers ) : ?>
+		<div class="sswi-disclaimers">
+			<?php foreach ( $sswi_disclaimers as $sswi_disclaimer ) : ?>
+				<?php if ( is_scalar( $sswi_disclaimer ) ) : ?>
+					<p><?php echo esc_html( (string) $sswi_disclaimer ); ?></p>
+				<?php endif; ?>
+			<?php endforeach; ?>
+		</div>
+	<?php endif; ?>
+
 </div>

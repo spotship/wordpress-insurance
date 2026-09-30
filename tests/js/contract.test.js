@@ -475,6 +475,68 @@ test( 'every named input can be reached by a field error', () => {
 	}
 } );
 
+test( 'no test class hides a method PHPUnit already declares', () => {
+	/*
+	 * THE DEFECT THIS GUARDS AGAINST, which cost a full CI cycle.
+	 *
+	 * `PHPUnit\Framework\TestCase` implements Countable, so `count()` is public
+	 * on every test class. A private helper of the same name is not an override
+	 * — it is a FATAL error at class-resolution time:
+	 *
+	 *   Access level to RateLimiterTest::count() must be public
+	 *
+	 * Nothing local sees it. `php -l` parses one file and this needs the parent
+	 * class; PHPStan's paths are the plugin, not tests/; and the jsdom suite
+	 * does not run PHP at all. The first thing to notice was five integration
+	 * jobs going red at once, every one of them on a fatal that had nothing to
+	 * do with what the tests assert.
+	 *
+	 * A name list is crude, and deliberately so: it catches the handful of
+	 * short, tempting names a helper actually reaches for, at the cost of
+	 * nothing.
+	 */
+	const RESERVED = [
+		'count',        // Countable — the one that bit
+		'run',
+		'toString',
+		'expects',
+		'fail',
+		'getName',
+		'setName',
+		'hasFailed',
+		'getStatus',
+		'createMock',
+		'getMockBuilder',
+		'addToAssertionCount',
+	];
+
+	const dirs = [ 'tests/unit', 'tests/integration' ];
+
+	let checked = 0;
+
+	for ( const dir of dirs ) {
+		for ( const file of fs.readdirSync( path.join( ROOT, dir ) ) ) {
+			if ( ! file.endsWith( '.php' ) ) {
+				continue;
+			}
+
+			checked += 1;
+
+			const src = read( `${ dir }/${ file }` );
+			const declared = [ ...src.matchAll( /function\s+([A-Za-z_]\w*)\s*\(/g ) ].map( ( m ) => m[ 1 ] );
+
+			for ( const name of RESERVED ) {
+				assert.ok(
+					! declared.includes( name ),
+					`${ dir }/${ file }: declares ${ name }(), which PHPUnit's TestCase already defines — that is a fatal error, not an override`
+				);
+			}
+		}
+	}
+
+	assert.ok( checked > 0, 'no PHP test files were scanned at all' );
+} );
+
 test( 'no template hard-codes an element id', () => {
 	/*
 	 * Element ids must be unique within a DOCUMENT, and a page may carry more

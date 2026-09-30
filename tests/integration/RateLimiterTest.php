@@ -27,7 +27,7 @@ final class RateLimiterTest extends WP_UnitTestCase {
 	}
 
 	/** The option the limiter counts in. */
-	private function key(): string {
+	private function bucket_key(): string {
 		return 'spotship_wi_rl_test_' . md5( Spotship_WI_Rate_Limiter::client_ip() );
 	}
 
@@ -38,17 +38,24 @@ final class RateLimiterTest extends WP_UnitTestCase {
 	 * @param int $count   Requests already counted.
 	 */
 	private function store( int $expires, int $count ): void {
-		update_option( $this->key(), $expires . ':' . $count, false );
+		update_option( $this->bucket_key(), $expires . ':' . $count, false );
 	}
 
 	/** When the current window ends. */
-	private function expires(): int {
-		return (int) strtok( (string) get_option( $this->key(), '0:0' ), ':' );
+	private function window_expires(): int {
+		return (int) strtok( (string) get_option( $this->bucket_key(), '0:0' ), ':' );
 	}
 
-	/** How many requests the current window has counted. */
-	private function count(): int {
-		$parts = explode( ':', (string) get_option( $this->key(), '0:0' ) );
+	/**
+	 * How many requests the current window has counted.
+	 *
+	 * NOT `count()`: PHPUnit's TestCase implements Countable, so declaring a
+	 * private count() here is a fatal error — "Access level to
+	 * RateLimiterTest::count() must be public". PHPStan does not analyse tests/,
+	 * so only CI saw it.
+	 */
+	private function window_count(): int {
+		$parts = explode( ':', (string) get_option( $this->bucket_key(), '0:0' ) );
 
 		return (int) end( $parts );
 	}
@@ -76,7 +83,7 @@ final class RateLimiterTest extends WP_UnitTestCase {
 	public function test_consuming_does_not_extend_the_window(): void {
 		Spotship_WI_Rate_Limiter::consume( 'test', 10, 60 );
 
-		$expiry_after_one = $this->expires();
+		$expiry_after_one = $this->window_expires();
 
 		$this->assertGreaterThan( 0, $expiry_after_one, 'the first request must open a window' );
 
@@ -86,10 +93,10 @@ final class RateLimiterTest extends WP_UnitTestCase {
 
 		$this->assertSame(
 			$expiry_after_one,
-			$this->expires(),
+			$this->window_expires(),
 			'a steady stream of requests must not push the window out in front of itself'
 		);
-		$this->assertSame( 6, $this->count() );
+		$this->assertSame( 6, $this->window_count() );
 	}
 
 	/**
@@ -154,8 +161,8 @@ final class RateLimiterTest extends WP_UnitTestCase {
 			);
 		}
 
-		$this->assertSame( 3, $this->count(), 'a refused request must not advance the count' );
-		$this->assertSame( $expires, $this->expires(), 'nor move the window' );
+		$this->assertSame( 3, $this->window_count(), 'a refused request must not advance the count' );
+		$this->assertSame( $expires, $this->window_expires(), 'nor move the window' );
 	}
 
 	/**
@@ -172,13 +179,13 @@ final class RateLimiterTest extends WP_UnitTestCase {
 			Spotship_WI_Rate_Limiter::consume( 'test', 3, 60 )['allowed'],
 			'the third of three must be allowed'
 		);
-		$this->assertSame( 3, $this->count() );
+		$this->assertSame( 3, $this->window_count() );
 
 		$this->assertFalse(
 			Spotship_WI_Rate_Limiter::consume( 'test', 3, 60 )['allowed'],
 			'the fourth must not'
 		);
-		$this->assertSame( 3, $this->count() );
+		$this->assertSame( 3, $this->window_count() );
 	}
 
 	/**
@@ -198,7 +205,7 @@ final class RateLimiterTest extends WP_UnitTestCase {
 		$autoload = $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT autoload FROM {$wpdb->options} WHERE option_name = %s",
-				$this->key()
+				$this->bucket_key()
 			)
 		);
 

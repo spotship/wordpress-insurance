@@ -139,6 +139,17 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: 'a test helper takes a name PHPUnit already owns',
+		file: 'tests/integration/RateLimiterTest.php',
+		from: 'private function window_count(): int {',
+		to: 'private function count(): int {',
+		// The shipped state, briefly. TestCase implements Countable, so this is
+		// a fatal at class resolution and every integration job dies on it.
+		mustFail: [ 'no test class hides a method PHPUnit already declares' ],
+	},
+
+	{
+		suite: 'js',
 		what: 'the notes textarea loses the hook its error message needs',
 		file: 'templates/cargo.php',
 		from: '<div class="sswi-field" data-sswi-field="notes">',

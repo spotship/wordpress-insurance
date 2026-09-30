@@ -242,6 +242,58 @@ final class Spotship_WI_Admin {
 		<textarea id="sswi-diagnostics" class="large-text code" rows="18" readonly onclick="this.select()"><?php
 			echo esc_textarea( (string) wp_json_encode( $blob, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) );
 		?></textarea>
+		<p>
+			<button type="button" class="button" id="sswi-copy-diagnostics">
+				<?php esc_html_e( 'Copy diagnostics', 'spotship-war-insurance' ); ?>
+			</button>
+			<span id="sswi-copy-status" role="status" aria-live="polite"></span>
+		</p>
+		<script>
+		( function () {
+			var button = document.getElementById( 'sswi-copy-diagnostics' );
+			var field = document.getElementById( 'sswi-diagnostics' );
+			var status = document.getElementById( 'sswi-copy-status' );
+
+			if ( ! button || ! field ) {
+				return;
+			}
+
+			var ok = <?php echo wp_json_encode( __( 'Copied.', 'spotship-war-insurance' ) ); ?>;
+			var bad = <?php echo wp_json_encode( __( 'Copy failed. Select the text and copy manually.', 'spotship-war-insurance' ) ); ?>;
+
+			button.addEventListener( 'click', function () {
+				/*
+				 * The status is ANNOUNCED, not just shown: an administrator needs to
+				 * know it worked before they paste into a support ticket.
+				 *
+				 * navigator.clipboard is unavailable on plain-HTTP admin, which plenty
+				 * of self-hosted installs still are. execCommand is the fallback
+				 * rather than the primary because it is deprecated — but dropping it
+				 * would break copy on exactly the hosts most likely to need support.
+				 */
+				if ( navigator.clipboard && window.isSecureContext ) {
+					navigator.clipboard.writeText( field.value ).then(
+						function () {
+							status.textContent = ok;
+						},
+						function () {
+							status.textContent = bad;
+						}
+					);
+
+					return;
+				}
+
+				field.select();
+
+				try {
+					status.textContent = document.execCommand( 'copy' ) ? ok : bad;
+				} catch ( e ) {
+					status.textContent = bad;
+				}
+			} );
+		} )();
+		</script>
 		<?php
 	}
 

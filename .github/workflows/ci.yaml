@@ -54,6 +54,28 @@ jobs:
       - run: npm ci
       - run: npm run test:js
 
+  plugin-check:
+    # The official WP.org scanner. Worth running even though we do not list:
+    # it catches escaping, i18n and header faults that PHPCS does not, and this
+    # artifact is unpacked verbatim onto servers we do not control.
+    name: Plugin Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: composer install --no-interaction --no-progress
+      - run: npm ci
+      - run: npx wp-env start
+      - run: npx wp-env run cli wp plugin install plugin-check --activate
+      - run: npx wp-env run cli wp plugin check "$(basename "$PWD")" --format=table
+
   version:
     name: Version header matches constant
     runs-on: ubuntu-latest
@@ -62,13 +84,15 @@ jobs:
       - run: bash bin/assert-version.sh
 
   integration:
-    name: PHPUnit integration (WP ${{ matrix.wp }})
+    name: PHPUnit integration (PHP ${{ matrix.php }} / WP ${{ matrix.wp }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # The plugin declares "Requires at least: 6.4" and is installed on sites
-        # we do not control, so both ends of the supported range are tested.
+        # The plugin declares "Requires at least: 6.4" and "Requires PHP: 8.1",
+        # and is installed on sites we do not control — so both ends of BOTH
+        # supported ranges are exercised rather than just the happy corner.
+        php: ['8.1', '8.3']
         wp: ['6.4', 'latest']
     env:
       WP_ENV_CORE: ${{ matrix.wp == 'latest' && 'WordPress/WordPress' || format('WordPress/WordPress#{0}', matrix.wp) }}
@@ -80,7 +104,7 @@ jobs:
           cache: npm
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.1'
+          php-version: ${{ matrix.php }}
           coverage: none
       - run: composer install --no-interaction --no-progress
       - run: npm ci

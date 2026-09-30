@@ -1,0 +1,32 @@
+language: en-GB
+
+reviews:
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+
+  path_instructions:
+    - path: "includes/class-rest-proxy.php"
+      instructions: |
+        The ordering of branches in handle_submit() is a SECURITY PROPERTY, not
+        style. Every refusal the plugin can decide locally — consent, bounds,
+        expiry — must be answered BEFORE the honeypot and signature decoy gates.
+        Anything locally decidable placed below them becomes a one-request
+        detection oracle: a bot flips the flag on one unchanged payload and reads
+        the status line. Flag any new branch added below those gates.
+    - path: "includes/class-payloads.php"
+      instructions: |
+        The trimmers are an ALLOW-LIST, not a blocklist, and that is a security
+        control. Flag any change that relays an upstream value without naming the
+        keys it emits, on the search routes or on submit.
+    - path: "assets/js/war-insurance.js"
+      instructions: |
+        Three invariants: an option's DOM id is derived only by optionId();
+        hidden.value is assigned only in commit(); a submissionId is minted only
+        in startAttempt(). Each previously caused a production bug. Flag any
+        second derivation or assignment site.
+
+  auto_review:
+    enabled: true
+    drafts: true

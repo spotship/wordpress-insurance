@@ -1,0 +1,12 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["local>spotship/.github:renovate-config"],
+  "packageRules": [
+    {
+      "description": "Reusable workflows from spotship/.github are pinned by tag on purpose; bumping them here fights the org-wide release process.",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["spotship/.github"],
+      "enabled": false
+    }
+  ]
+}

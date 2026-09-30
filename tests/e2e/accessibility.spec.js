@@ -60,16 +60,47 @@ for ( const [ label, path ] of [ [ 'hull', '/insurance/' ], [ 'cargo', '/insuran
 	} );
 
 	test( `${ label }: the error summary takes focus on a failed submit`, async ( { page } ) => {
+		/*
+		 * NO `if ( await summary.isVisible() )`. That made the assertion
+		 * conditional on the behaviour it exists to prove, so the test passed
+		 * whenever the summary never appeared — and it never did: an immediate
+		 * empty submit takes the CONSENT path, which produces no field errors,
+		 * so `landed` stays 0 and the summary is never shown. The test asserted
+		 * nothing, on either product, for its whole life.
+		 *
+		 * So drive a real field error instead. Bounds validation is hoisted
+		 * above the anti-bot gates, so an over-length name returns a genuine
+		 * 400 with `fields` whatever the form's age — no timing dependency, and
+		 * no reliance on the upstream.
+		 */
 		await page.goto( path );
 
+		await page.locator( '[data-sswi-consent]' ).check();
+
+		// Past MAX_NAME (255). Set through the DOM because the input carries a
+		// maxlength the keyboard would respect and the server check would not
+		// then fire.
+		await page.locator( '[data-sswi-field="userName"] input' ).evaluate( ( node ) => {
+			node.value = 'x'.repeat( 300 );
+			node.dispatchEvent( new Event( 'input', { bubbles: true } ) );
+		} );
+
+		await page.locator( '[data-sswi-field="userEmail"] input' ).fill( 'ci+summary@spot-ship.com' );
 		await page.locator( '.sswi-submit' ).click();
-		await page.waitForTimeout( 500 );
 
 		const summary = page.locator( '[data-sswi-summary]' );
 
-		if ( await summary.isVisible() ) {
-			await expect( summary ).toBeFocused();
-		}
+		await expect( summary ).toBeVisible();
+		await expect( summary ).toBeFocused();
+		await expect( summary ).not.toBeEmpty();
+
+		// The summary is the signpost; the error itself must be on the field.
+		await expect(
+			page.locator( '[data-sswi-field="userName"] [data-sswi-error]' )
+		).toBeVisible();
+		await expect(
+			page.locator( '[data-sswi-field="userName"] input' )
+		).toHaveAttribute( 'aria-invalid', 'true' );
 	} );
 }
 

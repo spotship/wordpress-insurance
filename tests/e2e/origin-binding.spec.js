@@ -103,7 +103,17 @@ test( 'one click rebinds, and submission recovers', async ( { page } ) => {
 
 	const message = ( await submitForm( page ) ).toLowerCase();
 
-	// The stand-in upstream accepts, so recovery is visible as a real success
-	// rather than merely the absence of the refusal.
+	/*
+	 * The stand-in upstream accepts, so recovery is visible as a real success
+	 * rather than merely the absence of the refusal.
+	 *
+	 * THE COMMENT ABOVE USED TO BE THE ONLY PLACE THAT WAS TRUE. The assertion
+	 * under it was `not.toMatch( /unavailable/ )`, which an empty result, a
+	 * validation error or a blank page all satisfy — so a re-bind that left the
+	 * install unable to submit would have passed the test written to catch
+	 * exactly that. Assert the success sentence itself.
+	 */
+	expect( message ).toContain( 'thank' );
+	expect( message ).toContain( 'insurance desk' );
 	expect( message ).not.toMatch( /unavailable/ );
 } );

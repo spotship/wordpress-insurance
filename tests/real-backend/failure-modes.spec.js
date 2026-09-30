@@ -204,9 +204,13 @@ test( 'one click rebinds against the real backend and submission recovers', asyn
 
 	const shown = ( await page.locator( '[data-sswi-result]' ).textContent() ).toLowerCase();
 
-	expect( shown, 'the re-bind reported success but submissions are still refused' ).not.toMatch(
-		/unavailable/
+	// The success sentence, not just the absence of the refusal — an empty
+	// result or a validation error satisfies `not unavailable` too, and this is
+	// the assertion that decides whether the recovery actually recovered.
+	expect( shown, 'the re-bind reported success but submissions are still refused' ).toContain(
+		'thank'
 	);
+	expect( shown ).not.toMatch( /unavailable/ );
 } );
 
 test.describe( 'with JavaScript blocked', () => {

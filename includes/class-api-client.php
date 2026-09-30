@@ -121,7 +121,16 @@ final class Spotship_WI_Api_Client {
 		$url = trailingslashit( $base ) . trailingslashit( ltrim( $endpoint, '/' ) );
 
 		if ( array() !== $query ) {
-			$url = add_query_arg( array_map( 'rawurlencode', array_map( 'strval', $query ) ), $url );
+			/*
+			 * RAW values. `add_query_arg()` encodes them itself, so pre-encoding
+			 * here produces a double encoding: a search for "New York" leaves as
+			 * `New%2520York`, the backend searches for the literal string
+			 * "New%20York", and the visitor gets an empty autocomplete for a
+			 * location that plainly exists. It fails silently and only for terms
+			 * containing a space or a special character, which is exactly the shape
+			 * of bug that survives a smoke test.
+			 */
+			$url = add_query_arg( array_map( 'strval', $query ), $url );
 		}
 
 		return $url;

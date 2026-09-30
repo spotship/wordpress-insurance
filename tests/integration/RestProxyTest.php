@@ -305,6 +305,111 @@ final class RestProxyTest extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( '401', $encoded );
 	}
 
+	/**
+	 * `add_query_arg()` encodes its own values. Pre-encoding produces a double
+	 * encoding, so a search for "New York" leaves as `New%2520York`, the backend
+	 * searches for the literal string "New%20York", and the visitor gets an
+	 * empty autocomplete for a location that plainly exists.
+	 *
+	 * It fails silently and ONLY for terms containing a space or a special
+	 * character — the shape of bug that survives every smoke test.
+	 */
+	public function test_a_search_term_with_a_space_is_encoded_exactly_once(): void {
+		Spotship_WI_Rate_Limiter::reset( 'search' );
+
+		$request = new WP_REST_Request( 'GET', '/spotship/v1/location-search' );
+		$request->set_header( 'origin', home_url() );
+		$request->set_param( 'q', 'New York' );
+
+		rest_get_server()->dispatch( $request );
+
+		$this->assertCount( 1, $this->upstream );
+
+		$url = $this->upstream[0]['url'];
+
+		$this->assertStringContainsString( 'query=New%20York', $url );
+		$this->assertStringNotContainsString( '%2520', $url );
+	}
+
+	/**
+	 * The upstream parameter is `query`, not `q`. Our own route uses `q` because
+	 * that is what the front-end sends; conflating them yields an UNFILTERED
+	 * search, which returns the whole index to an anonymous caller.
+	 */
+	public function test_the_upstream_search_parameter_is_query_not_q(): void {
+		Spotship_WI_Rate_Limiter::reset( 'search' );
+
+		$request = new WP_REST_Request( 'GET', '/spotship/v1/vessel-search' );
+		$request->set_header( 'origin', home_url() );
+		$request->set_param( 'q', 'ever' );
+
+		rest_get_server()->dispatch( $request );
+
+		$url = $this->upstream[0]['url'];
+
+		$this->assertStringContainsString( 'query=ever', $url );
+		$this->assertDoesNotMatchRegularExpression( '/[?&]q=/', $url );
+	}
+
+	public function test_a_short_search_term_never_reaches_upstream(): void {
+		Spotship_WI_Rate_Limiter::reset( 'search' );
+
+		$request = new WP_REST_Request( 'GET', '/spotship/v1/location-search' );
+		$request->set_header( 'origin', home_url() );
+		$request->set_param( 'q', 'a' );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array(), $response->get_data()['results'] );
+		$this->assertCount( 0, $this->upstream, 'a one-character term must not cost an upstream call' );
+	}
+
+	/**
+	 * Trimming is a security control, not tidiness: VesselDocument carries mmsi,
+	 * flag, dwt and the commercial manager's name.
+	 */
+	public function test_search_results_are_trimmed_before_the_browser_sees_them(): void {
+		remove_filter( 'pre_http_request', array( $this, 'intercept' ), 10 );
+
+		add_filter(
+			'pre_http_request',
+			static fn() => array(
+				'headers'  => array(),
+				'body'     => (string) wp_json_encode(
+					array(
+						'results' => array(
+							array(
+								'id'      => 7,
+								'name'    => 'Ever Given',
+								'imo'     => '9811000',
+								'type'    => 'Container',
+								'mmsi'    => '353136000',
+								'flag'    => 'PA',
+								'manager' => 'A commercial manager',
+							),
+						),
+					)
+				),
+				'response' => array( 'code' => 200, 'message' => 'OK' ),
+			),
+			10
+		);
+
+		Spotship_WI_Rate_Limiter::reset( 'search' );
+
+		$request = new WP_REST_Request( 'GET', '/spotship/v1/vessel-search' );
+		$request->set_header( 'origin', home_url() );
+		$request->set_param( 'q', 'ever' );
+
+		$body = rest_get_server()->dispatch( $request )->get_data();
+		$row  = $body['results'][0];
+
+		$this->assertSame( array( 'id', 'name', 'imo', 'type' ), array_keys( $row ) );
+		$this->assertStringNotContainsString( 'commercial manager', (string) wp_json_encode( $body ) );
+		$this->assertStringNotContainsString( '353136000', (string) wp_json_encode( $body ) );
+	}
+
 	public function test_a_cross_origin_request_is_refused(): void {
 		$request = new WP_REST_Request( 'POST', '/spotship/v1/quote-request' );
 		$request->set_header( 'origin', 'https://attacker.test' );

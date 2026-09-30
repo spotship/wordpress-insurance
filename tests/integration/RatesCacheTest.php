@@ -159,13 +159,38 @@ final class RatesCacheTest extends WP_UnitTestCase {
 		Spotship_WI_Rates_Cache::get();
 		delete_transient( Spotship_WI_Rates_Cache::FRESH );
 
-		set_transient( Spotship_WI_Rates_Cache::LOCK, 1, 10 );
+		/*
+		 * The lock is a plain OPTION, not a transient — it is taken with
+		 * add_option() because that is atomic against the unique index on
+		 * option_name, which get/set transient is not. A test that seeds a
+		 * transient here would not block acquire_lock() at all, and would pass or
+		 * fail for reasons unrelated to the lock.
+		 */
+		add_option( Spotship_WI_Rates_Cache::LOCK, (string) time(), '', false );
 		$before = $this->calls;
 
 		$serving = Spotship_WI_Rates_Cache::get();
 
 		$this->assertSame( Spotship_WI_Rates_Cache::TIER_BACKUP, $serving['tier'] );
 		$this->assertSame( $before, $this->calls, 'the lock holder is already fetching; the loser must not fetch too' );
+	}
+
+	/**
+	 * A lock left behind by a crashed request must not wedge the table at the
+	 * backup tier indefinitely.
+	 */
+	public function test_an_abandoned_lock_is_taken_over_after_its_ttl(): void {
+		Spotship_WI_Rates_Cache::get();
+		delete_transient( Spotship_WI_Rates_Cache::FRESH );
+
+		// A lock older than the TTL, as a crashed request would leave.
+		add_option( Spotship_WI_Rates_Cache::LOCK, (string) ( time() - 3600 ), '', false );
+		$before = $this->calls;
+
+		$serving = Spotship_WI_Rates_Cache::get();
+
+		$this->assertSame( Spotship_WI_Rates_Cache::TIER_FRESH, $serving['tier'] );
+		$this->assertSame( $before + 1, $this->calls, 'an abandoned lock must be taken over, not waited on' );
 	}
 
 	public function test_the_rates_route_reports_the_serving_tier(): void {

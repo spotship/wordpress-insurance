@@ -162,6 +162,101 @@ test( 'the e2e upstream fixture emits exactly the keys the backend serializer do
 	assert.ok( ! derived.hull.includes( 'status' ), 'the API emits no status' );
 } );
 
+test( 'the rate table reads the payload the rates endpoint actually returns', () => {
+	/*
+	 * THE SAME FAILURE AS THE 201 BODY, ONE ENDPOINT OVER, AND IT SHIPPED.
+	 *
+	 * The rates body was hand-written flat — a top-level `columns` array of
+	 * plain strings, a top-level row list per product, rows keyed `zone`, rates
+	 * preformatted as '8.500%'. GET /api/insurance/rates/ emits none of that.
+	 * It nests columns, zones, disclaimers and footnotes under EACH PRODUCT,
+	 * makes every column an object of { key, label }, keys every row `name`,
+	 * and sends every rate as a JSON number.
+	 *
+	 * Against the real backend that rendered a table with no header cells and
+	 * four empty body rows — one per key of the product object — and dropped
+	 * the disclaimers entirely, which the partial itself calls a compliance
+	 * failure. Nothing caught it because the stand-in upstream served the
+	 * invented shape back.
+	 *
+	 * So this asserts the TEMPLATE against the DERIVED fixture, not against the
+	 * stand-in. Both would have to drift together to get past it.
+	 */
+	const derived = JSON.parse( read( 'tests/fixtures/backend-rates.json' ) );
+	const table = read( 'templates/partials/rates-table.php' );
+
+	for ( const product of [ 'hull', 'cargo' ] ) {
+		const section = derived[ product ];
+
+		assert.ok( Array.isArray( section.zones ), `${ product }.zones must be a list` );
+		assert.ok( Array.isArray( section.columns ), `${ product }.columns must be a list` );
+		assert.ok( section.disclaimers.length > 0, `${ product } must carry disclaimers` );
+
+		for ( const column of section.columns ) {
+			assert.equal( typeof column.key, 'string', 'a column carries a key' );
+			assert.equal( typeof column.label, 'string', 'a column carries a label' );
+		}
+
+		for ( const zone of section.zones ) {
+			assert.equal( typeof zone.name, 'string', `${ product } rows are keyed name` );
+			for ( const { key } of section.columns ) {
+				assert.ok( key in zone, `${ product } ${ zone.name } must carry ${ key }` );
+				assert.ok(
+					zone[ key ] === null || typeof zone[ key ] === 'number',
+					`${ product } ${ zone.name }.${ key } is a JSON number, not a display string`
+				);
+			}
+		}
+	}
+
+	// Hull's Hormuz Passage is the commercial outlier the footnotes explain,
+	// and cargo's has no net rate at all. Both are load-bearing: a renderer
+	// that cannot show an em dash for a real null is wrong about that row.
+	assert.ok(
+		derived.cargo.zones.some( ( z ) => z.netRate === null ),
+		'cargo must still carry a null net rate'
+	);
+	assert.ok( derived.hull.footnotes.length > 0, 'hull must still carry footnotes' );
+
+	// And the template must read all of it out of the product section.
+	assert.ok(
+		/\$sswi_section\s*\[\s*'zones'\s*\]|\$sswi_section\['zones'\]/.test( table ),
+		'rows must come from the product section, not the top level'
+	);
+	assert.ok(
+		! /\$sswi_rates\[\s*'columns'\s*\]/.test( table ),
+		'there is no top-level columns list to read'
+	);
+	assert.ok(
+		! /\$sswi_rates\[\s*'disclaimers'\s*\]/.test( table ),
+		'there is no top-level disclaimers list to read'
+	);
+	assert.ok(
+		! /\$sswi_row\[\s*'zone'\s*\]/.test( table ),
+		'rows are keyed name, not zone'
+	);
+	assert.ok(
+		/rate_percent/.test( table ),
+		'a JSON number must be formatted before it is published as a rate'
+	);
+} );
+
+test( 'a rate number is published as the percentage the other two surfaces show', () => {
+	/*
+	 * 0.085 is not "0.085". The backend's format_rate_percent() and serica's
+	 * Intl.NumberFormat already agree — multiply by 100, round half-up to three
+	 * decimals, pad to at least two — and this is the third surface publishing
+	 * the same commercial figures, so it has to agree to the digit.
+	 */
+	const renderer = read( 'includes/class-renderer.php' );
+	const body = /public static function rate_percent\([\s\S]*?\n\t\}/.exec( renderer );
+
+	assert.ok( body, 'the renderer must expose rate_percent()' );
+	assert.ok( /number_format\(\s*\$percent,\s*3/.test( body[ 0 ] ), 'three decimals, then trimmed' );
+	assert.ok( /round\(\s*\(float\) \$rate \* 100/.test( body[ 0 ] ), 'a rate is a fraction, not a percentage' );
+	assert.ok( /null === \$rate/.test( body[ 0 ] ), 'a real null renders as an em dash' );
+} );
+
 test( 'the e2e upstream routes cargo to the cargo shape, not the hull one', () => {
 	/*
 	 * `cargo_quote_request` CONTAINS `quote_request`, so a generic substring
@@ -306,17 +401,78 @@ test( 'the rate table renders the disclaimers the endpoint serves', () => {
 	 * sign-off tolerable — a wording change becomes a backend deploy rather than
 	 * a re-release to every install. That argument only holds while the plugin
 	 * renders whatever it is sent, which is what this asserts.
+	 *
+	 * THIS TEST USED TO ENFORCE THE BUG. It required the template to read
+	 * `$sswi_rates['disclaimers']` — the top level — which is precisely where
+	 * the endpoint does not put them, so the one check standing guard over a
+	 * compliance requirement was pinning the shape that made it fail.
 	 */
 	const table = read( 'templates/partials/rates-table.php' );
 
-	assert.match( table, /\$sswi_rates\[\s*'disclaimers'\s*\]/, 'the template must read the disclaimers' );
+	assert.match( table, /\$sswi_section\[\s*'disclaimers'\s*\]/, 'disclaimers come from the product section' );
 	assert.match( table, /foreach \( \$sswi_disclaimers/, 'and render each of them' );
 	assert.match( table, /esc_html\( \(string\) \$sswi_disclaimer \)/, 'escaped on output' );
 
 	// The e2e fixture must serve them, or the browser suite would pass over a
-	// table that renders none.
-	const fixture = read( 'bin/e2e-upstream.js' );
-	assert.match( fixture, /disclaimers:/, 'the e2e upstream must serve disclaimers' );
+	// table that renders none. It is derived now, so this reads the fixture
+	// itself rather than grepping the server for a literal.
+	const derived = JSON.parse( read( 'tests/fixtures/backend-rates.json' ) );
+
+	for ( const product of [ 'hull', 'cargo' ] ) {
+		assert.ok(
+			derived[ product ].disclaimers.length > 0,
+			`the e2e upstream must serve ${ product } disclaimers`
+		);
+	}
+} );
+
+test( 'every named input can be reached by a field error', () => {
+	/*
+	 * fieldError() resolves `[data-sswi-field="<name>"]` and RETURNS FALSE when
+	 * it finds nothing, which the caller turns into the generic "unavailable"
+	 * message. So a wrapper missing the attribute does not throw or log — it
+	 * silently tells the visitor the service is down when the real answer was
+	 * "that note is too long".
+	 *
+	 * templates/partials/text-field.php sets the attribute for every input it
+	 * renders. The notes textarea is hand-written in both hull.php and
+	 * cargo.php, and BOTH omitted it. Counting name attributes against
+	 * data-sswi-field wrappers is what makes the next hand-written field fail
+	 * here rather than in front of a customer.
+	 */
+	const NOT_A_FIELD = new Set( [
+		'website',      // the honeypot: deliberately unlabelled, never error-reported
+		'_sswi_ts',     // hidden anti-replay inputs, not visitor-facing
+		'_sswi_form_id',
+		'_sswi_sig',
+	] );
+
+	/*
+	 * Matching from the opening tag with `[^>]*` does NOT work here: every one
+	 * of these tags carries `<?php echo … ?>` for its id, so the first `>` is
+	 * inside the PHP block and the name attribute is never reached. That
+	 * version of this test collected nothing and passed over the very defect it
+	 * was written for — bin/mutation-check.js is what caught it.
+	 *
+	 * Fields rendered through text-field.php get the attribute programmatically
+	 * and carry no literal name= here, so what remains is exactly the set of
+	 * hand-written inputs, which is the set at risk.
+	 */
+	for ( const template of [ 'templates/hull.php', 'templates/cargo.php' ] ) {
+		const src = read( template );
+		const named = [ ...src.matchAll( /\bname="([A-Za-z_][\w]*)"/g ) ]
+			.map( ( m ) => m[ 1 ] )
+			.filter( ( name ) => ! NOT_A_FIELD.has( name ) );
+
+		assert.ok( named.length > 0, `${ template }: matched no hand-written fields at all` );
+
+		for ( const name of named ) {
+			assert.ok(
+				src.includes( `data-sswi-field="${ name }"` ),
+				`${ template }: "${ name }" has no data-sswi-field wrapper, so an error for it cannot be shown`
+			);
+		}
+	}
 } );
 
 test( 'no template hard-codes an element id', () => {

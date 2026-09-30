@@ -30,11 +30,36 @@ defined( 'ABSPATH' ) || exit;
  * @var array{tier: string, rates: array<string, mixed>} $sswi_serving
  */
 
-// Keyed off the product being rendered. A literal here renders the hull
-// table under the cargo form, which is wrong AND commercially misleading:
-// cargo and hull rates are different numbers for the same zone.
-$sswi_table   = $sswi_rates[ $data['config']['product'] ] ?? array();
-$sswi_columns = $sswi_rates['columns'] ?? array();
+/*
+ * EVERYTHING EXCEPT `updatedAt` IS NESTED UNDER THE PRODUCT.
+ *
+ * `GET /api/insurance/rates/` returns
+ *   { updatedAt, hull: { columns, zones, disclaimers, footnotes }, cargo: {…} }
+ * with each column an object — `{ key: "hmRate", label: "H&M" }` — each row
+ * keyed `name` rather than `zone`, and each rate a JSON NUMBER.
+ *
+ * This file used to read a top-level `columns` list of plain strings and treat
+ * `$sswi_rates[product]` as the row list. The API has never emitted that shape.
+ * Against the real backend it produced a table with no header cells and four
+ * empty body rows — one per key of the product object — and no disclaimers at
+ * all, which the partial's own comment below calls a compliance failure.
+ *
+ * It survived because bin/e2e-upstream.js served the invented shape back, so
+ * the browser suite asserted a contract that does not exist. The fixture is now
+ * derived from the backend by bin/derive-backend-rates.sh, and
+ * tests/js/contract.test.js fails if the two drift apart again.
+ */
+$sswi_product = (string) $data['config']['product'];
+$sswi_section = isset( $sswi_rates[ $sswi_product ] ) && is_array( $sswi_rates[ $sswi_product ] )
+	? $sswi_rates[ $sswi_product ]
+	: array();
+
+$sswi_table   = isset( $sswi_section['zones'] ) && is_array( $sswi_section['zones'] )
+	? $sswi_section['zones']
+	: array();
+$sswi_columns = isset( $sswi_section['columns'] ) && is_array( $sswi_section['columns'] )
+	? $sswi_section['columns']
+	: array();
 $sswi_updated = isset( $sswi_rates['updatedAt'] ) ? (string) $sswi_rates['updatedAt'] : '';
 $sswi_tier    = $sswi_serving['tier'];
 
@@ -91,7 +116,15 @@ $sswi_stale = in_array( $sswi_tier, array( 'backup', 'bundled' ), true );
 				<?php /* serica's table has an empty first header cell; give it an accessible name. */ ?>
 				<th scope="col"><span class="sswi-sr"><?php esc_html_e( 'Risk zone', 'spotship-war-insurance' ); ?></span></th>
 				<?php foreach ( $sswi_columns as $sswi_col ) : ?>
-					<th scope="col"><?php echo esc_html( is_scalar( $sswi_col ) ? (string) $sswi_col : '' ); ?></th>
+					<?php
+					// The LABEL is what a visitor reads ("50% NCB"); the key is
+					// the field name it is looked up by. Rendering the key put
+					// "ncbRate" in the header of a published rate table.
+					$sswi_label = is_array( $sswi_col ) && isset( $sswi_col['label'] )
+						? (string) $sswi_col['label']
+						: '';
+					?>
+					<th scope="col"><?php echo esc_html( $sswi_label ); ?></th>
 				<?php endforeach; ?>
 			</tr>
 		</thead>
@@ -103,9 +136,16 @@ $sswi_stale = in_array( $sswi_tier, array( 'backup', 'bundled' ), true );
 				}
 				?>
 				<tr>
-					<th scope="row"><?php echo esc_html( (string) ( $sswi_row['zone'] ?? '' ) ); ?></th>
+					<?php // `name`, not `zone` — the upstream row key. ?>
+					<th scope="row"><?php echo esc_html( (string) ( $sswi_row['name'] ?? '' ) ); ?></th>
 					<?php foreach ( $sswi_columns as $sswi_col ) : ?>
-						<td><?php echo esc_html( (string) ( $sswi_row[ $sswi_col ] ?? '—' ) ); ?></td>
+						<?php
+						$sswi_key  = is_array( $sswi_col ) && isset( $sswi_col['key'] ) ? (string) $sswi_col['key'] : '';
+						$sswi_cell = '' !== $sswi_key && array_key_exists( $sswi_key, $sswi_row )
+							? Spotship_WI_Renderer::rate_percent( $sswi_row[ $sswi_key ] )
+							: '—';
+						?>
+						<td><?php echo esc_html( $sswi_cell ); ?></td>
 					<?php endforeach; ?>
 				</tr>
 			<?php endforeach; ?>
@@ -130,11 +170,32 @@ $sswi_stale = in_array( $sswi_tier, array( 'backup', 'bundled' ), true );
 	 * partner wants different wording it is a backend string change, not a
 	 * re-release to every customer install. That argument only holds while the
 	 * plugin actually renders whatever it is sent.
+	 *
+	 * Which, until this was fixed, it did not: the disclaimers are served under
+	 * the PRODUCT, and this read them from the top level, so the block below was
+	 * unreachable against the real backend and the compliance text never
+	 * appeared on any customer page.
+	 *
+	 * Hull also carries `footnotes` — the Hormuz Passage row is an outlier and
+	 * says so in one — which nothing rendered at all.
 	 */
-	$sswi_disclaimers = isset( $sswi_rates['disclaimers'] ) && is_array( $sswi_rates['disclaimers'] )
-		? $sswi_rates['disclaimers']
+	$sswi_disclaimers = isset( $sswi_section['disclaimers'] ) && is_array( $sswi_section['disclaimers'] )
+		? $sswi_section['disclaimers']
+		: array();
+	$sswi_footnotes   = isset( $sswi_section['footnotes'] ) && is_array( $sswi_section['footnotes'] )
+		? $sswi_section['footnotes']
 		: array();
 	?>
+
+	<?php if ( array() !== $sswi_footnotes ) : ?>
+		<div class="sswi-footnotes">
+			<?php foreach ( $sswi_footnotes as $sswi_footnote ) : ?>
+				<?php if ( is_scalar( $sswi_footnote ) ) : ?>
+					<p><?php echo esc_html( (string) $sswi_footnote ); ?></p>
+				<?php endif; ?>
+			<?php endforeach; ?>
+		</div>
+	<?php endif; ?>
 
 	<?php if ( array() !== $sswi_disclaimers ) : ?>
 		<div class="sswi-disclaimers">

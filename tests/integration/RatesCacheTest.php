@@ -70,28 +70,31 @@ final class RatesCacheTest extends WP_UnitTestCase {
 		return $this->answer;
 	}
 
-	/** @return array<string, mixed> */
+	/**
+	 * A 200 carrying the body the rates endpoint actually returns.
+	 *
+	 * DERIVED, NOT WRITTEN. This used to hand-write a flat shape — a top-level
+	 * `columns` list of plain strings, a top-level row list per product, rows
+	 * keyed `zone`, rates preformatted as '8.500%' — which the API has never
+	 * emitted. These are cache-tier tests and would pass over any shape at all,
+	 * so the fiction cost nothing here and was copied into the renderer, where
+	 * it cost the whole rate table.
+	 *
+	 * Regenerate with bin/derive-backend-rates.sh.
+	 *
+	 * @return array<string, mixed>
+	 */
 	private function ok_response(): array {
+		$path = dirname( __DIR__ ) . '/fixtures/backend-rates.json';
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- a local test fixture on disk, not a remote resource.
+		$decoded = json_decode( (string) file_get_contents( $path ), true );
+		$body    = is_array( $decoded ) ? $decoded : array();
+
+		unset( $body['_comment'] );
+
 		return array(
 			'headers'  => array(),
-			'body'     => (string) wp_json_encode(
-				array(
-					'updatedAt' => '2026-09-11',
-					'columns'   => array( 'hmRate' ),
-					'hull'      => array(
-						array(
-							'zone'   => 'Hormuz Passage',
-							'hmRate' => '8.500%',
-						),
-					),
-					'cargo'     => array(
-						array(
-							'zone'    => 'Hormuz Passage',
-							'netRate' => null,
-						),
-					),
-				)
-			),
+			'body'     => (string) wp_json_encode( $body ),
 			'response' => array(
 				'code'    => 200,
 				'message' => 'OK',
@@ -214,6 +217,44 @@ final class RatesCacheTest extends WP_UnitTestCase {
 
 		$this->assertSame( Spotship_WI_Rates_Cache::TIER_FRESH, $serving['tier'] );
 		$this->assertSame( $before + 1, $this->calls, 'an abandoned lock must be taken over, not waited on' );
+	}
+
+	/**
+	 * THE DEFECT THIS GUARDS AGAINST: a release that does not check ownership.
+	 *
+	 * Request A takes the lock and is merely slow. After LOCK_TTL, request B
+	 * judges it abandoned and takes over. A then finishes and deletes the lock
+	 * row — which now belongs to B — so a third request acquires immediately and
+	 * fetches while B is still fetching. The stampede guard hands out two
+	 * concurrent upstream calls at exactly the moment the upstream is slow.
+	 *
+	 * The takeover is staged from inside the intercepted request, which is the
+	 * only point at which this process is "mid-fetch, holding the lock".
+	 */
+	public function test_a_slow_request_does_not_release_the_lock_it_lost(): void {
+		$stolen = '9999999999:takenoverbyb';
+
+		$takeover = function ( $pre, $args, $url ) use ( $stolen ) {
+			// B decides A is abandoned and takes the lock for itself, while A —
+			// this request — is still waiting on the upstream.
+			update_option( Spotship_WI_Rates_Cache::LOCK, $stolen, false );
+
+			return $this->intercept( $pre, $args, $url );
+		};
+
+		remove_filter( 'pre_http_request', array( $this, 'intercept' ), 10 );
+		add_filter( 'pre_http_request', $takeover, 10, 3 );
+
+		Spotship_WI_Rates_Cache::get();
+
+		remove_filter( 'pre_http_request', $takeover, 10 );
+		add_filter( 'pre_http_request', array( $this, 'intercept' ), 10, 3 );
+
+		$this->assertSame(
+			$stolen,
+			get_option( Spotship_WI_Rates_Cache::LOCK ),
+			'the slow request deleted a lock it no longer held, freeing a third fetch'
+		);
 	}
 
 	public function test_the_rates_route_reports_the_serving_tier(): void {

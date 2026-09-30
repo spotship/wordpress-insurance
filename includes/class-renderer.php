@@ -148,6 +148,50 @@ final class Spotship_WI_Renderer {
 	}
 
 	/**
+	 * Render an upstream rate as the percentage a visitor reads.
+	 *
+	 * THE ENDPOINT SENDS A NUMBER, NOT A STRING. `rates_payload()` puts the raw
+	 * `Decimal` in the body and DRF renders it as a JSON number, so `hmRate` for
+	 * the Hormuz Passage arrives as `0.085` — not `"8.50%"`. Echoing it straight
+	 * into a cell publishes "0.085" as a war-risk rate on a customer's public
+	 * website, which is wrong by two orders of magnitude and commercially
+	 * dangerous rather than merely untidy.
+	 *
+	 * The rule is the backend's `format_rate_percent()` and serica's
+	 * `Intl.NumberFormat("en-US", {minimumFractionDigits: 2,
+	 * maximumFractionDigits: 3})`, which are already the same rule: multiply by
+	 * 100, round half-up to three decimals, then pad to at least two. The three
+	 * surfaces publishing these figures must agree to the digit.
+	 *
+	 * `null` is a real value here — cargo's Hormuz row has no net rate — and is
+	 * NOT the same as a key the payload never carried. Both render as an em
+	 * dash, but only because that is what an absent figure looks like.
+	 *
+	 * @param mixed $rate Upstream rate value.
+	 * @return string Formatted percentage, or an em dash when there is no figure.
+	 */
+	public static function rate_percent( $rate ): string {
+		if ( null === $rate || '' === $rate || ! is_numeric( $rate ) ) {
+			return '—';
+		}
+
+		$percent = round( (float) $rate * 100, 3 );
+
+		/*
+		 * `number_format` rounds half-up on the string, matching Python's
+		 * ROUND_HALF_UP, then the trailing zeros beyond the second decimal come
+		 * off — 8.500 reads as 8.50, 0.250 as 0.25, and 0.2375 keeps all three.
+		 */
+		$formatted = number_format( $percent, 3, '.', '' );
+
+		if ( str_ends_with( $formatted, '0' ) ) {
+			$formatted = substr( $formatted, 0, -1 );
+		}
+
+		return $formatted . '%';
+	}
+
+	/**
 	 * The honeypot field.
 	 *
 	 * Visually hidden but LABELLED and marked `aria-hidden="false"` with an

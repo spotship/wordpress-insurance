@@ -35,13 +35,30 @@ const VESSELS = [
 	{ id: 7, name: 'Ever Given', imo: '9811000', type: 'Container', mmsi: '353136000', flag: 'PA', dwt: 199629, manager: 'A manager' },
 ];
 
-const RATES = {
-	updatedAt: '2026-09-11',
-	columns: [ 'hmRate', 'ncbRate', 'spotshipRate' ],
-	hull: [ { zone: 'Hormuz Passage', hmRate: '8.500%', ncbRate: '8.500%', spotshipRate: '6.800%' } ],
-	cargo: [ { zone: 'Hormuz Passage', grossRate: '0.500%', netRate: null } ],
-	disclaimers: [ 'Indicative only. Not an offer or a quote, and subject to underwriting.' ],
-};
+/**
+ * THE RATES BODY IS DERIVED, NOT WRITTEN.
+ *
+ * It used to be six hand-written lines: a top-level `columns` array of plain
+ * strings, a top-level row list per product, rows keyed `zone`, rates already
+ * formatted as '8.500%'. The API emits none of that — it nests columns, zones,
+ * disclaimers and footnotes UNDER each product, labels its columns, keys its
+ * rows `name`, and sends rates as JSON numbers.
+ *
+ * Because this file reproduced the invented shape, the renderer was written to
+ * match it and the whole browser rate-table suite passed against a contract
+ * that does not exist. Reading the derived fixture is what makes the stand-in
+ * evidence of anything.
+ *
+ * Regenerate with bin/derive-backend-rates.sh.
+ */
+const RATES = ( () => {
+	const body = Object.assign( {}, require( '../tests/fixtures/backend-rates.json' ) );
+
+	// Provenance for a reader of the file, never part of the response.
+	delete body._comment;
+
+	return body;
+} )();
 
 /**
  * The provenance half, identical on both products.

@@ -24,11 +24,16 @@ HEAD_SHA=$( git rev-parse HEAD )
 if [ "$#" -ge 1 ] && [ -n "${1:-}" ]; then
 	RUN="$1"
 else
-	RUN=$( gh run list --repo "$REPO" --commit "$HEAD_SHA" \
+	# --workflow, NOT just --commit. A push fires three workflows — CI, Check
+	# base branch and PR lint — and they are created in the same second, so
+	# picking the newest by timestamp is a coin toss between them. Landing on
+	# PR lint would write an evidence file saying "success" with one job and no
+	# suite totals: the exact silent degradation this file exists to prevent.
+	RUN=$( gh run list --repo "$REPO" --workflow ci.yaml --commit "$HEAD_SHA" \
 		--json databaseId,createdAt --jq 'sort_by(.createdAt) | last | .databaseId' )
 
 	if [ -z "$RUN" ] || [ "$RUN" = "null" ]; then
-		echo "ci-evidence: no run found for HEAD ($HEAD_SHA)." >&2
+		echo "ci-evidence: no ci.yaml run found for HEAD ($HEAD_SHA)." >&2
 		echo "ci-evidence: push the branch and let CI start, or pass a run id." >&2
 		exit 1
 	fi
@@ -95,6 +100,11 @@ fi
 		echo "### $job"
 		echo
 		echo '```'
+		# gh redirects this to *.blob.core.windows.net. If that host is
+		# unreachable — a sandbox or an egress allow-list — the fetch fails
+		# and the section below reads "(no totals found in log)" with no
+		# error, which loses exactly the numbers this file carries. Allow the
+		# host rather than trusting an empty section.
 		gh api "repos/$REPO/actions/jobs/$id/logs" 2>/dev/null \
 			| grep -oE '[0-9]+ (passed|failed|skipped)( \([0-9.]+[ms]+\))?|all [0-9]+ (js |php )?mutation(\(s\)|s) detected|# (tests|pass|fail) [0-9]+' \
 			| sort -u || echo '(no totals found in log)'

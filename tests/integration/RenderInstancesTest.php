@@ -110,9 +110,25 @@ final class RenderInstancesTest extends WP_UnitTestCase {
 	public function test_the_honeypot_is_namespaced_too(): void {
 		// It is rendered by the renderer rather than a template, so it is the
 		// one field that a template-only fix would miss.
+		//
+		// THIS TEST USED TO BE A TAUTOLOGY. It asked whether 'sswi_website'
+		// appeared in duplicates(), which returns ID values — but that string
+		// is the NAME attribute, with an underscore, and no id is ever spelled
+		// that way. The assertion could not fail. bin/mutation-check.js found
+		// it: un-namespacing the renderer left it green.
 		$page = Spotship_WI_Renderer::render( 'hull' ) . Spotship_WI_Renderer::render( 'cargo' );
 
+		// The NAME must stay identical in both forms — the proxy reads the
+		// honeypot by name, and a per-instance name would silently disarm it.
 		$this->assertSame( 2, substr_count( $page, 'name="sswi_website"' ), 'both forms carry the honeypot' );
-		$this->assertNotContains( 'sswi_website', $this->duplicates( $page ), 'but not the same id twice' );
+
+		// The ID must differ, which is the opposite requirement and the one
+		// that was going unchecked.
+		$honeypots = array_values(
+			array_filter( $this->ids( $page ), static fn( $id ) => str_ends_with( $id, '-website' ) )
+		);
+
+		$this->assertCount( 2, $honeypots, 'each form renders exactly one honeypot id' );
+		$this->assertSame( $honeypots, array_unique( $honeypots ), 'and the two ids are not the same' );
 	}
 }

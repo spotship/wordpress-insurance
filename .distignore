@@ -22,7 +22,9 @@ phpcs.xml.dist
 phpstan.neon.dist
 phpunit.xml.dist
 phpunit-integration.xml.dist
-playwright.config.js
+# Glob, not the one filename: playwright.staging.config.js was added later
+# and shipped, because the blocklist named a file rather than a shape.
+playwright*.config.js
 Taskfile.yml
 composer.json
 composer.lock

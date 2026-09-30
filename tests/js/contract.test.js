@@ -16,6 +16,7 @@ const test = require( 'node:test' );
 const assert = require( 'node:assert' );
 const fs = require( 'fs' );
 const path = require( 'path' );
+const { execFileSync } = require( 'child_process' );
 
 const ROOT = path.join( __dirname, '..', '..' );
 
@@ -487,5 +488,56 @@ test( 'the customisable accent never lands on a text-contrast surface', () => {
 	assert.ok(
 		css.includes( `var( ${ TOKEN } )` ),
 		`${ TOKEN } should still brand the non-text surfaces it is for`
+	);
+} );
+
+test( 'no tracked file reaches the customer zip without a decision', () => {
+	/*
+	 * bin/build-dist.sh checks the BUILT zip against an allow-list, which is
+	 * the right shape — a blocklist fails open. But that check runs only in
+	 * the release workflow, on a tag, and the release workflow has never run.
+	 *
+	 * So playwright.staging.config.js sat in the repo unaccounted for: absent
+	 * from .distignore, absent from ALLOWED. The next release tag would have
+	 * failed the build, at the least convenient moment. This runs the same
+	 * decision against the tracked tree on every push instead.
+	 *
+	 * .distignore said `playwright.config.js` — a filename, not a shape — so
+	 * adding a second config silently opted it in. It is now a glob.
+	 */
+	const patterns = read( '.distignore' )
+		.split( '\n' )
+		.map( ( line ) => line.trim() )
+		.filter( ( line ) => line && ! line.startsWith( '#' ) );
+
+	const declared = ( read( 'bin/build-dist.sh' ).match( /^ALLOWED="([^"]*)"/m ) || [] )[ 1 ];
+
+	assert.ok( declared, 'bin/build-dist.sh must declare ALLOWED for this to mean anything' );
+
+	const ships = new Set( declared.split( /\s+/ ).filter( Boolean ) );
+
+	// rsync --exclude-from globs, so a pattern is not necessarily a filename.
+	const excluded = ( name ) =>
+		patterns.some( ( pattern ) =>
+			new RegExp(
+				`^${ pattern.replace( /[.+^${}()|[\]\\]/g, '\\$&' ).replace( /\*/g, '[^/]*' ) }$`
+			).test( name )
+		);
+
+	const tracked = execFileSync( 'git', [ 'ls-tree', '--name-only', 'HEAD' ], {
+		cwd: ROOT,
+		encoding: 'utf8',
+	} )
+		.split( '\n' )
+		.map( ( line ) => line.trim() )
+		.filter( Boolean );
+
+	const undecided = tracked.filter( ( name ) => ! excluded( name ) && ! ships.has( name ) );
+
+	assert.deepStrictEqual(
+		undecided,
+		[],
+		'each of these would be unpacked onto a customer\'s public web server. ' +
+			'Add it to .distignore, or to ALLOWED in bin/build-dist.sh if it genuinely ships'
 	);
 } );

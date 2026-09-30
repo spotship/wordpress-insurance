@@ -79,6 +79,17 @@ const MUTATIONS = [
 		mustFail: [ 'the customisable accent never lands on a text-contrast surface' ],
 	},
 
+	{
+		suite: 'js',
+		what: '.distignore names one playwright config instead of the shape',
+		file: '.distignore',
+		from: 'playwright*.config.js',
+		to: 'playwright.config.js',
+		// The shipped state. playwright.staging.config.js was unaccounted for
+		// and would have failed the next release tag's ship-list check.
+		mustFail: [ 'no tracked file reaches the customer zip without a decision' ],
+	},
+
 	// --- php: driven by the PHPUnit integration suite, needs wp-env ---
 
 	{
@@ -93,6 +104,7 @@ const MUTATIONS = [
 		mustFail: [
 			'test_hull_and_cargo_on_one_page_share_no_ids',
 			'test_the_same_form_twice_shares_no_ids',
+			'test_the_honeypot_is_namespaced_too',
 		],
 	},
 	{

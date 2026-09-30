@@ -124,7 +124,7 @@ final class Spotship_WI_Rest_Proxy {
 		 */
 		$host = Spotship_WI_Settings::host_of( $origin );
 
-		return '' !== $host && $host === Spotship_WI_Settings::current_host();
+		return '' !== $host && Spotship_WI_Settings::current_host() === $host;
 	}
 
 	/**

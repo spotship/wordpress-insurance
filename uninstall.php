@@ -33,6 +33,15 @@ delete_option( 'spotship_wi_rates_lock' );
  * A prefix sweep rather than a list of names, because the rate-limit counters
  * are keyed per IP and per route and so are not enumerable.
  */
+/*
+ * phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+ *
+ * A direct query is correct here and caching is meaningless. There is no API
+ * for "delete every transient matching a prefix" — delete_transient() needs an
+ * exact key, and the per-IP rate-limit keys are not enumerable. This runs once,
+ * at uninstall, after which the plugin is gone; a cache layer would be warming
+ * rows that are being deleted.
+ */
 $wpdb->query(
 	$wpdb->prepare(
 		"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",

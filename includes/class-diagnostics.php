@@ -115,7 +115,7 @@ final class Spotship_WI_Diagnostics {
 			'binding_ok'       => ! Spotship_WI_Settings::binding_mismatch(),
 			'rates_tier'       => $serving['tier'],
 			'rates_updated_at' => self::published_at( $serving ),
-			'rates_last_ok'    => (string) ( get_transient( self::LAST_OK ) ?: '' ),
+			'rates_last_ok'    => self::as_text( get_transient( self::LAST_OK ) ),
 			'outbound_https'   => self::outbound_https_works(),
 			'recent_errors'    => self::ledger(),
 		);
@@ -202,6 +202,19 @@ final class Spotship_WI_Diagnostics {
 		array_unshift( $ledger, $entry );
 
 		set_transient( self::LEDGER, array_slice( $ledger, 0, self::LEDGER_MAX ), self::LEDGER_TTL );
+	}
+
+	/**
+	 * A transient value as a string, or '' when it is absent.
+	 *
+	 * `get_transient()` returns false when the key is missing, and a short
+	 * ternary over that is both banned by the ruleset and genuinely ambiguous —
+	 * it hides whether '' means "never fetched" or "fetched, empty".
+	 *
+	 * @param mixed $value Raw transient value.
+	 */
+	private static function as_text( $value ): string {
+		return is_string( $value ) ? $value : '';
 	}
 
 	/**

@@ -2,38 +2,44 @@
 /**
  * A labelled text input with accessible error wiring.
  *
- * Expects: $name, $label, $type, $maxlength, $required, $autocomplete, $hint.
+ * Expects: $sswi_name, $sswi_label, $sswi_type, $sswi_maxlength, $sswi_required, $sswi_autocomplete, $sswi_hint.
  *
  * @package Spotship_WI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-$sswi_id   = 'sswi-' . $name;
-$sswi_hint = isset( $hint ) && '' !== $hint ? $sswi_id . '-hint' : '';
-$sswi_err  = $sswi_id . '-error';
+$sswi_id      = 'sswi-' . $sswi_name;
+$sswi_err     = $sswi_id . '-error';
+$sswi_hint_id = isset( $sswi_hint ) && '' !== $sswi_hint ? $sswi_id . '-hint' : '';
 ?>
-<div class="sswi-field" data-sswi-field="<?php echo esc_attr( $name ); ?>">
+<div class="sswi-field" data-sswi-field="<?php echo esc_attr( $sswi_name ); ?>">
 	<label for="<?php echo esc_attr( $sswi_id ); ?>">
-		<?php echo esc_html( $label ); ?>
-		<?php if ( ! empty( $required ) ) : ?>
+		<?php echo esc_html( $sswi_label ); ?>
+		<?php if ( ! empty( $sswi_required ) ) : ?>
 			<span class="sswi-required" aria-hidden="true">*</span>
 			<span class="sswi-sr"><?php esc_html_e( '(required)', 'spotship-war-insurance' ); ?></span>
 		<?php endif; ?>
 	</label>
 
-	<?php if ( '' !== $sswi_hint ) : ?>
-		<p class="sswi-hint" id="<?php echo esc_attr( $sswi_hint ); ?>"><?php echo esc_html( $hint ); ?></p>
+	<?php if ( '' !== $sswi_hint_id ) : ?>
+		<p class="sswi-hint" id="<?php echo esc_attr( $sswi_hint_id ); ?>"><?php echo esc_html( $sswi_hint ); ?></p>
 	<?php endif; ?>
 
 	<input
-		type="<?php echo esc_attr( $type ?? 'text' ); ?>"
+		type="<?php echo esc_attr( $sswi_type ?? 'text' ); ?>"
 		id="<?php echo esc_attr( $sswi_id ); ?>"
-		name="<?php echo esc_attr( $name ); ?>"
-		<?php if ( ! empty( $maxlength ) ) : ?>maxlength="<?php echo esc_attr( (string) $maxlength ); ?>"<?php endif; ?>
-		<?php if ( ! empty( $autocomplete ) ) : ?>autocomplete="<?php echo esc_attr( $autocomplete ); ?>"<?php endif; ?>
-		<?php if ( ! empty( $required ) ) : ?>required<?php endif; ?>
-		aria-describedby="<?php echo esc_attr( trim( $sswi_hint . ' ' . $sswi_err ) ); ?>"
+		name="<?php echo esc_attr( $sswi_name ); ?>"
+		<?php if ( ! empty( $sswi_maxlength ) ) : ?>
+			maxlength="<?php echo esc_attr( (string) $sswi_maxlength ); ?>"
+		<?php endif; ?>
+		<?php if ( ! empty( $sswi_autocomplete ) ) : ?>
+			autocomplete="<?php echo esc_attr( $sswi_autocomplete ); ?>"
+		<?php endif; ?>
+		<?php if ( ! empty( $sswi_required ) ) : ?>
+			required
+		<?php endif; ?>
+		aria-describedby="<?php echo esc_attr( trim( $sswi_hint_id . ' ' . $sswi_err ) ); ?>"
 		disabled
 	>
 

@@ -136,6 +136,33 @@ jobs:
             --env-cwd=wp-content/plugins/$(basename "$PWD") \
             vendor/bin/phpunit -c phpunit-integration.xml.dist
 
+  toolchain-artifacts:
+    # TEMPORARY (ENG-5587). The development machine has no host PHP and no
+    # reachable Docker daemon, so this job lends the branch a PHP runtime: it
+    # produces the composer.lock that belongs in the repo and the patch phpcbf
+    # would apply. Both get committed, and then this job is deleted.
+    name: composer.lock + phpcbf patch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - name: What phpcbf would change
+        run: |
+          composer exec -- phpcbf || true
+          git diff > phpcbf.patch
+          echo "--- patch size ---"
+          wc -l phpcbf.patch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toolchain
+          path: |
+            composer.lock
+            phpcbf.patch
+
   e2e:
     # ⛔ Gated on ENG-6418. These specs are committed but have never executed —
     # Playwright's runner does not start on the development machine, and until

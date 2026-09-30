@@ -26,30 +26,37 @@ final class SettingsSanitizeTest extends TestCase {
 
 		$this->stored = array();
 
-		Functions\when( 'get_option' )->alias( fn( $name, $default = array() ) => $this->stored ?: $default );
-		Functions\when( 'update_option' )->alias( function ( $name, $value ) {
-			$this->stored = $value;
-			return true;
-		} );
+		Functions\when( 'get_option' )->alias(
+			fn( $name, $fallback = array() ) => array() === $this->stored ? $fallback : $this->stored
+		);
+		Functions\when( 'update_option' )->alias(
+			function ( $name, $value ) {
+				$this->stored = $value;
+
+				return true;
+			}
+		);
 		Functions\when( 'home_url' )->justReturn( 'https://example.test' );
 		Functions\when( 'untrailingslashit' )->alias( fn( $s ) => rtrim( (string) $s, '/' ) );
 		Functions\when( 'wp_parse_url' )->alias( fn( $u ) => parse_url( $u ) );
 		Functions\when( 'add_settings_error' )->justReturn( null );
 		Functions\when( 'sanitize_email' )->alias( fn( $e ) => trim( (string) $e ) );
 		Functions\when( 'is_email' )->alias( fn( $e ) => (bool) filter_var( $e, FILTER_VALIDATE_EMAIL ) );
-		Functions\when( 'esc_url_raw' )->alias( function ( $url, $protocols = null ) {
-			$url = trim( (string) $url );
+		Functions\when( 'esc_url_raw' )->alias(
+			function ( $url, $protocols = null ) {
+				$url = trim( (string) $url );
 
-			if ( is_array( $protocols ) ) {
-				$scheme = strtolower( (string) wp_parse_url( $url )['scheme'] ?? '' );
+				if ( is_array( $protocols ) ) {
+					$scheme = strtolower( (string) wp_parse_url( $url )['scheme'] ?? '' );
 
-				if ( ! in_array( $scheme, $protocols, true ) ) {
-					return '';
+					if ( ! in_array( $scheme, $protocols, true ) ) {
+						return '';
+					}
 				}
-			}
 
-			return $url;
-		} );
+				return $url;
+			}
+		);
 		Functions\when( '__' )->returnArg( 1 );
 	}
 

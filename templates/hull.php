@@ -27,63 +27,63 @@ $sswi_rates   = $sswi_serving['rates'];
 		<div class="sswi-summary" data-sswi-summary tabindex="-1" hidden></div>
 
 		<?php
-		$name         = 'userName';
-		$label        = __( 'Your name', 'spotship-war-insurance' );
-		$type         = 'text';
-		$maxlength    = 255;
-		$required     = true;
-		$autocomplete = 'name';
-		$hint         = '';
+		$sswi_name         = 'userName';
+		$sswi_label        = __( 'Your name', 'spotship-war-insurance' );
+		$sswi_type         = 'text';
+		$sswi_maxlength    = 255;
+		$sswi_required     = true;
+		$sswi_autocomplete = 'name';
+		$sswi_hint         = '';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 
-		$name         = 'userEmail';
-		$label        = __( 'Email', 'spotship-war-insurance' );
-		$type         = 'email';
-		$maxlength    = 254;
-		$required     = true;
-		$autocomplete = 'email';
+		$sswi_name         = 'userEmail';
+		$sswi_label        = __( 'Email', 'spotship-war-insurance' );
+		$sswi_type         = 'email';
+		$sswi_maxlength    = 254;
+		$sswi_required     = true;
+		$sswi_autocomplete = 'email';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 
-		$name         = 'userPhone';
-		$label        = __( 'Phone', 'spotship-war-insurance' );
-		$type         = 'tel';
-		$maxlength    = 20;
-		$required     = false;
-		$autocomplete = 'tel';
+		$sswi_name         = 'userPhone';
+		$sswi_label        = __( 'Phone', 'spotship-war-insurance' );
+		$sswi_type         = 'tel';
+		$sswi_maxlength    = 20;
+		$sswi_required     = false;
+		$sswi_autocomplete = 'tel';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 		?>
 
 		<?php
-		$combo_name  = 'vessel';
-		$combo_label = __( 'Vessel', 'spotship-war-insurance' );
-		$combo_kind  = 'vessel';
-		$combo_hint  = __( 'Type at least two characters, then choose from the list.', 'spotship-war-insurance' );
+		$sswi_combo_name  = 'vessel';
+		$sswi_combo_label = __( 'Vessel', 'spotship-war-insurance' );
+		$sswi_combo_kind  = 'vessel';
+		$sswi_combo_hint  = __( 'Type at least two characters, then choose from the list.', 'spotship-war-insurance' );
 		require SPOTSHIP_WI_PATH . 'templates/partials/combobox.php';
 
-		$combo_name  = 'fromPort';
-		$combo_label = __( 'From location', 'spotship-war-insurance' );
-		$combo_kind  = 'location';
+		$sswi_combo_name  = 'fromPort';
+		$sswi_combo_label = __( 'From location', 'spotship-war-insurance' );
+		$sswi_combo_kind  = 'location';
 		require SPOTSHIP_WI_PATH . 'templates/partials/combobox.php';
 
-		$combo_name  = 'toPort';
-		$combo_label = __( 'To location', 'spotship-war-insurance' );
-		$combo_kind  = 'location';
+		$sswi_combo_name  = 'toPort';
+		$sswi_combo_label = __( 'To location', 'spotship-war-insurance' );
+		$sswi_combo_kind  = 'location';
 		require SPOTSHIP_WI_PATH . 'templates/partials/combobox.php';
 		?>
 
 		<?php
-		$name         = 'handmValue';
-		$label        = __( 'Hull & machinery value', 'spotship-war-insurance' );
-		$type         = 'text';
-		$maxlength    = 40;
-		$required     = false;
-		$autocomplete = '';
-		$hint         = '';
+		$sswi_name         = 'handmValue';
+		$sswi_label        = __( 'Hull & machinery value', 'spotship-war-insurance' );
+		$sswi_type         = 'text';
+		$sswi_maxlength    = 40;
+		$sswi_required     = false;
+		$sswi_autocomplete = '';
+		$sswi_hint         = '';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 
-		$name      = 'increasedValue';
-		$label     = __( 'Increased value', 'spotship-war-insurance' );
-		$maxlength = 40;
+		$sswi_name      = 'increasedValue';
+		$sswi_label     = __( 'Increased value', 'spotship-war-insurance' );
+		$sswi_maxlength = 40;
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 		?>
 

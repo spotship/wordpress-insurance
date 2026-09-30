@@ -230,7 +230,7 @@ final class RestProxyTest extends WP_UnitTestCase {
 			. "    honeypot empty  -> HTTP %d %s\n"
 			. "    honeypot filled -> HTTP %d %s\n"
 			. "Either the refusal belongs ABOVE the decoy gates in handle_submit(), or this payload is not a\n"
-			. "local refusal and the row belongs in the table as `residual`.",
+			. 'local refusal and the row belongs in the table as `residual`.',
 			$label,
 			$answers[0]['status'],
 			(string) wp_json_encode( $answers[0]['body'] ),

@@ -62,7 +62,11 @@ $sswi_stale = in_array( $sswi_tier, array( 'backup', 'bundled' ), true );
 		</thead>
 		<tbody>
 			<?php foreach ( $sswi_table as $sswi_row ) : ?>
-				<?php if ( ! is_array( $sswi_row ) ) { continue; } ?>
+				<?php
+				if ( ! is_array( $sswi_row ) ) {
+					continue;
+				}
+				?>
 				<tr>
 					<th scope="row"><?php echo esc_html( (string) ( $sswi_row['zone'] ?? '' ) ); ?></th>
 					<?php foreach ( $sswi_columns as $sswi_col ) : ?>

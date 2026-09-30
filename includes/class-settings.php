@@ -77,13 +77,13 @@ final class Spotship_WI_Settings {
 	 * One setting.
 	 *
 	 * @param string $key     Setting key.
-	 * @param mixed  $default Returned when the key is absent or empty.
+	 * @param mixed  $fallback Returned when the key is absent or empty.
 	 * @return mixed
 	 */
-	public static function get( string $key, $default = '' ) {
+	public static function get( string $key, $fallback = '' ) {
 		$all = self::all();
 
-		return array_key_exists( $key, $all ) && '' !== $all[ $key ] ? $all[ $key ] : $default;
+		return array_key_exists( $key, $all ) && '' !== $all[ $key ] ? $all[ $key ] : $fallback;
 	}
 
 	/**
@@ -281,7 +281,7 @@ final class Spotship_WI_Settings {
 	public static function binding_mismatch(): bool {
 		$bound = self::bound_site_url();
 
-		return '' !== $bound && $bound !== self::current_site_url();
+		return '' !== $bound && self::current_site_url() !== $bound;
 	}
 
 	/**

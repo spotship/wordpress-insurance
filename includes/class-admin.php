@@ -239,9 +239,8 @@ final class Spotship_WI_Admin {
 		<p class="description">
 			<?php esc_html_e( 'Copy this and include it when contacting Spot Ship support. It contains no credentials — the API key is masked.', 'spotship-war-insurance' ); ?>
 		</p>
-		<textarea id="sswi-diagnostics" class="large-text code" rows="18" readonly onclick="this.select()"><?php
-			echo esc_textarea( (string) wp_json_encode( $blob, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) );
-		?></textarea>
+		<?php // Deliberately one line: a newline inside <textarea> becomes part of its value. ?>
+		<textarea id="sswi-diagnostics" class="large-text code" rows="18" readonly onclick="this.select()"><?php echo esc_textarea( (string) wp_json_encode( $blob, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) ); ?></textarea>
 		<p>
 			<button type="button" class="button" id="sswi-copy-diagnostics">
 				<?php esc_html_e( 'Copy diagnostics', 'spotship-war-insurance' ); ?>

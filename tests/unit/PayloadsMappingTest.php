@@ -59,7 +59,7 @@ final class PayloadsMappingTest extends TestCase {
 		$payload = Spotship_WI_Payloads::map_hull( array( 'dataConsent' => false ), $this->context() );
 
 		$this->assertTrue( $payload['dataConsent'] );
-		$this->assertSame( 'wordpress', $payload['source'] );
+		$this->assertSame( Spotship_WI_Payloads::SOURCE, $payload['source'] );
 	}
 
 	public function test_an_absent_submission_id_is_omitted_rather_than_sent_empty(): void {

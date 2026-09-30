@@ -38,6 +38,18 @@ plugin's central constraint, not an implementation detail.
 Shortcode and block render through **one** renderer, so there is exactly one
 markup path to keep accessible.
 
+### The upstream contract is derived, never written
+
+`tests/fixtures/backend-201-keys.json` and `tests/fixtures/backend-rates.json`
+are **generated from the backend source** by `bin/derive-backend-keys.sh` and
+`bin/derive-backend-rates.sh`. Do not hand-edit either.
+
+Both exist because a hand-written fixture has twice become the contract the
+plugin was built against: once for the 201 body, where the anti-bot decoy was
+then shaped to imitate the fiction, and once for the rates body, where the whole
+rate table was written against a shape the API does not emit and no suite could
+see it. `TESTING.md` has the detail.
+
 ### Two invariants that are easy to break
 
 **Decoy parity.** A client flagged as a bot gets a fabricated 200 that is

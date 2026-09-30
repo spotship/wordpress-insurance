@@ -90,6 +90,39 @@ const MUTATIONS = [
 		mustFail: [ 'no tracked file reaches the customer zip without a decision' ],
 	},
 
+	{
+		suite: 'js',
+		what: 'the rate table goes back to reading a top-level columns list',
+		file: 'templates/partials/rates-table.php',
+		from: "$sswi_section['columns']",
+		to: "$sswi_rates['columns']",
+		// The shipped state. The endpoint nests columns under the product, so this
+		// rendered a table with no header cells at all against the real backend.
+		mustFail: [ 'the rate table reads the payload the rates endpoint actually returns' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'a rate number is published without being formatted as a percentage',
+		file: 'templates/partials/rates-table.php',
+		from: 'Spotship_WI_Renderer::rate_percent( $sswi_row[ $sswi_key ] )',
+		to: '(string) $sswi_row[ $sswi_key ]',
+		// Publishes "0.085" where "8.50%" belongs — wrong by two orders of
+		// magnitude, on a commercial rate table on a customer's public site.
+		mustFail: [ 'the rate table reads the payload the rates endpoint actually returns' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the notes textarea loses the hook its error message needs',
+		file: 'templates/cargo.php',
+		from: '<div class="sswi-field" data-sswi-field="notes">',
+		to: '<div class="sswi-field">',
+		// The shipped state, in both templates. fieldError() returns false and the
+		// visitor is told the service is unavailable instead.
+		mustFail: [ 'every named input can be reached by a field error' ],
+	},
+
 	// --- php: driven by the PHPUnit integration suite, needs wp-env ---
 
 	{
@@ -134,6 +167,77 @@ const MUTATIONS = [
 		mustFail: [
 			'test_the_decoy_and_a_genuine_acceptance_share_one_body_shape',
 		],
+	},
+	{
+		suite: 'php',
+		what: 'the rate table reads columns from the top level again',
+		file: 'templates/partials/rates-table.php',
+		from: "$sswi_section['columns']",
+		to: "$sswi_rates['columns']",
+		// The shipped state: the endpoint nests columns under the product, so
+		// this rendered a header row with only the risk-zone cell in it.
+		mustFail: [ 'test_the_header_row_is_the_products_own_columns' ],
+	},
+	{
+		suite: 'php',
+		what: 'the disclaimers are read from the top level again',
+		file: 'templates/partials/rates-table.php',
+		from: "$sswi_section['disclaimers']",
+		to: "$sswi_rates['disclaimers']",
+		// The shipped state, and the one with a compliance consequence: the
+		// block is simply never reached, on every install.
+		mustFail: [ 'test_the_disclaimers_are_rendered' ],
+	},
+	{
+		suite: 'php',
+		what: 'a rate is published as the raw fraction the endpoint sent',
+		file: 'includes/class-renderer.php',
+		from: '$percent = round( (float) $rate * 100, 3 );',
+		to: '$percent = round( (float) $rate, 3 );',
+		// 0.085 instead of 8.50% — a war-risk rate wrong by two orders of
+		// magnitude on a customer's public website.
+		mustFail: [ 'test_a_rate_is_published_as_a_percentage' ],
+	},
+	{
+		suite: 'php',
+		what: 'a real null rate renders as an empty cell instead of an em dash',
+		file: 'includes/class-renderer.php',
+		from: "if ( null === $rate || '' === $rate || ! is_numeric( $rate ) ) {\n\t\t\treturn '—';",
+		to: "if ( null === $rate || '' === $rate || ! is_numeric( $rate ) ) {\n\t\t\treturn '';",
+		// Cargo's Hormuz Passage has no net rate. An empty cell reads as a
+		// rendering fault; an em dash reads as "there is no figure".
+		mustFail: [ 'test_an_absent_rate_reads_as_an_em_dash' ],
+	},
+	{
+		suite: 'php',
+		what: 'the fetch lock is released without checking who holds it',
+		file: 'includes/class-rates-cache.php',
+		from: "if ( (string) get_option( self::LOCK, '' ) === self::$lock_token ) {\n\t\t\tdelete_option( self::LOCK );\n\t\t}",
+		to: 'delete_option( self::LOCK );',
+		// A slow request deleting the lock of the request that took over from it
+		// lets a third fetch start while the second is still running.
+		mustFail: [ 'test_a_slow_request_does_not_release_the_lock_it_lost' ],
+	},
+	{
+		suite: 'php',
+		what: 'Cloudflare IPv6 edges stop being recognised',
+		file: 'includes/class-rate-limiter.php',
+		from: 'return self::in_v6_range( $ip );',
+		to: 'return false;',
+		// Every visitor behind a v6 edge collapses into one bucket, so five
+		// submissions from anybody block the whole edge for an hour.
+		mustFail: [ 'test_a_forwarded_ip_is_honoured_from_an_ipv6_cloudflare_edge' ],
+	},
+	{
+		suite: 'php',
+		what: 'the IPv6 prefix is compared whole bytes only',
+		file: 'includes/class-rate-limiter.php',
+		from: 'if ( 0 === $rest ) {\n\t\t\t\treturn true;\n\t\t\t}',
+		to: 'return true;',
+		// 2a06:98c0::/29 does not end on a byte, so this trusts eight times the
+		// range Cloudflare publishes — every address in it able to name its own
+		// limiter identity with a header.
+		mustFail: [ 'test_the_cloudflare_ipv6_range_boundaries_are_right' ],
 	},
 ];
 

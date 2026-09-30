@@ -9,9 +9,12 @@
 
 defined( 'ABSPATH' ) || exit;
 
-// Declared for static analysis: these are set by the including scope, which
-// PHPStan cannot follow through include().
 /**
+ * What the including scope hands this template.
+ *
+ * Declared because PHPStan cannot follow variables through include(), and
+ * because writing the shape down beats inferring it by reading the renderer.
+ *
  * @var array{
  *     product: string,
  *     form_id: string,
@@ -19,7 +22,7 @@ defined( 'ABSPATH' ) || exit;
  *     signature: string,
  *     config: array<string, mixed>,
  *     serving: array{tier: string, rates: array<string, mixed>}
- * } $data Supplied by Spotship_WI_Renderer::render(), whose include() this is.
+ * } $data
  */
 
 $sswi_serving = $data['serving'];

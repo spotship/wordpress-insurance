@@ -1,0 +1,14 @@
+# Ship pipeline artifacts — local only
+.ship/
+
+# Dependencies
+vendor/
+node_modules/
+
+# Build output
+dist/
+*.zip
+
+# Local env
+.env
+.DS_Store

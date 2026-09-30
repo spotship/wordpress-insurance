@@ -6,7 +6,8 @@
 	beStrictAboutTestsThatDoNotTestAnything="true"
 	failOnWarning="true"
 	failOnRisky="true"
-	cacheResultFile=".phpunit.result.cache">
+	cacheResultFile=".phpunit.result.cache"
+	bootstrap="tests/bootstrap-unit.php">
 
 	<testsuites>
 		<!--

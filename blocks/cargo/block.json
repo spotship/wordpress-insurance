@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/block.json",
+  "apiVersion": 3,
+  "name": "spotship/war-cargo",
+  "title": "War Cargo Quote",
+  "category": "widgets",
+  "icon": "shield",
+  "description": "War cargo insurance quote request form.",
+  "textdomain": "spotship-war-insurance",
+  "supports": {
+    "html": false,
+    "customClassName": false
+  }
+}

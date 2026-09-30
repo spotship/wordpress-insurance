@@ -31,6 +31,14 @@ final class Spotship_WI_Renderer {
 	public static function render( string $product ): string {
 		$product = 'cargo' === $product ? 'cargo' : 'hull';
 
+		/*
+		 * Enqueued HERE rather than on wp_enqueue_scripts, so a page without a form
+		 * loads neither asset. WordPress permits a late enqueue for footer scripts,
+		 * which is why the script is registered with in_footer.
+		 */
+		wp_enqueue_script( 'spotship-wi' );
+		wp_enqueue_style( 'spotship-wi' );
+
 		$timestamp = time();
 		$form_id   = wp_generate_uuid4();
 

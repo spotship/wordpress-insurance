@@ -69,6 +69,54 @@ function spotship_wi_boot(): void {
 		false,
 		dirname( plugin_basename( SPOTSHIP_WI_FILE ) ) . '/languages'
 	);
+
+	Spotship_WI_Shortcodes::register();
+
+	/*
+	 * Assets are REGISTERED here but enqueued by the renderer, so a page with no
+	 * form loads neither the script nor the stylesheet. On a customer site we do
+	 * not control, adding ~10KB to every page for a form on one of them is not
+	 * ours to spend.
+	 */
+	wp_register_script(
+		'spotship-wi',
+		SPOTSHIP_WI_URL . 'assets/js/war-insurance.js',
+		array(),
+		SPOTSHIP_WI_VERSION,
+		array(
+			'in_footer' => true,
+			'strategy'  => 'defer',
+		)
+	);
+
+	wp_register_style(
+		'spotship-wi',
+		SPOTSHIP_WI_URL . 'assets/css/war-insurance.css',
+		array(),
+		SPOTSHIP_WI_VERSION
+	);
 }
 
 add_action( 'plugins_loaded', 'spotship_wi_boot' );
+
+add_action( 'init', array( 'Spotship_WI_Shortcodes', 'register_blocks' ) );
+
+add_action(
+	'rest_api_init',
+	array( 'Spotship_WI_Rest_Proxy', 'register' )
+);
+
+add_action(
+	'admin_init',
+	static function (): void {
+		register_setting(
+			'spotship_wi',
+			Spotship_WI_Settings::OPTION,
+			array(
+				'type'              => 'array',
+				'sanitize_callback' => array( 'Spotship_WI_Settings', 'sanitize' ),
+				'default'           => array(),
+			)
+		);
+	}
+);

@@ -119,3 +119,71 @@ test( 'every bound the proxy validates is published to the browser', () => {
 		);
 	} );
 } );
+
+test( 'the e2e upstream fixture emits exactly the keys the backend serializer does', () => {
+	/*
+	 * The shape of a genuine 201 is not ours to assert. A previous
+	 * implementation hand-wrote a shape the API never emits, the anti-bot decoy
+	 * was built to imitate that fixture, and the resulting tell shipped.
+	 *
+	 * tests/fixtures/backend-201-keys.json is DERIVED from the backend
+	 * serializer by bin/derive-backend-keys.sh. This asserts the e2e fixture
+	 * agrees with it, so the fixture cannot drift back into fiction without a
+	 * test going red.
+	 */
+	const derived = JSON.parse( read( 'tests/fixtures/backend-201-keys.json' ) );
+	const src = read( 'bin/e2e-upstream.js' );
+
+	const keysOf = ( fn ) => {
+		const body = new RegExp( `function ${ fn }\\( body \\) \\{([\\s\\S]*?)\\n\\}` ).exec( src );
+		assert.ok( body, `${ fn }() must exist in the e2e fixture` );
+		return new Set( [ ...body[ 1 ].matchAll( /^\s*([A-Za-z]+):/gm ) ].map( ( m ) => m[ 1 ] ) );
+	};
+
+	const provenance = keysOf( 'provenance' );
+	const hull = new Set( [ ...keysOf( 'hullEcho' ), ...provenance ] );
+	const cargo = new Set( [ ...keysOf( 'cargoEcho' ), ...provenance ] );
+
+	assert.deepEqual(
+		[ ...hull ].sort(),
+		[ ...derived.hull ].sort(),
+		'the hull fixture must emit exactly the serializer\'s keys'
+	);
+
+	assert.deepEqual(
+		[ ...cargo ].sort(),
+		[ ...derived.cargo ].sort(),
+		'the cargo fixture must emit exactly the serializer\'s keys'
+	);
+
+	// The two documented absences, asserted rather than assumed.
+	assert.ok( ! derived.hull.includes( 'id' ), 'the API exposes no id' );
+	assert.ok( ! derived.hull.includes( 'status' ), 'the API emits no status' );
+} );
+
+test( 'the e2e upstream routes cargo to the cargo shape, not the hull one', () => {
+	/*
+	 * `cargo_quote_request` CONTAINS `quote_request`, so a generic substring
+	 * check matches both and silently serves hull for cargo. The key-set test
+	 * above cannot catch that — it checks the functions, not which one the route
+	 * reaches — so this drives the routing directly.
+	 */
+	const { route } = require( '../../bin/e2e-upstream.js' );
+	const derived = JSON.parse( read( 'tests/fixtures/backend-201-keys.json' ) );
+
+	const hull = route( '/insurance/quote_request/', {} );
+	const cargo = route( '/insurance/cargo_quote_request/', {} );
+
+	assert.equal( hull.status, 201 );
+	assert.equal( cargo.status, 201 );
+
+	assert.deepEqual( Object.keys( hull.body ).sort(), [ ...derived.hull ].sort() );
+	assert.deepEqual( Object.keys( cargo.body ).sort(), [ ...derived.cargo ].sort() );
+
+	// Named explicitly so a regression reads as what it is.
+	assert.ok(
+		'cargoDescription' in cargo.body,
+		'the cargo route must not be serving the hull shape'
+	);
+	assert.ok( ! ( 'handmValue' in cargo.body ), 'hull-only fields must not appear on cargo' );
+} );

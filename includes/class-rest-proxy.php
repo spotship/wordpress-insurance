@@ -520,10 +520,9 @@ final class Spotship_WI_Rest_Proxy {
 	 * the genuine and decoy paths cannot diverge — there is only one shape and
 	 * neither is derived from anything the other lacks.
 	 *
-	 * Invents nothing. `submissionId` is the caller's own UUID, so a human who
-	 * trips the honeypot by accident and quotes it gets an honest "no such
-	 * submission" rather than a fabricated reference. No `id` is minted; the
-	 * serializer exposes none.
+	 * INVENTS NOTHING. `submissionId` is the caller's own UUID and is omitted
+	 * entirely when they sent none, so no reference this plugin made up ever
+	 * reaches a visitor. No `id` is minted either; the serializer exposes none.
 	 *
 	 * @param array<string, mixed> $form Submitted values.
 	 * @return array<string, string>
@@ -531,10 +530,25 @@ final class Spotship_WI_Rest_Proxy {
 	private static function receipt( array $form ): array {
 		$submission_id = Spotship_WI_Payloads::submission_id( $form );
 
-		return array(
-			'submissionId' => '' !== $submission_id ? $submission_id : wp_generate_uuid4(),
-			'status'       => 'received',
-		);
+		$receipt = array( 'status' => 'received' );
+
+		/*
+		 * OMITTED, NOT MINTED, when the caller sent none.
+		 *
+		 * Minting one here would hand back a reference that identifies nothing —
+		 * a human who trips the honeypot by accident and quotes it would be told
+		 * "no such submission", and support would be chasing an id this plugin
+		 * invented. The genuine path has the same problem in reverse: a minted id
+		 * is not the one the backend stored.
+		 *
+		 * Both paths omit it identically, so the decoy is not distinguishable by
+		 * its absence either.
+		 */
+		if ( '' !== $submission_id ) {
+			$receipt['submissionId'] = $submission_id;
+		}
+
+		return $receipt;
 	}
 
 	/**

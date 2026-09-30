@@ -57,9 +57,7 @@ final class Spotship_WI_Rates_Cache {
 		 * rather than waiting — a slightly stale table now beats a fresh one
 		 * after eight seconds of blank page.
 		 */
-		if ( false === get_transient( self::LOCK ) ) {
-			set_transient( self::LOCK, 1, self::LOCK_TTL );
-
+		if ( self::acquire_lock() ) {
 			$result = Spotship_WI_Api_Client::request( 'GET', 'insurance/rates' );
 
 			if ( $result['ok'] && array() !== $result['data'] ) {
@@ -67,12 +65,13 @@ final class Spotship_WI_Rates_Cache {
 
 				set_transient( self::FRESH, $result['data'], $ttl );
 				set_transient( self::BACKUP, $result['data'], self::BACKUP_TTL );
-				delete_transient( self::LOCK );
+				Spotship_WI_Diagnostics::record_rates_success();
+				self::release_lock();
 
 				return self::serving( self::TIER_FRESH, $result['data'] );
 			}
 
-			delete_transient( self::LOCK );
+			self::release_lock();
 
 			/*
 			 * THE 401 RULE. A 401 is an entitlement answer, not a reachability
@@ -126,12 +125,56 @@ final class Spotship_WI_Rates_Cache {
 	}
 
 	/**
+	 * Take the fetch lock, ATOMICALLY.
+	 *
+	 * `get_transient()` followed by `set_transient()` is a read-then-write race:
+	 * on a busy page every concurrent request reads "absent" before any of them
+	 * writes, they all believe they won, and the stampede the lock exists to
+	 * prevent happens anyway — with the added cost of N upstream calls the
+	 * operator is paying a throttle budget for.
+	 *
+	 * `add_option()` is an INSERT against the unique index on option_name, so
+	 * exactly one caller can succeed. The expiry is carried in the value rather
+	 * than by the transient layer, because the atomicity is what matters and
+	 * add_option has no TTL.
+	 */
+	private static function acquire_lock(): bool {
+		$now = time();
+
+		if ( add_option( self::LOCK, (string) $now, '', false ) ) {
+			return true;
+		}
+
+		/*
+		 * A lock left behind by a crashed request would otherwise wedge the table
+		 * at the backup tier until someone noticed. Anything older than the TTL is
+		 * treated as abandoned and taken over.
+		 */
+		$held = (int) get_option( self::LOCK, '0' );
+
+		if ( $held > 0 && ( $now - $held ) > self::LOCK_TTL ) {
+			self::release_lock();
+
+			return (bool) add_option( self::LOCK, (string) $now, '', false );
+		}
+
+		return false;
+	}
+
+	/**
+	 * Release the fetch lock.
+	 */
+	private static function release_lock(): void {
+		delete_option( self::LOCK );
+	}
+
+	/**
 	 * Drop every cached copy. Used by the 401 rule and by uninstall.
 	 */
 	public static function purge(): void {
 		delete_transient( self::FRESH );
 		delete_transient( self::BACKUP );
-		delete_transient( self::LOCK );
+		self::release_lock();
 	}
 
 	/**

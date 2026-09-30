@@ -34,17 +34,11 @@ const RATES = {
 	disclaimers: [ 'Indicative only. Not an offer or a quote, and subject to underwriting.' ],
 };
 
-function hullEcho( body ) {
+/**
+ * The provenance half, identical on both products.
+ */
+function provenance( body ) {
 	return {
-		userName: body.userName || '',
-		userEmail: body.userEmail || '',
-		userPhone: body.userPhone || '',
-		vessel: body.vessel || null,
-		handmValue: body.handmValue || '',
-		increasedValue: body.increasedValue || '',
-		fromPort: body.fromPort || 0,
-		toPort: body.toPort || 0,
-		notes: body.notes || '',
 		dataConsent: true,
 		source: 'wordpress',
 		submissionId: body.submissionId || null,
@@ -55,33 +49,91 @@ function hullEcho( body ) {
 	};
 }
 
-const server = http.createServer( ( req, res ) => {
-	let raw = '';
+/**
+ * CARGO IS NOT HULL. Twenty keys, not sixteen, and a different set — echoing
+ * the hull shape here would have the e2e suite assert a response the API never
+ * emits for this product, which is the exact failure this fixture's comment
+ * warns about.
+ */
+function cargoEcho( body ) {
+	return Object.assign( {
+		userName: body.userName || '',
+		userEmail: body.userEmail || '',
+		userPhone: body.userPhone || '',
+		vessel: body.vessel || null,
+		cargoDescription: body.cargoDescription || '',
+		cargoWeight: body.cargoWeight || '',
+		cargoValue: body.cargoValue ? Number( body.cargoValue ) : 0,
+		cargoCurrency: body.cargoCurrency || '',
+		riskZone: body.riskZone || '',
+		insuredParty: body.insuredParty || '',
+		fromPort: body.fromPort || 0,
+		destinations: body.destinations || [],
+		notes: body.notes || '',
+	}, provenance( body ) );
+}
 
-	req.on( 'data', ( chunk ) => {
-		raw += chunk;
-	} );
+function hullEcho( body ) {
+	return Object.assign( {
+		userName: body.userName || '',
+		userEmail: body.userEmail || '',
+		userPhone: body.userPhone || '',
+		vessel: body.vessel || null,
+		handmValue: body.handmValue || '',
+		increasedValue: body.increasedValue || '',
+		fromPort: body.fromPort || 0,
+		toPort: body.toPort || 0,
+		notes: body.notes || '',
+	}, provenance( body ) );
+}
 
-	req.on( 'end', () => {
-		const url = new URL( req.url, `http://localhost:${ PORT }` );
-		const send = ( status, body ) => {
-			res.writeHead( status, { 'Content-Type': 'application/json' } );
-			res.end( JSON.stringify( body ) );
-		};
+/**
+ * Route a request. A PURE FUNCTION, exported, so the routing can be tested
+ * without binding a socket — which matters because the routing is where the bug
+ * was: `cargo_quote_request` CONTAINS `quote_request`, so a generic substring
+ * check matches both and silently serves the hull shape for cargo.
+ *
+ * @param {string} pathname Request path.
+ * @param {object} body     Parsed request body.
+ * @returns {{status: number, body: object}}
+ */
+function route( pathname, body ) {
+	if ( pathname.startsWith( '/insurance/rates' ) ) {
+		return { status: 200, body: RATES };
+	}
 
-		if ( url.pathname.startsWith( '/insurance/rates' ) ) {
-			return send( 200, RATES );
-		}
+	if ( pathname.startsWith( '/insurance/vessel_search' ) ) {
+		return { status: 200, body: { results: VESSELS } };
+	}
 
-		if ( url.pathname.startsWith( '/insurance/vessel_search' ) ) {
-			return send( 200, { results: VESSELS } );
-		}
+	if ( pathname.startsWith( '/insurance/location_search' ) ) {
+		return { status: 200, body: { results: LOCATIONS } };
+	}
 
-		if ( url.pathname.startsWith( '/insurance/location_search' ) ) {
-			return send( 200, { results: LOCATIONS } );
-		}
+	if ( pathname.includes( 'quote_request' ) ) {
+		// Cargo FIRST: the cargo path contains the hull path as a substring.
+		const isCargo = pathname.includes( 'cargo_quote_request' );
 
-		if ( url.pathname.includes( 'quote_request' ) ) {
+		return { status: 201, body: isCargo ? cargoEcho( body ) : hullEcho( body ) };
+	}
+
+	return { status: 404, body: { detail: 'Not found' } };
+}
+
+module.exports = { route, hullEcho, cargoEcho, provenance, RATES, LOCATIONS, VESSELS };
+
+/* istanbul ignore next — only reached when run as a server, not when required. */
+if ( require.main === module ) {
+	const server = http.createServer( ( req, res ) => {
+		let raw = '';
+
+		req.on( 'data', ( chunk ) => {
+			raw += chunk;
+		} );
+
+		req.on( 'end', () => {
+			const url = new URL( req.url, `http://localhost:${ PORT }` );
+
 			let body = {};
 
 			try {
@@ -90,13 +142,14 @@ const server = http.createServer( ( req, res ) => {
 				body = {};
 			}
 
-			return send( 201, hullEcho( body ) );
-		}
+			const answer = route( url.pathname, body );
 
-		return send( 404, { detail: 'Not found' } );
+			res.writeHead( answer.status, { 'Content-Type': 'application/json' } );
+			res.end( JSON.stringify( answer.body ) );
+		} );
 	} );
-} );
 
-server.listen( PORT, () => {
-	process.stdout.write( `e2e upstream listening on ${ PORT }\n` );
-} );
+	server.listen( PORT, () => {
+		process.stdout.write( `e2e upstream listening on ${ PORT }\n` );
+	} );
+}

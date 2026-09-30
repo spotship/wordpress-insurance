@@ -19,6 +19,14 @@ global $wpdb;
 delete_option( 'spotship_wi_settings' );
 
 /*
+ * The rates fetch lock is a plain OPTION, not a transient — it is taken with
+ * add_option() because that is atomic against the unique index on option_name,
+ * which get_transient/set_transient is not. It therefore carries no
+ * `_transient_` prefix and the sweep below CANNOT reach it.
+ */
+delete_option( 'spotship_wi_rates_lock' );
+
+/*
  * Transients written under our own prefix: the rates tiers, the stampede lock,
  * the diagnostics ledger and the per-IP rate-limit counters.
  *

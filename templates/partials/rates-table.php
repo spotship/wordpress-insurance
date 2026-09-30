@@ -18,6 +18,16 @@ defined( 'ABSPATH' ) || exit;
 $sswi_table   = $sswi_rates[ $data['config']['product'] ] ?? array();
 $sswi_columns = $sswi_rates['columns'] ?? array();
 $sswi_updated = isset( $sswi_rates['updatedAt'] ) ? (string) $sswi_rates['updatedAt'] : '';
+$sswi_tier    = (string) ( $sswi_serving['tier'] ?? '' );
+
+/*
+ * A table served from the backup or bundled tier is NOT current, and the
+ * visitor is the person deciding whether to act on it. Showing a publication
+ * date without saying the figures could not be refreshed invites them to read
+ * a cached number as today's — and war-risk rates move fast enough that the
+ * difference is commercially real.
+ */
+$sswi_stale = in_array( $sswi_tier, array( 'backup', 'bundled' ), true );
 ?>
 <div class="sswi-rates">
 	<?php if ( '' !== $sswi_updated ) : ?>
@@ -29,6 +39,13 @@ $sswi_updated = isset( $sswi_rates['updatedAt'] ) ? (string) $sswi_rates['update
 				esc_html( $sswi_updated )
 			);
 			?>
+		</p>
+	<?php endif; ?>
+
+	<?php if ( $sswi_stale ) : ?>
+		<p class="sswi-rates-stale" role="status">
+			<strong><?php esc_html_e( 'These rates could not be refreshed and may be out of date.', 'spotship-war-insurance' ); ?></strong>
+			<?php esc_html_e( 'Contact our insurance desk to confirm current figures before relying on them.', 'spotship-war-insurance' ); ?>
 		</p>
 	<?php endif; ?>
 

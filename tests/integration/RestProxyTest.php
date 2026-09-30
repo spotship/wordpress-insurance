@@ -50,12 +50,18 @@ final class RestProxyTest extends WP_UnitTestCase {
 	public function intercept( $pre, $args, $url ) {
 		unset( $pre );
 
-		$this->upstream[] = array( 'url' => $url, 'args' => $args );
+		$this->upstream[] = array(
+			'url'  => $url,
+			'args' => $args,
+		);
 
 		return array(
 			'headers'  => array(),
 			'body'     => (string) wp_json_encode( $this->genuine_201() ),
-			'response' => array( 'code' => 201, 'message' => 'Created' ),
+			'response' => array(
+				'code'    => 201,
+				'message' => 'Created',
+			),
 		);
 	}
 
@@ -120,11 +126,11 @@ final class RestProxyTest extends WP_UnitTestCase {
 	 */
 	private function good( string $product ): array {
 		$base = array(
-			'userName'     => 'A Person',
-			'userEmail'    => 'a@example.test',
-			'dataConsent'  => true,
-			'submissionId' => '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
-			'_sswi_ts'     => time() - 10,
+			'userName'      => 'A Person',
+			'userEmail'     => 'a@example.test',
+			'dataConsent'   => true,
+			'submissionId'  => '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+			'_sswi_ts'      => time() - 10,
 			'_sswi_form_id' => 'form-1',
 		);
 
@@ -291,7 +297,10 @@ final class RestProxyTest extends WP_UnitTestCase {
 			static fn() => array(
 				'headers'  => array(),
 				'body'     => (string) wp_json_encode( array( 'detail' => 'Invalid API key' ) ),
-				'response' => array( 'code' => 401, 'message' => 'Unauthorized' ),
+				'response' => array(
+					'code'    => 401,
+					'message' => 'Unauthorized',
+				),
 			),
 			10
 		);
@@ -391,7 +400,10 @@ final class RestProxyTest extends WP_UnitTestCase {
 						),
 					)
 				),
-				'response' => array( 'code' => 200, 'message' => 'OK' ),
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
 			),
 			10
 		);

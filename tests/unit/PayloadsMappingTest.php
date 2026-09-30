@@ -43,7 +43,11 @@ final class PayloadsMappingTest extends TestCase {
 	 */
 	public function test_the_hull_payload_uses_the_agreed_camel_case_keys(): void {
 		$payload = Spotship_WI_Payloads::map_hull(
-			array( 'userName' => 'A', 'handmValue' => '1000', 'increasedValue' => '50' ),
+			array(
+				'userName'       => 'A',
+				'handmValue'     => '1000',
+				'increasedValue' => '50',
+			),
 			$this->context()
 		);
 

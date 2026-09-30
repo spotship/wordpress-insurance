@@ -136,7 +136,7 @@ final class Spotship_WI_Settings {
 		 * bearer credential on every request; a plaintext base URL would put a
 		 * customer's API key on the wire.
 		 */
-		$base = isset( $input['api_base_url'] ) ? esc_url_raw( trim( (string) $input['api_base_url'] ), array( 'https' ) ) : '';
+		$base                  = isset( $input['api_base_url'] ) ? esc_url_raw( trim( (string) $input['api_base_url'] ), array( 'https' ) ) : '';
 		$clean['api_base_url'] = str_starts_with( $base, 'https://' ) ? untrailingslashit( $base ) : '';
 
 		/*

@@ -184,7 +184,14 @@ final class Spotship_WI_Rest_Proxy {
 		if ( ! $result['ok'] ) {
 			Spotship_WI_Diagnostics::record( $endpoint, $result['status'], $result['code'] );
 
-			return self::respond( 200, array( 'results' => array(), 'unavailable' => true ), 'no-store' );
+			return self::respond(
+				200,
+				array(
+					'results'     => array(),
+					'unavailable' => true,
+				),
+				'no-store'
+			);
 		}
 
 		$rows = 'vessel' === $kind
@@ -400,9 +407,9 @@ final class Spotship_WI_Rest_Proxy {
 	/**
 	 * Turn a normalised upstream result into the visitor's answer.
 	 *
-	 * @param string                                                                                   $product 'hull' or 'cargo'.
+	 * @param string                                                                                           $product 'hull' or 'cargo'.
 	 * @param array{ok: bool, status: int, data: array<array-key, mixed>, code: string, retry_after: int|null} $result  Normalised result.
-	 * @param array<string, mixed>                                                                     $form    Submitted values.
+	 * @param array<string, mixed>                                                                             $form    Submitted values.
 	 */
 	private static function shape_submit_result( string $product, array $result, array $form ): WP_REST_Response {
 		$endpoint = self::SUBMIT_ENDPOINTS[ $product ];

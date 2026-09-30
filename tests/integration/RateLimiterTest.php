@@ -126,7 +126,7 @@ final class RateLimiterTest extends WP_UnitTestCase {
 	 * much as switch it off: any caller could pick their own identity.
 	 */
 	public function test_a_forwarded_ip_is_ignored_when_the_peer_is_not_a_cloudflare_edge(): void {
-		$_SERVER['REMOTE_ADDR']          = '203.0.113.9';
+		$_SERVER['REMOTE_ADDR']           = '203.0.113.9';
 		$_SERVER['HTTP_CF_CONNECTING_IP'] = '198.51.100.7';
 
 		$this->assertSame( '203.0.113.9', Spotship_WI_Rate_Limiter::client_ip() );

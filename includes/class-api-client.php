@@ -34,12 +34,12 @@ final class Spotship_WI_Api_Client {
 	/**
 	 * Normalised result codes. Callers branch on these, never on a raw status.
 	 */
-	public const OK           = 'ok';
-	public const TRANSPORT    = 'transport';
-	public const UNAUTHORISED = 'unauthorised';
-	public const THROTTLED    = 'throttled';
-	public const VALIDATION   = 'validation';
-	public const SERVER       = 'server';
+	public const OK            = 'ok';
+	public const TRANSPORT     = 'transport';
+	public const UNAUTHORISED  = 'unauthorised';
+	public const THROTTLED     = 'throttled';
+	public const VALIDATION    = 'validation';
+	public const SERVER        = 'server';
 	public const MISCONFIGURED = 'misconfigured';
 
 	/**
@@ -177,11 +177,11 @@ final class Spotship_WI_Api_Client {
 	/**
 	 * Assemble the normalised shape.
 	 *
-	 * @param bool                       $ok          Whether the call succeeded.
-	 * @param int                        $status      HTTP status, 0 for transport failures.
-	 * @param array<array-key, mixed>    $data        Decoded body.
-	 * @param string                     $code        One of the class constants.
-	 * @param int|null                   $retry_after Seconds, when the upstream said so.
+	 * @param bool                    $ok          Whether the call succeeded.
+	 * @param int                     $status      HTTP status, 0 for transport failures.
+	 * @param array<array-key, mixed> $data        Decoded body.
+	 * @param string                  $code        One of the class constants.
+	 * @param int|null                $retry_after Seconds, when the upstream said so.
 	 * @return array{ok: bool, status: int, data: array<array-key, mixed>, code: string, retry_after: int|null}
 	 */
 	private static function result( bool $ok, int $status, array $data, string $code, ?int $retry_after ): array {

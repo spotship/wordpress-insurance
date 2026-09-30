@@ -96,14 +96,14 @@ final class Spotship_WI_Renderer {
 				'insuredParty'     => Spotship_WI_Payloads::MAX_INSURED_PARTY,
 			),
 			'i18n'            => array(
-				'unavailable'   => __( 'This form is temporarily unavailable. Please try again shortly.', 'spotship-war-insurance' ),
-				'sending'       => __( 'Sending your request…', 'spotship-war-insurance' ),
-				'noResults'     => __( 'No matches found.', 'spotship-war-insurance' ),
-				'lookupFailed'  => __( 'Search is unavailable, so this form cannot be submitted right now.', 'spotship-war-insurance' ),
-				'errorSummary'  => __( 'Please correct the following:', 'spotship-war-insurance' ),
-				'removeChip'    => __( 'Remove %s', 'spotship-war-insurance' ),
-				'resultCount'   => __( '%d results available.', 'spotship-war-insurance' ),
-				'expired'       => __( 'This form has been open too long. Please reload the page and try again.', 'spotship-war-insurance' ),
+				'unavailable'  => __( 'This form is temporarily unavailable. Please try again shortly.', 'spotship-war-insurance' ),
+				'sending'      => __( 'Sending your request…', 'spotship-war-insurance' ),
+				'noResults'    => __( 'No matches found.', 'spotship-war-insurance' ),
+				'lookupFailed' => __( 'Search is unavailable, so this form cannot be submitted right now.', 'spotship-war-insurance' ),
+				'errorSummary' => __( 'Please correct the following:', 'spotship-war-insurance' ),
+				'removeChip'   => __( 'Remove %s', 'spotship-war-insurance' ),
+				'resultCount'  => __( '%d results available.', 'spotship-war-insurance' ),
+				'expired'      => __( 'This form has been open too long. Please reload the page and try again.', 'spotship-war-insurance' ),
 			),
 		);
 	}

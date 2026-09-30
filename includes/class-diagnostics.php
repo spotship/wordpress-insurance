@@ -24,10 +24,10 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Spotship_WI_Diagnostics {
 
-	private const LEDGER      = 'spotship_wi_ledger';
-	private const LAST_OK     = 'spotship_wi_last_ok';
-	private const LEDGER_TTL  = 604800;
-	private const LEDGER_MAX  = 20;
+	private const LEDGER     = 'spotship_wi_ledger';
+	private const LAST_OK    = 'spotship_wi_last_ok';
+	private const LEDGER_TTL = 604800;
+	private const LEDGER_MAX = 20;
 
 	/**
 	 * Installation states an administrator may need explained.

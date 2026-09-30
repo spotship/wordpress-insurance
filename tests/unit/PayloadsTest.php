@@ -106,7 +106,14 @@ final class PayloadsTest extends TestCase {
 		);
 
 		$this->assertSame(
-			array( array( 'id' => 7, 'name' => 'Ever Given', 'imo' => '9811000', 'type' => 'Container' ) ),
+			array(
+				array(
+					'id'   => 7,
+					'name' => 'Ever Given',
+					'imo'  => '9811000',
+					'type' => 'Container',
+				),
+			),
 			$rows
 		);
 	}
@@ -127,7 +134,14 @@ final class PayloadsTest extends TestCase {
 		);
 
 		$this->assertSame(
-			array( array( 'id' => 3, 'name' => 'Rotterdam', 'country' => 'NL', 'locode' => 'NLRTM' ) ),
+			array(
+				array(
+					'id'      => 3,
+					'name'    => 'Rotterdam',
+					'country' => 'NL',
+					'locode'  => 'NLRTM',
+				),
+			),
 			$rows
 		);
 	}

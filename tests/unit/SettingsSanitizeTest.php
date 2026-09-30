@@ -47,7 +47,15 @@ final class SettingsSanitizeTest extends TestCase {
 				$url = trim( (string) $url );
 
 				if ( is_array( $protocols ) ) {
-					$scheme = strtolower( (string) wp_parse_url( $url )['scheme'] ?? '' );
+					/*
+					 * The ?? has to guard the ARRAY ACCESS, not the cast. Written as
+					 * `(string) wp_parse_url( $url )['scheme'] ?? ''` the subscript is
+					 * evaluated first and throws "Undefined array key" the moment a URL
+					 * has no scheme — which is exactly the unconfigured-install case
+					 * this file tests. CI caught it; it was the only one of 38 to fail.
+					 */
+					$sswi_parts = wp_parse_url( $url );
+					$scheme     = strtolower( (string) ( is_array( $sswi_parts ) ? $sswi_parts['scheme'] ?? '' : '' ) );
 
 					if ( ! in_array( $scheme, $protocols, true ) ) {
 						return '';
@@ -114,7 +122,12 @@ final class SettingsSanitizeTest extends TestCase {
 	 * visitor, and a locally-decidable refusal below the anti-bot gates.
 	 */
 	public function test_an_unconfigured_install_is_not_bound(): void {
-		$clean = Spotship_WI_Settings::sanitize( array( 'api_base_url' => '', 'api_key' => '' ) );
+		$clean = Spotship_WI_Settings::sanitize(
+			array(
+				'api_base_url' => '',
+				'api_key'      => '',
+			)
+		);
 
 		$this->assertSame( '', $clean['bound_site_url'] );
 	}

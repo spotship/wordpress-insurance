@@ -71,11 +71,24 @@ final class RatesCacheTest extends WP_UnitTestCase {
 				array(
 					'updatedAt' => '2026-09-11',
 					'columns'   => array( 'hmRate' ),
-					'hull'      => array( array( 'zone' => 'Hormuz Passage', 'hmRate' => '8.500%' ) ),
-					'cargo'     => array( array( 'zone' => 'Hormuz Passage', 'netRate' => null ) ),
+					'hull'      => array(
+						array(
+							'zone'   => 'Hormuz Passage',
+							'hmRate' => '8.500%',
+						),
+					),
+					'cargo'     => array(
+						array(
+							'zone'    => 'Hormuz Passage',
+							'netRate' => null,
+						),
+					),
 				)
 			),
-			'response' => array( 'code' => 200, 'message' => 'OK' ),
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
 		);
 	}
 
@@ -84,7 +97,10 @@ final class RatesCacheTest extends WP_UnitTestCase {
 		return array(
 			'headers'  => array(),
 			'body'     => (string) wp_json_encode( array( 'detail' => 'Invalid API key' ) ),
-			'response' => array( 'code' => 401, 'message' => 'Unauthorized' ),
+			'response' => array(
+				'code'    => 401,
+				'message' => 'Unauthorized',
+			),
 		);
 	}
 

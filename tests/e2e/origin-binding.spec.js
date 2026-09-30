@@ -20,20 +20,42 @@ const { test, expect } = require( '@playwright/test' );
 
 test.describe.configure( { mode: 'serial' } );
 
+// Each spec logs in, navigates the admin, and then deliberately waits out
+// Request_Guard::MIN_AGE before submitting. The 30s default is not enough room
+// for that, and running out of it reads as a hang rather than as a timeout.
+test.setTimeout( 90000 );
+
 const ADMIN = { user: 'admin', pass: 'password' };
 
 async function login( page ) {
 	await page.goto( '/wp-login.php' );
 
-	// Already authenticated from an earlier spec in this file.
-	if ( page.url().includes( '/wp-admin/' ) ) {
+	// Already authenticated: WordPress bounces a logged-in user off wp-login.
+	if ( ! ( await page.locator( '#wp-submit' ).count() ) ) {
 		return;
 	}
 
 	await page.locator( '#user_login' ).fill( ADMIN.user );
 	await page.locator( '#user_pass' ).fill( ADMIN.pass );
-	await page.locator( '#wp-submit' ).click();
-	await page.waitForURL( /wp-admin/ );
+
+	/*
+	 * DO NOT WAIT FOR A PARTICULAR URL HERE. The first admin login after a
+	 * fresh activation does not land on the dashboard: WordPress may route
+	 * through its database-upgrade screen, and Elementor claims the first
+	 * admin request for its onboarding wizard. Waiting for /wp-admin/ timed
+	 * out on the first spec in this file and passed on the two after it,
+	 * which reads exactly like a product bug and was not one.
+	 *
+	 * Assert the outcome instead — an authenticated session — and let the
+	 * redirect go wherever this WordPress and its plugins want it to.
+	 */
+	await Promise.all( [
+		page.waitForLoadState( 'load' ),
+		page.locator( '#wp-submit' ).click(),
+	] );
+
+	await page.goto( '/wp-admin/options-general.php' );
+	await expect( page.locator( '#wpadminbar' ) ).toBeVisible();
 }
 
 /**

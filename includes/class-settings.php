@@ -21,6 +21,16 @@ final class Spotship_WI_Settings {
 	public const OPTION = 'spotship_wi_settings';
 
 	/**
+	 * Whether an explicit re-bind is in progress.
+	 *
+	 * Read by sanitize(), which preserves an existing binding for everything
+	 * else so that a cloned site cannot adopt itself merely by saving settings.
+	 *
+	 * @var bool
+	 */
+	private static bool $rebinding = false;
+
+	/**
 	 * Cache TTL bounds, in seconds.
 	 *
 	 * Floor of 60 because anything lower turns every page view into an upstream
@@ -195,7 +205,25 @@ final class Spotship_WI_Settings {
 		 */
 		$existing_binding = (string) ( $existing['bound_site_url'] ?? '' );
 
-		if ( '' !== $existing_binding ) {
+		if ( self::$rebinding ) {
+			/*
+			 * The ONE exception, and the reason this flag exists.
+			 *
+			 * register_setting()'s sanitize_callback filters every
+			 * update_option() on this option, not only Settings API saves. So
+			 * bind_to_current() — the one-click recovery — wrote the new
+			 * binding and this branch put the old one straight back. The admin
+			 * screen then reported "Re-bound to this site. Submissions are
+			 * enabled again." over an option that had not changed: a false
+			 * success on the documented recovery path for a cloned site.
+			 *
+			 * It went unnoticed because the ordering hides it. The filter is
+			 * registered on admin_init at priority 10, so anything writing this
+			 * option earlier than that — including the e2e control mu-plugin at
+			 * priority 1 — persists correctly and makes the write look sound.
+			 */
+			$clean['bound_site_url'] = self::current_site_url();
+		} elseif ( '' !== $existing_binding ) {
 			$clean['bound_site_url'] = $existing_binding;
 		} elseif ( '' !== $clean['api_base_url'] && '' !== ( self::key_is_constant() ? self::api_key() : $clean['api_key'] ) ) {
 			$clean['bound_site_url'] = self::current_site_url();
@@ -294,6 +322,18 @@ final class Spotship_WI_Settings {
 		$all                   = self::all();
 		$all['bound_site_url'] = self::current_site_url();
 
-		update_option( self::OPTION, $all );
+		/*
+		 * Announce the intent to sanitize(), which otherwise preserves the
+		 * existing binding and would silently discard this write. try/finally
+		 * because leaving the flag set would let a LATER save re-point the
+		 * binding, which is the property sanitize() exists to prevent.
+		 */
+		self::$rebinding = true;
+
+		try {
+			update_option( self::OPTION, $all );
+		} finally {
+			self::$rebinding = false;
+		}
 	}
 }

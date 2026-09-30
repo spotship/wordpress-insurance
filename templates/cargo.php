@@ -127,7 +127,6 @@ $sswi_rates   = $sswi_serving['rates'];
 			<p class="sswi-error" id="sswi-riskZone-error" data-sswi-error hidden></p>
 		</div>
 
-		<?php
 		<div class="sswi-field">
 			<label for="sswi-notes"><?php esc_html_e( 'Notes', 'spotship-war-insurance' ); ?></label>
 			<textarea id="sswi-notes" name="notes" maxlength="5000" rows="4" aria-describedby="sswi-notes-error" disabled></textarea>

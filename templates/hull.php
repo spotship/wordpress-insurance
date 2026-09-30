@@ -122,7 +122,20 @@ $sswi_notes_err = $sswi_notes_id . '-error';
 		require SPOTSHIP_WI_PATH . 'templates/partials/text-field.php';
 		?>
 
-		<div class="sswi-field">
+		<?php
+		/*
+		 * `data-sswi-field` IS HOW AN ERROR FINDS ITS FIELD. showFieldError()
+		 * resolves `[data-sswi-field="<name>"]`, and this wrapper is hand-written
+		 * rather than produced by text-field.php, which sets the attribute for
+		 * every other input. Without it a notes error — the local over-length
+		 * check or an upstream `notes` field error — cannot attach to the
+		 * textarea and degrades to the generic "unavailable" message, telling a
+		 * visitor the service is down when their note was simply too long.
+		 *
+		 * cargo.php hand-writes the same block and had the same omission.
+		 */
+		?>
+		<div class="sswi-field" data-sswi-field="notes">
 			<label for="<?php echo esc_attr( $sswi_notes_id ); ?>"><?php esc_html_e( 'Notes', 'spotship-war-insurance' ); ?></label>
 			<textarea id="<?php echo esc_attr( $sswi_notes_id ); ?>" name="notes" maxlength="5000" rows="4" aria-describedby="<?php echo esc_attr( $sswi_notes_err ); ?>" disabled></textarea>
 			<p class="sswi-error" id="<?php echo esc_attr( $sswi_notes_err ); ?>" data-sswi-error hidden></p>

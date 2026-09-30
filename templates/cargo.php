@@ -173,7 +173,8 @@ $sswi_notes_err = $sswi_notes_id . '-error';
 			<p class="sswi-error" id="<?php echo esc_attr( $sswi_zone_err ); ?>" data-sswi-error hidden></p>
 		</div>
 
-		<div class="sswi-field">
+		<?php // See the note in hull.php: without data-sswi-field a notes error cannot find this textarea. ?>
+		<div class="sswi-field" data-sswi-field="notes">
 			<label for="<?php echo esc_attr( $sswi_notes_id ); ?>"><?php esc_html_e( 'Notes', 'spotship-war-insurance' ); ?></label>
 			<textarea id="<?php echo esc_attr( $sswi_notes_id ); ?>" name="notes" maxlength="5000" rows="4" aria-describedby="<?php echo esc_attr( $sswi_notes_err ); ?>" disabled></textarea>
 			<p class="sswi-error" id="<?php echo esc_attr( $sswi_notes_err ); ?>" data-sswi-error hidden></p>

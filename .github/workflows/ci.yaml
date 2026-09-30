@@ -83,6 +83,28 @@ jobs:
       - uses: actions/checkout@v4
       - run: bash bin/assert-version.sh
 
+  i18n:
+    # A POT goes stale silently — nothing breaks and the omission only surfaces
+    # when a translator asks why a string is missing. Regenerating in CI and
+    # diffing is what turns that into a failure somebody sees.
+    name: Translation catalogue is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: bash bin/refresh-pot.sh
+      - name: The catalogue must already be up to date
+        run: |
+          if ! git diff --quiet -- languages/; then
+            echo "languages/ is stale — run bin/refresh-pot.sh and commit the result" >&2
+            git --no-pager diff -- languages/
+            exit 1
+          fi
+
   integration:
     name: PHPUnit integration (PHP ${{ matrix.php }} / WP ${{ matrix.wp }})
     runs-on: ubuntu-latest

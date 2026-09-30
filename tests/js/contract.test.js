@@ -237,3 +237,33 @@ test( 'exactly one place mints a submissionId after the first', () => {
 			'mint site is how a reused id reported a false success'
 	);
 } );
+
+test( 'the translation catalogue covers every translatable string in the source', () => {
+	/*
+	 * A POT goes stale silently: nothing breaks, the plugin keeps working, and
+	 * the omission only surfaces when a translator asks why a string is missing —
+	 * by which point it has usually been missing for months.
+	 *
+	 * This uses the SAME extractor as bin/refresh-pot.sh, so the thing that
+	 * generates the catalogue and the thing that checks it cannot disagree about
+	 * what counts as a string, which is the usual way a freshness check passes
+	 * over a stale file.
+	 */
+	const { extract } = require( '../../bin/extract-strings.js' );
+
+	const found = extract( path.join( __dirname, '..', '..' ) );
+	const pot = read( 'languages/spotship-war-insurance.pot' );
+
+	assert.ok( found.length > 50, `the extractor must find the catalogue's worth of strings, got ${ found.length }` );
+
+	const missing = found.filter( ( s ) => {
+		const escaped = s.replace( /\\'/g, "'" ).replace( /"/g, '\\"' );
+		return ! pot.includes( `msgid "${ escaped }"` );
+	} );
+
+	assert.deepEqual(
+		missing,
+		[],
+		'these strings are translatable in the source but absent from the POT — run bin/refresh-pot.sh'
+	);
+} );

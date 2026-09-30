@@ -1,0 +1,137 @@
+<?php
+/**
+ * Form rendering — ONE markup path, shared by the shortcode and the block.
+ *
+ * THE FORM RENDERS INERT AND JAVASCRIPT ENABLES IT. If initialisation never
+ * happens the visitor is told so, rather than being shown a form that looks
+ * fine and silently is not.
+ *
+ * This is not primarily about cookie banners. ANY JS failure produces the same
+ * dead form — a theme conflict, another plugin's uncaught error, an ad-blocker,
+ * a CDN hiccup. We ship into WordPress installs we have never seen, and a form
+ * that lies about working is the same class of failure as a false success.
+ *
+ * @package Spotship_WI
+ */
+
+declare( strict_types = 1 );
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Shared renderer.
+ */
+final class Spotship_WI_Renderer {
+
+	/**
+	 * Render a product form.
+	 *
+	 * @param string $product 'hull' or 'cargo'.
+	 */
+	public static function render( string $product ): string {
+		$product = 'cargo' === $product ? 'cargo' : 'hull';
+
+		$timestamp = time();
+		$form_id   = wp_generate_uuid4();
+
+		$data = array(
+			'product'   => $product,
+			'form_id'   => $form_id,
+			'timestamp' => $timestamp,
+			'signature' => Spotship_WI_Request_Guard::sign( $timestamp, $form_id ),
+			'config'    => self::config( $product ),
+			'serving'   => Spotship_WI_Rates_Cache::get(),
+		);
+
+		ob_start();
+
+		$template = SPOTSHIP_WI_PATH . 'templates/' . $product . '.php';
+
+		if ( is_readable( $template ) ) {
+			include $template;
+		}
+
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * The configuration the browser is given.
+	 *
+	 * EVERY bound `validate()` enforces is published here. That matters beyond
+	 * convenience: it is what makes hoisting bounds validation above the
+	 * anti-bot gates leak nothing, because a bot can already read every limit
+	 * off the page source. Removing this mirror as a "simplification" would
+	 * silently falsify that reasoning and make MAX_DESTINATIONS — which does not
+	 * appear in the upstream schema — probeable.
+	 *
+	 * @param string $product 'hull' or 'cargo'.
+	 * @return array<string, mixed>
+	 */
+	public static function config( string $product ): array {
+		return array(
+			'root'            => esc_url_raw( rest_url( Spotship_WI_Rest_Proxy::NAMESPACE_V1 ) ),
+			'product'         => $product,
+			'minAgeSeconds'   => Spotship_WI_Request_Guard::MIN_AGE,
+			'minQueryLength'  => 2,
+			'maxDestinations' => Spotship_WI_Payloads::MAX_DESTINATIONS,
+			'bounds'          => array(
+				'userName'         => Spotship_WI_Payloads::MAX_NAME,
+				'userEmail'        => Spotship_WI_Payloads::MAX_EMAIL,
+				'userPhone'        => Spotship_WI_Payloads::MAX_PHONE,
+				'notes'            => Spotship_WI_Payloads::MAX_FREE_TEXT,
+				'handmValue'       => Spotship_WI_Payloads::MAX_HANDM_VALUE,
+				'increasedValue'   => Spotship_WI_Payloads::MAX_INCREASED_VALUE,
+				'cargoDescription' => Spotship_WI_Payloads::MAX_FREE_TEXT,
+				'cargoWeight'      => Spotship_WI_Payloads::MAX_CARGO_WEIGHT,
+				'cargoCurrency'    => Spotship_WI_Payloads::MAX_CURRENCY,
+				'riskZone'         => Spotship_WI_Payloads::MAX_RISK_ZONE,
+				'insuredParty'     => Spotship_WI_Payloads::MAX_INSURED_PARTY,
+			),
+			'i18n'            => array(
+				'unavailable'   => __( 'This form is temporarily unavailable. Please try again shortly.', 'spotship-war-insurance' ),
+				'sending'       => __( 'Sending your request…', 'spotship-war-insurance' ),
+				'noResults'     => __( 'No matches found.', 'spotship-war-insurance' ),
+				'lookupFailed'  => __( 'Search is unavailable, so this form cannot be submitted right now.', 'spotship-war-insurance' ),
+				'errorSummary'  => __( 'Please correct the following:', 'spotship-war-insurance' ),
+				'removeChip'    => __( 'Remove %s', 'spotship-war-insurance' ),
+				'resultCount'   => __( '%d results available.', 'spotship-war-insurance' ),
+				'expired'       => __( 'This form has been open too long. Please reload the page and try again.', 'spotship-war-insurance' ),
+			),
+		);
+	}
+
+	/**
+	 * The consent sentence, recorded verbatim with every submission.
+	 *
+	 * Read from ONE place so the text stored as `consentText` is provably the
+	 * text the visitor was shown. A second copy in a template would let the two
+	 * drift, and the stored consent record would then be evidence of wording
+	 * nobody ever saw.
+	 */
+	public static function consent_text(): string {
+		return __(
+			'I consent to Spot Ship storing and processing the details above in order to respond to this enquiry.',
+			'spotship-war-insurance'
+		);
+	}
+
+	/**
+	 * The honeypot field.
+	 *
+	 * Visually hidden but LABELLED and marked `aria-hidden="false"` with an
+	 * explicit instruction, so a screen-reader user who reaches it is told to
+	 * leave it blank rather than silently failing the check. `autocomplete=off`
+	 * and a name a password manager will not recognise keep browsers from
+	 * filling it on a real visitor's behalf.
+	 */
+	public static function honeypot(): string {
+		ob_start();
+		?>
+		<div class="sswi-hp" aria-hidden="false">
+			<label for="sswi_website"><?php esc_html_e( 'Leave this field empty', 'spotship-war-insurance' ); ?></label>
+			<input type="text" id="sswi_website" name="sswi_website" value="" autocomplete="off" tabindex="-1">
+		</div>
+		<?php
+		return (string) ob_get_clean();
+	}
+}

@@ -68,6 +68,17 @@ const MUTATIONS = [
 		mustFail: [ 'the renderer namespaces ids per instance' ],
 	},
 
+	{
+		suite: 'js',
+		what: 'the customer-set accent goes back behind the submit button label',
+		file: 'assets/css/war-insurance.css',
+		from: 'background: #0b5fff;',
+		to: 'background: var( --spotship-wi-accent );',
+		// The shipped defect. Unreachable by axe, which only ever renders the
+		// default accent and sees 5.1:1; the failure needs a customer's colour.
+		mustFail: [ 'the customisable accent never lands on a text-contrast surface' ],
+	},
+
 	// --- php: driven by the PHPUnit integration suite, needs wp-env ---
 
 	{

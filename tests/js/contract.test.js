@@ -442,3 +442,50 @@ test( 'assets are registered no earlier than init', () => {
 			'a script there prints a notice that breaks cookie-setting site-wide'
 	);
 } );
+
+test( 'the customisable accent never lands on a text-contrast surface', () => {
+	/*
+	 * --spotship-wi-accent is the one colour a customer sets, and there is no
+	 * CSS-only way to keep text readable over an arbitrary value of it. So the
+	 * rule is structural rather than computed: the token may paint borders and
+	 * focus rings, and must never be a background or a text colour.
+	 *
+	 * This is invisible to axe by construction. axe only ever renders the
+	 * DEFAULT accent, which passes at 5.1:1 — the violation appears only on a
+	 * customer's site, with a colour no CI run will ever see. It shipped as
+	 * `background: var( --spotship-wi-accent )` behind `color: #fff`, and the
+	 * file's own docblock licensed it by calling the button background a
+	 * non-text surface.
+	 */
+	const css = read( 'assets/css/war-insurance.css' ).replace( /\/\*[\s\S]*?\*\//g, '' );
+	const TOKEN = '--spotship-wi-accent';
+
+	// border-color and outline-color are deliberately absent: those are the
+	// non-text surfaces the token exists for.
+	const TEXT_SURFACE = /^(background|background-color|background-image|color)$/;
+
+	const offenders = [];
+
+	for ( const declaration of css.split( ';' ) ) {
+		const [ head, ...rest ] = declaration.split( ':' );
+		const property = head.trim().split( /\s+/ ).pop();
+
+		if ( TEXT_SURFACE.test( property ) && rest.join( ':' ).includes( TOKEN ) ) {
+			offenders.push( declaration.trim().replace( /\s+/g, ' ' ) );
+		}
+	}
+
+	assert.deepStrictEqual(
+		offenders,
+		[],
+		`${ TOKEN } is customer-set and must not sit behind or colour text; ` +
+			'use a literal that is known to meet AA against the text on it'
+	);
+
+	// Guard the guard: deleting the token altogether would also empty the list
+	// above, and pass for the wrong reason.
+	assert.ok(
+		css.includes( `var( ${ TOKEN } )` ),
+		`${ TOKEN } should still brand the non-text surfaces it is for`
+	);
+} );

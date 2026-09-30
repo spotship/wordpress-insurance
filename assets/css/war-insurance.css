@@ -1,10 +1,23 @@
 /**
  * Scoped under .spotship-wi so nothing here can reach a customer's theme.
  *
- * --spotship-wi-accent is confined to NON-TEXT surfaces (borders, focus rings,
- * button background). A customer will set it to their brand colour, and if it
- * were allowed to colour text we would have handed them a way to destroy
- * contrast on a form we claim meets WCAG AA.
+ * --spotship-wi-accent is confined to NON-TEXT surfaces: borders and focus
+ * rings. A customer will set it to their brand colour, and if it were allowed
+ * to colour text — or to sit BEHIND text — we would have handed them a way to
+ * destroy contrast on a form we claim meets WCAG AA.
+ *
+ * "Behind text" is the half this comment used to get wrong. It listed the
+ * submit button's background as a non-text surface, and .sswi-submit paints
+ * white on it. With the default accent that is 5.1:1 and passes; with a pale
+ * brand colour it is nearer 1.2:1, and no axe run would ever show it, because
+ * axe only ever sees the default. The button's background is therefore a
+ * literal colour, not the token.
+ *
+ * There is no CSS-only way to guarantee readable text over an arbitrary
+ * author-supplied colour — color-mix() by a fixed amount does not do it, and
+ * contrast-color() is not deployable on sites we do not control. So the
+ * invariant is structural: the token never lands behind text.
+ * tests/js/contract.test.js enforces it.
  */
 .spotship-wi {
 	--spotship-wi-accent: #0b5fff;
@@ -142,9 +155,19 @@
 
 .spotship-wi .sswi-submit {
 	padding: 0.6rem 1.2rem;
-	border: 2px solid var( --spotship-wi-accent );
+	/*
+	 * LITERAL, not var( --spotship-wi-accent ): white text sits on this, so it
+	 * is a text-contrast surface and the customisable token must not reach it.
+	 * #0b5fff is the accent's own default, so the rendered button is unchanged
+	 * — 5.1:1 against #fff, which passes AA for normal text.
+	 *
+	 * The border matches rather than carrying the accent, so a customer whose
+	 * brand colour differs does not get a mismatched ring around a blue fill.
+	 * Their colour still reads on the control through the focus ring.
+	 */
+	border: 2px solid #0b5fff;
 	border-radius: 4px;
-	background: var( --spotship-wi-accent );
+	background: #0b5fff;
 	color: #fff;
 	font: inherit;
 	font-weight: 700;

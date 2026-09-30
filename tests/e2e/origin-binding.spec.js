@@ -39,23 +39,39 @@ async function login( page ) {
 	await page.locator( '#user_pass' ).fill( ADMIN.pass );
 
 	/*
-	 * DO NOT WAIT FOR A PARTICULAR URL HERE. The first admin login after a
-	 * fresh activation does not land on the dashboard: WordPress may route
-	 * through its database-upgrade screen, and Elementor claims the first
-	 * admin request for its onboarding wizard. Waiting for /wp-admin/ timed
-	 * out on the first spec in this file and passed on the two after it,
-	 * which reads exactly like a product bug and was not one.
+	 * WAIT FOR THE POST TO LAND, BUT NOT FOR A PARTICULAR DESTINATION.
 	 *
-	 * Assert the outcome instead — an authenticated session — and let the
-	 * redirect go wherever this WordPress and its plugins want it to.
+	 * Two things went wrong here, and both presented as "the first spec in
+	 * this file fails and the rest are fine":
+	 *
+	 * 1. Waiting for a URL matching /wp-admin/ assumed the login lands on the
+	 *    dashboard. It need not — a freshly activated Elementor claims the
+	 *    first admin request for its onboarding wizard.
+	 * 2. Replacing that with waitForLoadState( 'load' ) was worse: the page is
+	 *    ALREADY loaded when the click is issued, so it resolved immediately,
+	 *    and the goto() below then raced the in-flight login POST and
+	 *    cancelled it. The session was never established, wp-admin bounced
+	 *    back to the login form, and the missing admin bar looked like a
+	 *    rendering fault.
+	 *
+	 * Waiting to LEAVE wp-login.php is the condition that actually means the
+	 * credentials were accepted, and it says nothing about where WordPress or
+	 * its plugins choose to go next.
 	 */
-	await Promise.all( [
-		page.waitForLoadState( 'load' ),
-		page.locator( '#wp-submit' ).click(),
-	] );
+	const submitted = page.waitForURL(
+		( url ) => ! url.pathname.endsWith( 'wp-login.php' ),
+		{ timeout: 30000 }
+	);
+
+	await page.locator( '#wp-submit' ).click();
+	await submitted;
 
 	await page.goto( '/wp-admin/options-general.php' );
-	await expect( page.locator( '#wpadminbar' ) ).toBeVisible();
+
+	await expect(
+		page.locator( '#wpadminbar' ),
+		'not authenticated: wp-admin served no admin bar, which means it served the login form'
+	).toBeVisible();
 }
 
 /**

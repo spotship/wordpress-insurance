@@ -101,6 +101,10 @@ add_action( 'plugins_loaded', 'spotship_wi_boot' );
 
 add_action( 'init', array( 'Spotship_WI_Shortcodes', 'register_blocks' ) );
 
+if ( is_admin() ) {
+	Spotship_WI_Admin::register();
+}
+
 add_action(
 	'rest_api_init',
 	array( 'Spotship_WI_Rest_Proxy', 'register' )

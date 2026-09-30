@@ -174,9 +174,14 @@ jobs:
       fail-fast: false
       matrix:
         # The plugin declares "Requires at least: 6.4" and "Requires PHP: 8.1",
-        # and is installed on sites we do not control — so both ends of BOTH
-        # supported ranges are exercised rather than just the happy corner.
-        php: ['8.1', '8.3']
+        # and is installed on sites we do not control, so the FULL declared
+        # matrix runs rather than just the corners.
+        #
+        # This omitted 8.2 on the reasoning that testing both ends of both
+        # ranges was enough. The unit job has always run 8.2, so the gap was
+        # invisible unless you compared the two matrices — and 8.2 is a real
+        # supported version that a customer's host may well be on.
+        php: ['8.1', '8.2', '8.3']
         wp: ['6.4', 'latest']
     env:
       WP_ENV_CORE: ${{ matrix.wp == 'latest' && 'WordPress/WordPress' || format('WordPress/WordPress#{0}', matrix.wp) }}

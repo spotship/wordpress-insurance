@@ -265,7 +265,16 @@ test( 'a bad credential against the real backend degrades to the neutral sentenc
 	await login( page );
 	await page.goto( '/wp-admin/?spotship_e2e_key=00000000-0000-4000-8000-000000000000' );
 
-	const answer = await submit( page, '/insurance/', `revoked-${ Date.now() }` );
+	let answer;
+
+	try {
+		answer = await submit( page, '/insurance/', `revoked-${ Date.now() }` );
+	} finally {
+		// Via the mu-plugin's stash, never by re-sending the real key: a live
+		// credential in a query string lands in the access log, in Playwright's
+		// trace and in the CI job log.
+		await page.goto( '/wp-admin/?spotship_e2e_restore=1' );
+	}
 
 	evidence( 'revoked-key.json', JSON.stringify( answer, null, 2 ) );
 

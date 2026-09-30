@@ -37,6 +37,29 @@ add_action(
 		$settings = is_array( $settings ) ? $settings : array();
 		$dirty    = false;
 
+		/*
+		 * RESTORE FROM A STASH, NEVER BY PASSING THE VALUES BACK IN.
+		 *
+		 * The obvious way to undo these changes is for the test to re-send the
+		 * original api_base_url and api_key. That would put a live credential
+		 * in a URL — into the webserver's access log, into Playwright's trace
+		 * and screenshots, and into the CI job log. The first write stashes the
+		 * original settings instead, and `spotship_e2e_restore=1` puts them
+		 * back without the key ever appearing in a query string.
+		 */
+		if ( isset( $_GET['spotship_e2e_restore'] ) ) {
+			$stashed = get_option( 'spotship_e2e_stash', null );
+
+			if ( is_array( $stashed ) ) {
+				update_option( 'spotship_wi_settings', $stashed );
+				delete_option( 'spotship_e2e_stash' );
+				delete_transient( Spotship_WI_Rates_Cache::FRESH );
+				delete_transient( Spotship_WI_Rates_Cache::BACKUP );
+			}
+
+			return;
+		}
+
 		if ( isset( $_GET['spotship_e2e_bind'] ) ) {
 			$requested = sanitize_text_field( wp_unslash( (string) $_GET['spotship_e2e_bind'] ) );
 
@@ -58,10 +81,36 @@ add_action(
 			$settings['api_key'] = sanitize_text_field( wp_unslash( (string) $_GET['spotship_e2e_key'] ) );
 			$dirty               = true;
 		}
+
+		/*
+		 * Swapping the base url is how "the backend is unreachable" is driven
+		 * against a real deployment. Staging cannot be killed from a test, and
+		 * pointing at a host that does not resolve produces the same WP_Error
+		 * from the same wp_safe_remote_post() call that a real outage does.
+		 *
+		 * Note this runs at priority 1, BEFORE register_setting attaches
+		 * sanitize() on admin_init at 10 — which is the only reason a value can
+		 * be written here without being re-validated. See the rebind short
+		 * circuit in class-settings.php for what that ordering cost once.
+		 */
+		if ( isset( $_GET['spotship_e2e_base'] ) ) {
+			$settings['api_base_url'] = esc_url_raw(
+				wp_unslash( (string) $_GET['spotship_e2e_base'] ),
+				array( 'https' )
+			);
+			$dirty                    = true;
+		}
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 
 		if ( ! $dirty ) {
 			return;
+		}
+
+		// Stash once, on the first change, so a sequence of changes still
+		// restores to the state the seed produced rather than to an
+		// intermediate one.
+		if ( null === get_option( 'spotship_e2e_stash', null ) ) {
+			add_option( 'spotship_e2e_stash', get_option( 'spotship_wi_settings', array() ) );
 		}
 
 		update_option( 'spotship_wi_settings', $settings );

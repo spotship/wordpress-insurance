@@ -96,6 +96,18 @@ jobs:
             echo "which the API answers with the ORIGINAL row. A 201 there would mean"
             echo "the first submission never persisted."
             echo
+            echo "ALSO PROVES, against the real deployment rather than a stand-in:"
+            echo "  - autocomplete resolves real vessels and locations, and the id"
+            echo "    committed is the id of the option displayed"
+            echo "  - axe is clean on the REAL rate table (15 hull zones and 6 cargo,"
+            echo "    not the stand-in's single row) on both products"
+            echo "  - an unreachable backend refuses rather than reporting sent, and"
+            echo "    blocks submission rather than showing an empty search"
+            echo "  - a site bound elsewhere cannot submit, and the one-click re-bind"
+            echo "    restores submission — not merely the notice"
+            echo "  - with JavaScript blocked the form is inert and says why, while"
+            echo "    still serving the real rate table"
+            echo
             echo "DOES NOT PROVE: that the referral email or the Slack message fired."
             echo "backend/insurance/notifications.py dispatches both fire-and-forget"
             echo "and records no flag, so nothing in the API can be asked. Confirming"

@@ -117,25 +117,31 @@ customer who has the zip.
 
 ## Known gaps
 
-- **The real-backend suite has never run.** `tests/real-backend/` talks to a
-  live deployment and needs `SPOTSHIP_API_URL` / `SPOTSHIP_API_KEY` on the
-  `dev` GitHub environment, which do not exist yet. Until then, persistence,
-  attribution and consent provenance are verified only against a stand-in
-  upstream. Treat those specs as unverified code.
+- **The real-backend suite has never run.** `tests/real-backend/` talks to the
+  live dev deployment. Both `dev` environment secrets are now set, and the
+  workflow is reachable without waiting for a merge — `workflow_dispatch` only
+  works for files already on the default branch, so it also triggers on a
+  `real-backend-*` tag:
 
   ```sh
-  gh secret set SPOTSHIP_API_URL --env dev    # https://backend-dev.spot-ship-app.com/api
-  gh secret set SPOTSHIP_API_KEY --env dev    # a Customer.api_key uuid
-  gh workflow run real-backend-e2e.yaml -f reason="first real run"
+  git tag real-backend-$(date +%Y%m%d-%H%M) && git push origin --tags
   ```
 
-  The key is minted by creating a `Customer` in the dev Django admin. Two
-  things to know first: `Customer.delete()` raises `ProtectedError`
-  unconditionally, so the row is permanent and can only be deactivated; and
-  saving one posts "New customer created" into Slack `#support`.
+  It has not been fired yet, deliberately. It writes real quote rows to dev and
+  the backend dispatches a referral email and a Slack post for each one —
+  `notifications.py` posts to `INSURANCE_REFERRAL_WEBHOOK_URL`, which its own
+  docblock says is the same workflow the serica referral views use. Test
+  submissions may therefore reach people who read that channel as real
+  enquiries. Confirm where dev's webhook and
+  `INSURANCE_REFERRAL_EMAIL_RECEIVER` point before running it.
+
+  Until it runs, persistence, attribution and consent provenance are verified
+  only against a stand-in upstream. Treat those specs as unverified code.
 - **Referral email and Slack delivery are not covered by any automated run.**
   `backend/insurance/notifications.py` dispatches both fire-and-forget and
-  records no flag, so nothing in the API can be asked. Confirming them needs
-  the dev mailbox and the Slack channel, by hand.
+  records no flag, so nothing in the API can be asked afterwards. Confirming
+  them means watching the dev mailbox and the Slack channel while the
+  real-backend suite runs — which is the other reason to settle where those
+  two point first.
 - **ENG-6383** — the rate values have never been confirmed against the
   commercial Google Sheet.

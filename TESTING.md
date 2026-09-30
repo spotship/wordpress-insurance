@@ -20,9 +20,9 @@ it must not acquire a browser or a Docker dependency.
 | PHPCS (WPCS + PHPCompatibilityWP) | whole tree | clean |
 | PHPStan level 6 | plugin + templates + uninstall | clean |
 | PHPUnit unit | 38 tests × PHP 8.1 / 8.2 / 8.3 | pass |
-| PHPUnit integration | 44 methods × PHP {8.1,8.2,8.3} × WP {6.4,latest} | pass |
+| PHPUnit integration | 47 methods × PHP {8.1,8.2,8.3} × WP {6.4,latest} | pass |
 | jsdom (`npm run test:js`) | 36 tests | pass, every guard mutation-checked |
-| Playwright + axe | 30 specs (15 × desktop + narrow) | pass |
+| Playwright + axe | desktop + narrow projects, incl. the block editor | pass |
 | Plugin Check (WP.org scanner) | built plugin | pass |
 | Translation catalogue freshness | regenerate + diff | pass |
 | Version header vs constant | `bin/assert-version.sh` | pass |
@@ -115,14 +115,36 @@ This is the same failure `bin/derive-backend-keys.sh` was written to prevent for
 the 201 body, one endpoint over, so it now has the same control:
 `bin/derive-backend-rates.sh`.
 
-The other confirmed findings: a fetch-lock release that was not
-ownership-aware, so a slow request could delete the lock of the request that
-took over from it; Cloudflare's IPv6 edges not being recognised, collapsing
-every IPv6 visitor behind one into a single rate-limit bucket; `uninstall.php`
-sweeping only the current site on multisite, leaving a live API key in every
-other site's options; `bin/assert-version.sh` never comparing the plugin version
-to the tag being released; and the notes textarea missing `data-sswi-field` in
-**both** templates, so a notes error degraded to "temporarily unavailable".
+**The same wrong contract had a second consumer.** `populateRiskZones()` read
+`rates.cargo` as a row list and `row.zone` as the label. It is an object, so
+`.forEach` threw, the promise rejected into a deliberately-silent catch, and
+the **required** risk-zone select stayed at its placeholder — not a degraded
+cargo form but one nobody can submit. Its test passed throughout, because it
+hand-wrote the shape the script expected. Every jsdom rates stub now reads the
+derived fixture.
+
+**Neither block appeared in the editor.** `register_block_type()` in PHP makes
+a block renderable; the inserter is built from the client-side registry, and
+nothing called `registerBlockType()`. Half of what the ticket asks for did not
+work. Nothing caught it because no spec had ever opened wp-admin's editor — a
+block you cannot insert is invisible to a front-end test.
+
+**The browser suite was exceeding its own rate limit.** Every spec runs twice,
+once per Playwright project, from one runner IP against five submits an hour,
+so the second project got a 429 on every submit. It had been happening all
+along and no assertion was strong enough to see it: *"Too many requests. Please
+wait 3488 seconds and try again."* satisfies `not /unavailable/` perfectly well.
+
+The other confirmed findings: the per-IP limiter counting in PHP rather than in
+the database, so concurrency beat the limit it exists to impose; a fetch-lock
+release that was not ownership-aware, so a slow request could delete the lock of
+the request that took over from it; Cloudflare's IPv6 edges not being
+recognised, collapsing every IPv6 visitor behind one into a single rate-limit
+bucket; `uninstall.php` sweeping only the current site on multisite, leaving a
+live API key in every other site's options; `bin/assert-version.sh` never
+comparing the plugin version to the tag being released; and the notes textarea
+missing `data-sswi-field` in **both** templates, so a notes error degraded to
+"temporarily unavailable".
 
 ## Proving a test can fail
 
@@ -146,10 +168,18 @@ deriving its own option ids; a second `submissionId` mint site; dropping
 removed from `Renderer::config()`; a key dropped from the cargo fixture; a new
 translatable string absent from the POT; the disclaimers left unrendered; the
 rate table reading a top-level `columns` list; a rate published as the raw
-fraction; a real `null` rate rendering as an empty cell; the fetch lock released
-without an ownership check; Cloudflare's IPv6 edges going unrecognised; and the
-IPv6 prefix compared whole bytes only, which trusts eight times the published
-`/29`.
+fraction; a real `null` rate rendering as an empty cell; the cargo risk zones
+read as a row list, and labelled by `zone` rather than `name`; the fetch lock
+released without an ownership check; Cloudflare's IPv6 edges going
+unrecognised; and the IPv6 prefix compared whole bytes only, which trusts eight
+times the published `/29`.
+
+The limiter's atomicity is the one claim no mutation can carry, because a
+PHPUnit process cannot issue two simultaneous requests. It was verified against
+MySQL 8 directly instead: 40 concurrent connections against a limit of 5 gave
+exactly 5 allowed, 35 refused, final count 5. The tests pin what the race
+*produces* — a caller deciding from a count it read earlier — rather than its
+timing.
 
 **When adding a test, break the thing it guards and watch it go red.** If it
 stays green, the test is documentation, not a guard.

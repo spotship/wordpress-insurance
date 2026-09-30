@@ -14,3 +14,14 @@ parameters:
     - dist
   bootstrapFiles:
     - tests/phpstan-bootstrap.php
+
+  ignoreErrors:
+    # WP_REST_Request::get_json_params() is stubbed as returning `array`, so
+    # PHPStan calls the is_array() guard dead. The stub is optimistic — the
+    # method returns NULL when the request body does not parse as JSON, which
+    # is reachable from any public route by sending a malformed body. Deleting
+    # the guard to satisfy the stub would trade a real runtime check for a
+    # documentation claim.
+    -
+      message: '#Else branch is unreachable because ternary operator condition is always true\.#'
+      path: includes/class-rest-proxy.php

@@ -12,6 +12,21 @@
 
 defined( 'ABSPATH' ) || exit;
 
+// Declared for static analysis: these are set by the including scope, which
+// PHPStan cannot follow through include().
+/**
+ * @var array{
+ *     product: string,
+ *     form_id: string,
+ *     timestamp: int,
+ *     signature: string,
+ *     config: array<string, mixed>,
+ *     serving: array{tier: string, rates: array<string, mixed>}
+ * } $data Supplied by Spotship_WI_Renderer::render(), whose include() this is.
+ */
+/** @var array<string, mixed> $sswi_rates The rate payload of the serving tier. */
+/** @var array{tier: string, rates: array<string, mixed>} $sswi_serving */
+
 // Keyed off the product being rendered. A literal here renders the hull
 // table under the cargo form, which is wrong AND commercially misleading:
 // cargo and hull rates are different numbers for the same zone.

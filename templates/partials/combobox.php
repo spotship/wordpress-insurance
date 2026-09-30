@@ -13,6 +13,13 @@
 
 defined( 'ABSPATH' ) || exit;
 
+// Declared for static analysis: these are set by the including scope, which
+// PHPStan cannot follow through include().
+/** @var string $sswi_combo_name */
+/** @var string $sswi_combo_label */
+/** @var string $sswi_combo_kind */
+/** @var string $sswi_combo_hint */
+
 $sswi_id      = 'sswi-' . $sswi_combo_name;
 $sswi_list    = $sswi_id . '-list';
 $sswi_err     = $sswi_id . '-error';

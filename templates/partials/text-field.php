@@ -9,6 +9,16 @@
 
 defined( 'ABSPATH' ) || exit;
 
+// Declared for static analysis: these are set by the including scope, which
+// PHPStan cannot follow through include().
+/** @var string $sswi_name */
+/** @var string $sswi_label */
+/** @var string $sswi_type */
+/** @var int $sswi_maxlength */
+/** @var bool $sswi_required */
+/** @var string $sswi_autocomplete */
+/** @var string $sswi_hint */
+
 $sswi_id      = 'sswi-' . $sswi_name;
 $sswi_err     = $sswi_id . '-error';
 $sswi_hint_id = isset( $sswi_hint ) && '' !== $sswi_hint ? $sswi_id . '-hint' : '';

@@ -1,35 +1,75 @@
 # Testing
 
-What has been proven, what has not, and how to tell the difference.
+What has been proven, where it was proven, and how to tell the difference.
 
-## Verification status
+## Where the gates run
 
-| Suite | Count | Executed? |
+**CI is the runtime.** This machine has no host PHP and no reachable Docker
+daemon, and Playwright's runner will not start on it (ENG-6418). None of that
+is a gap in coverage — it is a gap in *local* tooling. Every gate runs on a
+GitHub Actions runner, in about four minutes, and that is where to read the
+result.
+
+The one suite that also runs anywhere is `npm run test:js`. Keep it that way:
+it must not acquire a browser or a Docker dependency.
+
+## Status
+
+| Gate | Scope | Result |
 |---|---|---|
-| jsdom (`npm run test:js`) | 23 | **Yes** — and every guard mutation-checked |
-| PHPUnit unit | 38 | **No** |
-| PHPUnit integration | 26 | **No** |
-| Playwright + axe | 11 specs | **No** — blocked, see ENG-6418 |
+| PHPCS (WPCS + PHPCompatibilityWP) | whole tree | clean |
+| PHPStan level 6 | plugin + templates + uninstall | clean |
+| PHPUnit unit | 38 tests × PHP 8.1 / 8.2 / 8.3 | pass |
+| PHPUnit integration | 26 tests × PHP {8.1,8.3} × WP {6.4,latest} | pass |
+| jsdom (`npm run test:js`) | 23 tests | pass, every guard mutation-checked |
+| Playwright + axe | 15 specs × desktop + narrow | pass |
+| Plugin Check (WP.org scanner) | built plugin | pass |
+| Translation catalogue freshness | regenerate + diff | pass |
+| Version header vs constant | `bin/assert-version.sh` | pass |
 
-The PHP suites have never executed. They were written on a machine with no host
-PHP and no reachable Docker daemon, so `vendor/` could not be installed and no
-gate could run. **Treat them as unaccepted until they have been run red-then-green.**
-Several will need adjustment on first run; that is the expected outcome of
-writing tests blind, not a surprise.
+axe runs with **no rules disabled**, on both products, including with the
+listbox open, at 320px and at 200% zoom.
 
-Two defects that made whole suites unrunnable were found by review rather than
-by tooling, which is the clearest evidence of what that gap costs:
+## What the first real run found
 
-- a single root `bootstrap` in `phpunit.xml.dist` applied to both suites, so
-  every integration test would have errored before running;
-- the unit bootstrap defined neither `ABSPATH` nor an autoloader, so requiring
-  any class would have exited the test run.
+These suites were written with no runtime available, so their first execution
+was the interesting one. It is worth recording what that bought, because the
+argument for writing tests you cannot yet run rests on it.
+
+**A production bug, in the code a comment defended.** `add_query_arg()` does
+not encode the values it is given — it runs `urlencode_deep()` only over params
+parsed from an existing query string, and merges new ones in afterwards. A
+location search for "New York" therefore left as `?query=New York`, a literal
+space in the request line. The comment above it asserted the opposite and
+warned against pre-encoding, so the defect had been argued for in prose and
+shipped. `test_a_search_term_with_a_space_is_encoded_exactly_once` is the test
+written for exactly this, and it caught it on first execution.
+
+**Implicit coupling between templates.** The partials guarded their optional
+inputs with `isset()`, and the guards never fired: values survived from the
+previous `require` in the same scope, so `fromPort` and `toPort` were rendering
+`vessel`'s hint and `increasedValue` was inheriting `handmValue`'s type and
+autocomplete. It happened to be what each field wanted. The next field added
+would have inherited whatever sat above it. Every call site now sets every
+variable its partial reads.
+
+**Internal documentation in the release zip.** A staging dry-run of
+`bin/build-dist.sh` showed `.claude/`, `CLAUDE.md`, `TESTING.md`,
+`renovate.json`, `.coderabbit.yml`, `playwright.config.js` and
+`phpunit-integration.xml.dist` all reaching an artifact that is unpacked
+verbatim onto a customer's web server.
+
+**Four harness faults**, which is the expected cost of writing tests blind and
+not a surprise: a property typed `array` that holds a `WP_Error`; an assertion
+pinning key *order* rather than the key set; a locator matching both location
+comboboxes on hull; and `(string) wp_parse_url( $url )['scheme'] ?? ''`, where
+the `??` guards the cast instead of the subscript.
 
 ## Proving a test can fail
 
 **A passing test proves nothing until it has been shown to fail.** Every jsdom
-guard in this repo has been mutation-checked against a deliberately broken
-source. Two of those exercises found real gaps that reading had not:
+guard here has been mutation-checked against a deliberately broken source. Two
+of those exercises found real gaps that reading had not:
 
 | Mutation | Outcome |
 |---|---|
@@ -51,7 +91,7 @@ stays green, the test is documentation, not a guard.
 ## Structural invariant tests
 
 Three single-owner rules were stated in docblocks and drifted anyway — one of
-them *after* being written down. They are now enforced by tests that read the
+them *after* being written down. They are enforced by tests that read the
 source and count:
 
 - exactly one assignment to `hidden.value`
@@ -59,8 +99,12 @@ source and count:
 - exactly one `submissionId` mint site
 
 Counting source occurrences is crude. It is also the only check that fails when
-somebody adds a second writer in a new function that is perfectly correct on its
-own, which is how all three drifted.
+somebody adds a second writer in a new function that is perfectly correct on
+its own, which is how all three drifted.
+
+The same reasoning covers the release artifact: `.distignore` is a blocklist and
+fails open, so `bin/build-dist.sh` checks the built zip against an allow-list of
+what may appear and fails the release on anything else.
 
 ## Fixtures must be derived, never written
 
@@ -70,9 +114,9 @@ own, which is how all three drifted.
 
 This matters more than it looks. A previous implementation hand-wrote a response
 shape the API never emits; that fixture shaped the relay test, which pinned the
-wrong contract; and the anti-bot decoy was then built to imitate the fixture. The
-suite was green over all three layers. Deriving the shape is the control that
-stops it recurring.
+wrong contract; and the anti-bot decoy was then built to imitate the fixture.
+The suite was green over all three layers. Deriving the shape is the control
+that stops it recurring.
 
 ## Running things
 
@@ -82,9 +126,8 @@ task lint              # PHPCS
 task stan              # PHPStan level 6
 task test:unit         # PHPUnit unit
 task test:integration  # PHPUnit integration, inside wp-env
-npx playwright test    # blocked on this machine — ENG-6418
+npx playwright test    # will not start locally — ENG-6418; read CI instead
 ```
 
-`task test:js` is the suite that runs everywhere and it has caught real bugs
-Playwright never executed. Keep it that way: it must not acquire a browser or a
-Docker dependency.
+All of these need Docker locally. When it is unavailable, push the branch and
+read the job logs — that is the supported path, not a degraded one.

@@ -204,4 +204,23 @@ jobs:
           echo "bridge gateway: $GATEWAY"
 
           SPOTSHIP_UPSTREAM="http://${GATEWAY}:9911" bash bin/seed-e2e.sh
+
+          # PROVE REACHABILITY FROM WHERE THE PLUGIN ACTUALLY RUNS, before the
+          # browser starts. wp_safe_remote_get() is the exact call the API
+          # client makes, so this exercises DNS, routing and
+          # wp_http_validate_url() in one go.
+          #
+          # Without it an unreachable upstream surfaces as three combobox specs
+          # failing on a missing aria-activedescendant, which reads like a
+          # front-end bug and is not one.
+          echo "--- can WordPress reach the stand-in upstream?"
+          npx wp-env run cli wp eval '
+            $r = wp_safe_remote_get( rtrim( get_option( "spotship_wi_settings" )["api_base_url"], "/" ) . "/insurance/rates/" );
+            if ( is_wp_error( $r ) ) {
+              fwrite( STDERR, "UNREACHABLE: " . $r->get_error_message() . "\n" );
+              exit( 1 );
+            }
+            echo "reachable, HTTP " . wp_remote_retrieve_response_code( $r ) . "\n";
+          '
+
           npx playwright test

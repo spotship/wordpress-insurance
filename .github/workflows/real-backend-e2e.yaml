@@ -1,10 +1,27 @@
 name: Real backend E2E
 
-# MANUAL ONLY, and never on a pull request.
+# DELIBERATE ONLY, and never on a pull request.
 #
 # This is the only suite that talks to the real API. It needs a live credential
 # and it writes real records, so it must not be reachable from a fork, a
-# pull_request event, or an automatic push trigger.
+# pull_request event, or an ordinary push.
+#
+# TWO TRIGGERS, BECAUSE workflow_dispatch ALONE CANNOT REACH A NEW WORKFLOW.
+#
+# GitHub only offers `workflow_dispatch` for workflow files that exist on the
+# DEFAULT branch. This file has never been on `dev`, so dispatching it answers
+# `HTTP 404: workflow not found` and the suite was unrunnable until the very
+# pull request that introduces it had merged — a suite that cannot run until
+# after the review it is meant to inform.
+#
+# A `push` event reads the workflow from the ref that was pushed, so a tag
+# reaches it on any branch. `real-backend-*` is not an ordinary push: creating
+# and pushing that tag is an explicit act by someone with write access, it
+# cannot come from a fork, and it names the run in the tag itself. The
+# no-automatic-trigger property is intact — there is still no path from a code
+# push or a pull request to this job.
+#
+#   git tag real-backend-$(date +%Y%m%d-%H%M) && git push origin --tags
 on:
   workflow_dispatch:
     inputs:
@@ -12,6 +29,9 @@ on:
         description: 'Why this run is being made (recorded in the evidence)'
         required: true
         default: 'Verify ENG-5587 against the real backend'
+  push:
+    tags:
+      - 'real-backend-*'
 
 concurrency:
   # Never two at once: concurrent runs would interleave submissions and make
@@ -95,7 +115,7 @@ jobs:
           SPOTSHIP_API_URL: ${{ secrets.SPOTSHIP_API_URL }}
           SPOTSHIP_API_KEY: ${{ secrets.SPOTSHIP_API_KEY }}
           SPOTSHIP_UPSTREAM: ${{ secrets.SPOTSHIP_API_URL }}
-          REASON: ${{ inputs.reason }}
+          REASON: ${{ inputs.reason || format('pushed tag {0}', github.ref_name) }}
         run: |
           set -euo pipefail
 
@@ -107,11 +127,11 @@ jobs:
       - name: Record what was run
         if: always()
         env:
-          REASON: ${{ inputs.reason }}
+          REASON: ${{ inputs.reason || format('pushed tag {0}', github.ref_name) }}
         run: |
           mkdir -p real-backend-evidence
           {
-            echo "# Staging E2E evidence"
+            echo "# Real backend E2E evidence"
             echo
             echo "- Reason: ${REASON}"
             echo "- Commit: ${GITHUB_SHA}"

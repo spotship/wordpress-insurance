@@ -22,7 +22,7 @@ it must not acquire a browser or a Docker dependency.
 | PHPUnit unit | 38 tests × PHP 8.1 / 8.2 / 8.3 | pass |
 | PHPUnit integration | 26 tests × PHP {8.1,8.3} × WP {6.4,latest} | pass |
 | jsdom (`npm run test:js`) | 23 tests | pass, every guard mutation-checked |
-| Playwright + axe | 15 specs × desktop + narrow | pass |
+| Playwright + axe | 30 specs (15 × desktop + narrow) | pass |
 | Plugin Check (WP.org scanner) | built plugin | pass |
 | Translation catalogue freshness | regenerate + diff | pass |
 | Version header vs constant | `bin/assert-version.sh` | pass |
@@ -58,6 +58,21 @@ variable its partial reads.
 `renovate.json`, `.coderabbit.yml`, `playwright.config.js` and
 `phpunit-integration.xml.dist` all reaching an artifact that is unpacked
 verbatim onto a customer's web server.
+
+**A WCAG 2.1 A defect only the 320px project could see.** `overflow-x: auto`
+sat on `.sswi-rates`, so at narrow widths it became a scroll container that
+could not be focused — pointer-only, with the columns past the fold unreachable
+by keyboard. The desktop project was green on identical markup. This is the
+argument for running the narrow viewport as its own project rather than as a
+resize inside one spec.
+
+**A test environment that could not reach its own stand-in.** Three browser
+specs failed on a missing `aria-activedescendant`, which reads like a combobox
+bug and was not one: `wp_http_validate_url()` — which `wp_safe_remote_get()`
+runs — rejects any port outside { 80, 443, 8080 } before it checks anything
+else, and the stand-in was on 9911. The job now proves reachability with the
+same call the API client makes, before the browser starts, so this fails with
+`UNREACHABLE` instead of three misleading front-end failures.
 
 **Four harness faults**, which is the expected cost of writing tests blind and
 not a surprise: a property typed `array` that holds a `WP_Error`; an assertion

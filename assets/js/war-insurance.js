@@ -595,16 +595,33 @@
 					return response.json();
 				} )
 				.then( function ( body ) {
-					var zones = ( body && body.rates && body.rates.cargo ) || [];
+					/*
+					 * `rates.cargo` IS AN OBJECT, NOT A ROW LIST.
+					 *
+					 * The endpoint returns
+					 *   cargo: { columns, zones, disclaimers, footnotes }
+					 * with each row keyed `name`. This read `rates.cargo` as the
+					 * rows and `row.zone` as the label, so against the real
+					 * backend `.forEach` threw — objects have no forEach — the
+					 * promise rejected into the catch below, and the select stayed
+					 * empty.
+					 *
+					 * The select is REQUIRED, so an empty one is not a degraded
+					 * cargo form, it is a cargo form nobody can submit. The catch
+					 * is what made it silent: a genuine outage and a shape error
+					 * were indistinguishable.
+					 */
+					var cargo = ( body && body.rates && body.rates.cargo ) || {};
+					var zones = Array.isArray( cargo.zones ) ? cargo.zones : [];
 
 					zones.forEach( function ( row ) {
-						if ( ! row || ! row.zone ) {
+						if ( ! row || ! row.name ) {
 							return;
 						}
 
 						var option = document.createElement( 'option' );
-						option.value = row.zone;
-						option.textContent = row.zone;
+						option.value = row.name;
+						option.textContent = row.name;
 						select.appendChild( option );
 					} );
 				} )

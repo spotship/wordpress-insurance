@@ -114,6 +114,31 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: 'the cargo risk zones are read as a row list again',
+		file: 'assets/js/war-insurance.js',
+		from: 'var zones = Array.isArray( cargo.zones ) ? cargo.zones : [];',
+		to: 'var zones = Array.isArray( cargo ) ? cargo : [];',
+		// The shipped state. `rates.cargo` is an object, so this leaves the
+		// REQUIRED risk-zone select empty and the cargo form unsubmittable.
+		mustFail: [
+			'the cargo risk zone is populated from the served rate table, not a hardcoded list',
+		],
+	},
+
+	{
+		suite: 'js',
+		what: 'a cargo risk zone is labelled by `zone` rather than `name`',
+		file: 'assets/js/war-insurance.js',
+		from: 'if ( ! row || ! row.name ) {',
+		to: 'if ( ! row || ! row.zone ) {',
+		// Same empty select, by the other half of the same wrong contract.
+		mustFail: [
+			'the cargo risk zone is populated from the served rate table, not a hardcoded list',
+		],
+	},
+
+	{
+		suite: 'js',
 		what: 'the notes textarea loses the hook its error message needs',
 		file: 'templates/cargo.php',
 		from: '<div class="sswi-field" data-sswi-field="notes">',

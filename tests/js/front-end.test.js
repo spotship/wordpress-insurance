@@ -15,6 +15,27 @@ const PORTS = [
 	{ id: 22, name: 'Rotterdam Europoort', locode: 'NLEUR' },
 ];
 
+/*
+ * THE RATES BODY, DERIVED FROM THE BACKEND.
+ *
+ * These stubs used to hand-write `rates: { cargo: [ { zone: 'Hormuz Passage' } ] }`.
+ * The endpoint returns `cargo: { columns, zones, disclaimers, footnotes }` with
+ * rows keyed `name`, so the stub was not a simplification of the real body —
+ * it was a different body, and the risk-zone test built on it proved the
+ * opposite of what it claimed.
+ *
+ * Regenerate with bin/derive-backend-rates.sh.
+ */
+const RATES = ( () => {
+	const body = Object.assign( {}, require( '../fixtures/backend-rates.json' ) );
+
+	delete body._comment;
+
+	return body;
+} )();
+
+const CARGO_ZONE_NAMES = RATES.cargo.zones.map( ( zone ) => zone.name );
+
 function router( over = {} ) {
 	return ( url ) => {
 		if ( url.includes( '-search' ) ) {
@@ -22,7 +43,7 @@ function router( over = {} ) {
 		}
 
 		if ( url.includes( '/rates' ) ) {
-			return { status: 200, body: { tier: 'fresh', rates: { cargo: [ { zone: 'Hormuz Passage' } ] } } };
+			return { status: 200, body: { tier: 'fresh', rates: RATES } };
 		}
 
 		return over.submit || {
@@ -276,7 +297,7 @@ test( 'cargo destinations are ordered, removable and announced', async () => {
 			}
 
 			if ( url.includes( '/rates' ) ) {
-				return { status: 200, body: { tier: 'fresh', rates: { cargo: [ { zone: 'Hormuz Passage' } ] } } };
+				return { status: 200, body: { tier: 'fresh', rates: RATES } };
 			}
 
 			bodies.push( JSON.parse( init.body ) );
@@ -318,10 +339,7 @@ test( 'the cargo risk zone is populated from the served rate table, not a hardco
 		product: 'cargo',
 		fetch: ( url ) => {
 			if ( url.includes( '/rates' ) ) {
-				return {
-					status: 200,
-					body: { tier: 'fresh', rates: { cargo: [ { zone: 'Hormuz Passage' }, { zone: 'Red Sea' } ] } },
-				};
+				return { status: 200, body: { tier: 'fresh', rates: RATES } };
 			}
 
 			return { status: 200, body: { results: [] } };
@@ -333,7 +351,23 @@ test( 'the cargo risk zone is populated from the served rate table, not a hardco
 
 	const options = Array.from( h.document.querySelectorAll( '#sswi-riskZone option' ) ).map( ( o ) => o.value );
 
-	assert.deepEqual( options, [ '', 'Hormuz Passage', 'Red Sea' ] );
+	/*
+	 * THE DEFECT THIS GUARDS AGAINST: the select is REQUIRED, so an empty one is
+	 * not a degraded cargo form, it is a cargo form nobody can submit.
+	 *
+	 * `rates.cargo` is an OBJECT — { columns, zones, disclaimers, footnotes } —
+	 * and the rows are keyed `name`. The script read `rates.cargo` as the row
+	 * list and `row.zone` as the label, so `.forEach` threw (objects have no
+	 * forEach), the promise rejected into the catch, and the select stayed at
+	 * its placeholder. Silently: a genuine outage and a shape error were
+	 * indistinguishable.
+	 *
+	 * This test existed and passed throughout, because it hand-wrote the shape
+	 * the script expected instead of the one the API sends. It now drives the
+	 * derived fixture, so it cannot agree with a wrong reader again.
+	 */
+	assert.deepEqual( options, [ '', ...CARGO_ZONE_NAMES ] );
+	assert.ok( CARGO_ZONE_NAMES.length >= 6, 'the fixture must carry the real cargo zones' );
 } );
 
 test( 'the destinations listbox names the option it actually rendered', async () => {
@@ -341,7 +375,7 @@ test( 'the destinations listbox names the option it actually rendered', async ()
 		product: 'cargo',
 		fetch: ( url ) => {
 			if ( url.includes( '/rates' ) ) {
-				return { status: 200, body: { tier: 'fresh', rates: { cargo: [] } } };
+				return { status: 200, body: { tier: 'fresh', rates: { cargo: { zones: [] } } } };
 			}
 
 			return { status: 200, body: { results: PORTS } };

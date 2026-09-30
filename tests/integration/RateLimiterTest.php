@@ -171,4 +171,57 @@ final class RateLimiterTest extends WP_UnitTestCase {
 
 		unset( $_SERVER['HTTP_CF_CONNECTING_IP'] );
 	}
+
+	/**
+	 * THE DEFECT THIS GUARDS AGAINST: an IPv6 edge that is not recognised as
+	 * Cloudflare means CF-Connecting-IP is ignored and REMOTE_ADDR — the edge —
+	 * becomes the limiter identity for EVERY visitor behind it. Five submissions
+	 * from anybody and the whole edge is blocked for an hour.
+	 *
+	 * This was previously argued as the safe failure on the grounds that it
+	 * over-limits rather than under-limits. Over-limiting here is an outage for
+	 * real customers, not a stricter rule for abusers.
+	 */
+	public function test_a_forwarded_ip_is_honoured_from_an_ipv6_cloudflare_edge(): void {
+		$_SERVER['REMOTE_ADDR']           = '2606:4700:3033::ac43:a1cd';
+		$_SERVER['HTTP_CF_CONNECTING_IP'] = '198.51.100.7';
+
+		$this->assertSame( '198.51.100.7', Spotship_WI_Rate_Limiter::client_ip() );
+
+		unset( $_SERVER['HTTP_CF_CONNECTING_IP'] );
+	}
+
+	/**
+	 * The v6 boundaries, and specifically the /29.
+	 *
+	 * 2a06:98c0::/29 does not end on a byte, so a prefix comparison that only
+	 * walks whole bytes trusts 2a06:98c8:: through 2a06:98ff:: as well — eight
+	 * times the range Cloudflare publishes, every address in it able to name its
+	 * own limiter identity with a header.
+	 */
+	public function test_the_cloudflare_ipv6_range_boundaries_are_right(): void {
+		$cases = array(
+			/* address => inside a published range? */
+			'2400:cb00::1'            => true,
+			'2400:CB00:0:0:0:0:0:1'   => true,  // Same address, written differently.
+			'2606:4700:3033::ac43:a1' => true,
+			'2a06:98c0::1'            => true,
+			'2a06:98c7:ffff::1'       => true,  // Last address of the /29.
+			'2a06:98c8::1'            => false, // First outside it.
+			'2a06:98bf:ffff::1'       => false, // Last below it.
+			'2400:cb01::1'            => false, // Adjacent prefix.
+			'2001:4860:4860::8888'    => false, // Google, not Cloudflare.
+		);
+
+		foreach ( $cases as $ip => $expected ) {
+			$_SERVER['REMOTE_ADDR']           = $ip;
+			$_SERVER['HTTP_CF_CONNECTING_IP'] = '198.51.100.7';
+
+			$honoured = '198.51.100.7' === Spotship_WI_Rate_Limiter::client_ip();
+
+			$this->assertSame( $expected, $honoured, "v6 boundary case {$ip}" );
+		}
+
+		unset( $_SERVER['HTTP_CF_CONNECTING_IP'] );
+	}
 }

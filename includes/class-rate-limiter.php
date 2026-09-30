@@ -54,6 +54,30 @@ final class Spotship_WI_Rate_Limiter {
 	);
 
 	/**
+	 * Cloudflare's published IPv6 ranges — https://www.cloudflare.com/ips/
+	 *
+	 * NOT ENUMERATING THESE WAS NOT THE SAFE FAILURE IT CLAIMED TO BE.
+	 *
+	 * The comment on is_cloudflare() used to argue that letting IPv6 fall through
+	 * to REMOTE_ADDR "over-limits rather than under-limits", and treated that as
+	 * the conservative choice. It is not conservative for the visitor: every
+	 * IPv6 request arrives from the EDGE address, so every IPv6 visitor on that
+	 * edge shares one bucket. Five submissions from anybody and the whole edge is
+	 * blocked for an hour — and IPv6 is a large and growing share of consumer
+	 * traffic, so that is an outage for real customers rather than a stricter
+	 * limit on abusers.
+	 */
+	private const CLOUDFLARE_V6 = array(
+		'2400:cb00::/32',
+		'2606:4700::/32',
+		'2803:f800::/32',
+		'2405:b500::/32',
+		'2405:8100::/32',
+		'2a06:98c0::/29',
+		'2c0f:f248::/32',
+	);
+
+	/**
 	 * Consume one unit from a bucket.
 	 *
 	 * THE WINDOW'S EXPIRY IS CARRIED IN THE VALUE, not delegated to the storage
@@ -176,17 +200,30 @@ final class Spotship_WI_Rate_Limiter {
 	/**
 	 * Whether an address is inside a published Cloudflare range.
 	 *
-	 * IPv6 edges are not enumerated here; they fall through to REMOTE_ADDR,
-	 * which rate-limits the edge rather than the visitor. That is the safe
-	 * failure: it over-limits rather than under-limits.
+	 * BOTH FAMILIES. An IPv6 peer that is a genuine Cloudflare edge must be
+	 * recognised as one, or every visitor behind it is limited as a single
+	 * client — see the note on CLOUDFLARE_V6.
 	 *
 	 * @param string $ip Candidate address.
 	 */
 	private static function is_cloudflare( string $ip ): bool {
-		if ( false === filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 ) ) {
-			return false;
+		if ( false !== filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 ) ) {
+			return self::in_v4_range( $ip );
 		}
 
+		if ( false !== filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
+			return self::in_v6_range( $ip );
+		}
+
+		return false;
+	}
+
+	/**
+	 * Whether an IPv4 address is inside a published Cloudflare v4 range.
+	 *
+	 * @param string $ip Candidate address, already validated as IPv4.
+	 */
+	private static function in_v4_range( string $ip ): bool {
 		$addr = ip2long( $ip );
 
 		if ( false === $addr ) {
@@ -205,6 +242,58 @@ final class Spotship_WI_Rate_Limiter {
 			$mask = -1 << ( 32 - (int) $bits );
 
 			if ( ( $addr & $mask ) === ( $subnet_long & $mask ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Whether an IPv6 address is inside a published Cloudflare v6 range.
+	 *
+	 * Compared as the 16 RAW BYTES `inet_pton()` returns, not as text. A string
+	 * prefix match on the printable form is wrong in both directions: `2400:cb00::1`
+	 * and `2400:CB00::1` are the same address written differently, and an
+	 * abbreviated form hides where one field ends and the next begins.
+	 *
+	 * The prefix length is applied whole bytes first, then the remaining bits of
+	 * the boundary byte — a /29 is three bytes and five bits, and comparing only
+	 * the whole bytes would accept a /24's worth of the internet.
+	 *
+	 * @param string $ip Candidate address, already validated as IPv6.
+	 */
+	private static function in_v6_range( string $ip ): bool {
+		$addr = inet_pton( $ip );
+
+		if ( false === $addr ) {
+			return false;
+		}
+
+		foreach ( self::CLOUDFLARE_V6 as $range ) {
+			list( $subnet, $bits ) = explode( '/', $range );
+
+			$subnet_packed = inet_pton( $subnet );
+
+			if ( false === $subnet_packed ) {
+				continue;
+			}
+
+			$bits  = (int) $bits;
+			$bytes = intdiv( $bits, 8 );
+			$rest  = $bits % 8;
+
+			if ( 0 !== $bytes && 0 !== substr_compare( $addr, substr( $subnet_packed, 0, $bytes ), 0, $bytes ) ) {
+				continue;
+			}
+
+			if ( 0 === $rest ) {
+				return true;
+			}
+
+			$mask = ~( ( 1 << ( 8 - $rest ) ) - 1 ) & 0xFF;
+
+			if ( ( ord( $addr[ $bytes ] ) & $mask ) === ( ord( $subnet_packed[ $bytes ] ) & $mask ) ) {
 				return true;
 			}
 		}

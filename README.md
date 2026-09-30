@@ -127,21 +127,35 @@ customer who has the zip.
   git tag real-backend-$(date +%Y%m%d-%H%M) && git push origin --tags
   ```
 
-  It has not been fired yet, deliberately. It writes real quote rows to dev and
-  the backend dispatches a referral email and a Slack post for each one —
-  `notifications.py` posts to `INSURANCE_REFERRAL_WEBHOOK_URL`, which its own
-  docblock says is the same workflow the serica referral views use. Test
-  submissions may therefore reach people who read that channel as real
-  enquiries. Confirm where dev's webhook and
-  `INSURANCE_REFERRAL_EMAIL_RECEIVER` point before running it.
+  **A tag run is read-only.** It exercises real autocomplete, real rate data,
+  axe on the real rate table, a real 401 from real authentication, a real DNS
+  failure, the origin-binding refusal and the no-JavaScript case — creating no
+  records and sending nothing.
 
-  Until it runs, persistence, attribution and consent provenance are verified
-  only against a stand-in upstream. Treat those specs as unverified code.
+  The two tests that submit a valid payload are tagged `@writes` and excluded
+  unless a run asks for them, because the backend fires a referral **email and
+  Slack post** for every row it stores. `notifications.py` posts to
+  `INSURANCE_REFERRAL_WEBHOOK_URL`, which its own docblock says is the same
+  Workflow Builder workflow the serica referral views use — so a test enquiry
+  can land in front of whoever reads that channel looking exactly like a real
+  one, and cannot be un-sent.
+
+  ```sh
+  gh workflow run real-backend-e2e.yaml -f reason="…" -f writes=true
+  ```
+
+  Confirm where dev's `INSURANCE_REFERRAL_WEBHOOK_URL` and
+  `INSURANCE_REFERRAL_EMAIL_RECEIVER` point first, and have somebody watching
+  them — that run is also the only way to confirm referral delivery at all,
+  since both are dispatched fire-and-forget with no flag to query afterwards.
+
+  Until it runs with `writes=true`, persistence, attribution and consent
+  provenance are verified only against a stand-in upstream. Treat those specs
+  as unverified code.
 - **Referral email and Slack delivery are not covered by any automated run.**
   `backend/insurance/notifications.py` dispatches both fire-and-forget and
   records no flag, so nothing in the API can be asked afterwards. Confirming
-  them means watching the dev mailbox and the Slack channel while the
-  real-backend suite runs — which is the other reason to settle where those
-  two point first.
+  them means watching the dev mailbox and the Slack channel during a
+  `writes=true` run — see above.
 - **ENG-6383** — the rate values have never been confirmed against the
   commercial Google Sheet.

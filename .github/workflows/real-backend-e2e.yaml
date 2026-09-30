@@ -22,6 +22,25 @@ name: Real backend E2E
 # push or a pull request to this job.
 #
 #   git tag real-backend-$(date +%Y%m%d-%H%M) && git push origin --tags
+#
+# THE WRITING TESTS ARE OPT-IN, AND THAT IS NOT TIMIDITY.
+#
+# Two tests submit a valid payload from a correctly-bound site, so two create
+# real QuoteRequest rows — and the backend fires a referral EMAIL and a SLACK
+# post for every row it stores. notifications.py posts to
+# INSURANCE_REFERRAL_WEBHOOK_URL, which its own docblock says is the same
+# Workflow Builder workflow the serica referral views use. A test submission can
+# therefore arrive in front of whoever reads that channel looking exactly like a
+# real insurance enquiry, and the row cannot be un-sent.
+#
+# Everything else in the suite is read-only against the real deployment: real
+# autocomplete, real rate data, axe on the real table, a real 401 from real
+# authentication, a real DNS failure, the origin-binding refusal, and the
+# no-JavaScript case. Those need no permission from anyone, so they are the
+# default and the writing pair is held behind `writes`.
+#
+# A tag run is read-only. Use workflow_dispatch with writes=true when the
+# referral destinations have been confirmed and somebody is watching them.
 on:
   workflow_dispatch:
     inputs:
@@ -29,6 +48,11 @@ on:
         description: 'Why this run is being made (recorded in the evidence)'
         required: true
         default: 'Verify ENG-5587 against the real backend'
+      writes:
+        description: 'Also run the two tests that create real quote rows (fires referral email + Slack)'
+        type: boolean
+        required: false
+        default: false
   push:
     tags:
       - 'real-backend-*'
@@ -116,13 +140,22 @@ jobs:
           SPOTSHIP_API_KEY: ${{ secrets.SPOTSHIP_API_KEY }}
           SPOTSHIP_UPSTREAM: ${{ secrets.SPOTSHIP_API_URL }}
           REASON: ${{ inputs.reason || format('pushed tag {0}', github.ref_name) }}
+          WRITES: ${{ inputs.writes }}
         run: |
           set -euo pipefail
 
           npx wp-env start
           bash bin/seed-e2e.sh
 
-          npx playwright test --config=playwright.real-backend.config.js
+          # Read-only unless explicitly asked for: @writes marks the two tests
+          # that store a row and trigger a referral email and Slack post.
+          if [ "${WRITES:-false}" = "true" ]; then
+            echo "including the writing tests — real rows and real referrals will be created"
+            npx playwright test --config=playwright.real-backend.config.js
+          else
+            echo "read-only run — skipping @writes"
+            npx playwright test --config=playwright.real-backend.config.js --grep-invert @writes
+          fi
 
       - name: Record what was run
         if: always()

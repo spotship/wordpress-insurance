@@ -1,7 +1,12 @@
 /**
  * The §9 failure matrix, driven against the REAL dev backend.
  *
- * ⚠️ NEVER EXECUTED — see real-backend.spec.js. The secrets do not exist.
+ * ⚠️ NOT YET EXECUTED. The `dev` secrets now exist and the workflow is
+ * reachable without a merge (a `real-backend-*` tag), so what remains is a
+ * decision rather than a blocker — see persistence.spec.js and the header of
+ * .github/workflows/real-backend-e2e.yaml. Everything here except the re-bind
+ * recovery test is read-only against the real deployment; that one is tagged
+ * `@writes` and excluded unless a run asks for it.
  *
  * tests/e2e/ already covers these against bin/e2e-upstream.js, and that stand-in
  * is honest about response SHAPE because its keys are derived from the
@@ -173,7 +178,7 @@ test( 'a site bound elsewhere cannot submit to the real backend', async ( { page
 	expect( shown ).not.toContain( 'thank' );
 } );
 
-test( 'one click rebinds against the real backend and submission recovers', async ( { page } ) => {
+test( 'one click rebinds against the real backend and submission recovers @writes', async ( { page } ) => {
 	await configure( page, { spotship_e2e_bind: 'https://cloned-to-staging.example.test' } );
 
 	await page.goto( '/wp-admin/options-general.php?page=spotship-war-insurance' );

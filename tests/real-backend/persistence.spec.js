@@ -1,10 +1,25 @@
 /**
  * Persistence, attribution and provenance against the REAL dev backend.
  *
- * ⚠️ THIS FILE HAS NEVER BEEN EXECUTED. The secrets it needs do not exist, so
- * no CI run has ever reached it. Treat it as unverified code until a dispatch
- * of .github/workflows/real-backend-e2e.yaml comes back green. It is written against
- * the backend contract as read from source, not against observed behaviour.
+ * ⚠️ THIS FILE HAS NOT BEEN EXECUTED. Treat it as unverified code until a run
+ * of .github/workflows/real-backend-e2e.yaml comes back green. It is written
+ * against the backend contract as read from source, not against observed
+ * behaviour.
+ *
+ * What is holding it is no longer a missing secret or a missing trigger — both
+ * `dev` secrets are set, and the workflow runs from a `real-backend-*` tag
+ * without waiting for a merge. It is that this file WRITES. Every submission
+ * below stores a real QuoteRequest on the dev deployment, and the backend fires
+ * a referral email and a Slack post for each one, to a webhook that
+ * notifications.py says is the same workflow the serica referral views use. A
+ * test enquiry can land in front of whoever reads that channel looking exactly
+ * like a real one, and cannot be un-sent.
+ *
+ * So the submitting tests are tagged `@writes` and excluded from a run unless
+ * it asks for them. The other two in this file are NOT tagged and do run: the
+ * diagnostics screen reads without submitting, and the revoked-key test submits
+ * a credential the backend rejects with a 401, so no row is stored and no
+ * referral is sent. Both still exercise the real deployment.
  *
  * PROVENANCE CANNOT BE ASSERTED FROM THE BROWSER, AND THAT IS DELIBERATE.
  *
@@ -171,7 +186,7 @@ for ( const [ product, urlPath, label ] of [
 	[ 'hull', '/insurance-elementor-hull/', 'Elementor' ],
 	[ 'cargo', '/insurance-elementor-cargo/', 'Elementor' ],
 ] ) {
-	test( `${ product } via ${ label }: persists with attribution and consent provenance`, async ( {
+	test( `${ product } via ${ label }: persists with attribution and consent provenance @writes`, async ( {
 		page,
 	} ) => {
 		const marker = `${ product }-${ label }-${ Date.now() }`;

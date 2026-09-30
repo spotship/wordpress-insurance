@@ -34,7 +34,9 @@ test( 'choosing a location submits the id that was displayed', async ( { page } 
 	await input.press( 'Enter' );
 
 	const shown = await input.inputValue();
-	const submitted = await page.locator( '[data-sswi-combo="location"] [data-sswi-value]' ).inputValue();
+	// The hull form has TWO location comboboxes — fromPort and toPort — so
+	// selecting by kind matches both and Playwright refuses in strict mode.
+	const submitted = await page.locator( '[data-sswi-field="fromPort"] [data-sswi-value]' ).inputValue();
 
 	expect( shown ).not.toEqual( '' );
 	expect( submitted ).not.toEqual( '' );

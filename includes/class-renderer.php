@@ -101,7 +101,9 @@ final class Spotship_WI_Renderer {
 				'noResults'    => __( 'No matches found.', 'spotship-war-insurance' ),
 				'lookupFailed' => __( 'Search is unavailable, so this form cannot be submitted right now.', 'spotship-war-insurance' ),
 				'errorSummary' => __( 'Please correct the following:', 'spotship-war-insurance' ),
+				/* translators: %s: the name of the destination being removed. */
 				'removeChip'   => __( 'Remove %s', 'spotship-war-insurance' ),
+				/* translators: %d: number of autocomplete results. */
 				'resultCount'  => __( '%d results available.', 'spotship-war-insurance' ),
 				'expired'      => __( 'This form has been open too long. Please reload the page and try again.', 'spotship-war-insurance' ),
 			),

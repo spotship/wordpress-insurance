@@ -122,15 +122,23 @@ final class Spotship_WI_Api_Client {
 
 		if ( array() !== $query ) {
 			/*
-			 * RAW values. `add_query_arg()` encodes them itself, so pre-encoding
-			 * here produces a double encoding: a search for "New York" leaves as
-			 * `New%2520York`, the backend searches for the literal string
-			 * "New%20York", and the visitor gets an empty autocomplete for a
-			 * location that plainly exists. It fails silently and only for terms
-			 * containing a space or a special character, which is exactly the shape
-			 * of bug that survives a smoke test.
+			 * ENCODED values. `add_query_arg()` does NOT encode: it builds the
+			 * string through build_query(), which calls _http_build_query() with
+			 * $urlencode = false. Passing a raw value therefore emits a literal
+			 * space — `?query=New York` — and an invalid request line.
+			 *
+			 * The subtlety that makes this easy to get wrong: add_query_arg() DOES
+			 * run urlencode_deep(), but only over the params it parsed out of the
+			 * EXISTING query string, and it does that before merging the new ones
+			 * in. Values passed as arguments are never touched. These endpoints
+			 * carry no pre-existing query string, so encoding once here is exact.
+			 *
+			 * An earlier comment claimed the opposite and warned against
+			 * pre-encoding. It was wrong, and it failed silently for exactly the
+			 * terms nobody smoke-tests: a search for "New York" returned nothing
+			 * for a location that plainly exists.
 			 */
-			$url = add_query_arg( array_map( 'strval', $query ), $url );
+			$url = add_query_arg( array_map( 'rawurlencode', array_map( 'strval', $query ) ), $url );
 		}
 
 		return $url;

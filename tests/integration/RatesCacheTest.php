@@ -22,7 +22,14 @@ final class RatesCacheTest extends WP_UnitTestCase {
 	private int $calls = 0;
 
 	/** @var array<string, mixed> */
-	private array $answer = array();
+	/**
+	 * A transport failure is a WP_Error, not an array, so this cannot be typed
+	 * `array` — doing so made two tests die in setUp with a TypeError before
+	 * they reached an assertion.
+	 *
+	 * @var array<string, mixed>|WP_Error
+	 */
+	private $answer = array();
 
 	public function set_up(): void {
 		parent::set_up();

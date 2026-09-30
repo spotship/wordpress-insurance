@@ -266,7 +266,10 @@ final class RestProxyTest extends WP_UnitTestCase {
 		$body     = $response->get_data();
 
 		$this->assertTrue( $body['success'] );
-		$this->assertSame( array( 'submissionId', 'status' ), array_keys( $body['data'] ) );
+		$sswi_keys = array_keys( $body['data'] );
+		sort( $sswi_keys );
+
+		$this->assertSame( array( 'status', 'submissionId' ), $sswi_keys );
 
 		// A value only the upstream sent must not appear anywhere in the answer.
 		$this->assertStringNotContainsString(

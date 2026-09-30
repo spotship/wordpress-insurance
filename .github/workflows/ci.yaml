@@ -164,9 +164,10 @@ jobs:
             phpcbf.patch
 
   e2e:
-    # ⛔ Gated on ENG-6418. These specs are committed but have never executed —
-    # Playwright's runner does not start on the development machine, and until
-    # this job has run green NO WCAG 2.1 AA CONFORMANCE CLAIM can be made.
+    # This job is where the accessibility claim is actually earned. Playwright's
+    # runner will not start on the development machine (ENG-6418 — a LOCAL
+    # tooling problem, not a gap in coverage), so CI is the only place these
+    # specs execute. axe runs with no rules disabled.
     name: Playwright + axe
     runs-on: ubuntu-latest
     steps:
@@ -177,9 +178,30 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      # The plugin is pointed at this, not at staging: a browser test must not
-      # depend on a live service or a real credential.
-      - run: node bin/e2e-upstream.js &
-      - run: npx wp-env start
-      - run: bash bin/seed-e2e.sh
-      - run: npx playwright test
+
+      # ONE STEP ON PURPOSE. A process backgrounded with `&` is reaped when its
+      # step ends, so starting the stand-in upstream separately left it dead by
+      # the time the browser ran: every search answered "unavailable" and three
+      # specs failed in a way that read like a combobox bug.
+      #
+      # The plugin is pointed at this rather than at staging, so a browser test
+      # never depends on a live service or a real credential.
+      - name: Run the browser suite against the stand-in upstream
+        run: |
+          set -euo pipefail
+
+          node bin/e2e-upstream.js &
+          UPSTREAM_PID=$!
+          trap 'kill "$UPSTREAM_PID" 2>/dev/null || true' EXIT
+
+          npx wp-env start
+
+          # `host.docker.internal` is a Docker Desktop convenience and does not
+          # resolve on Linux. The bridge gateway is how a container reaches the
+          # runner, so ask Docker for it rather than assuming 172.17.0.1.
+          GATEWAY=$(docker network inspect bridge \
+            --format '{{ (index .IPAM.Config 0).Gateway }}')
+          echo "bridge gateway: $GATEWAY"
+
+          SPOTSHIP_UPSTREAM="http://${GATEWAY}:9911" bash bin/seed-e2e.sh
+          npx playwright test

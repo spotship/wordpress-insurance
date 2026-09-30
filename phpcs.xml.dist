@@ -110,6 +110,30 @@
 		<exclude-pattern>/tests/*</exclude-pattern>
 	</rule>
 
+	<!--
+	  The unit bootstrap DEFINES WordPress's own constants — ABSPATH,
+	  HOUR_IN_SECONDS and friends — because the unit suite deliberately never
+	  loads WordPress. The sniff reads them as unprefixed plugin globals, which
+	  is exactly backwards: they are WP core's names, and prefixing them would
+	  defeat the point of standing in for core.
+	-->
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound">
+		<exclude-pattern>/tests/bootstrap-unit.php</exclude-pattern>
+	</rule>
+
+	<!--
+	  PHPCS and PHPStan disagree here and PHPStan wins.
+
+	  WP_REST_Request is generic, so at level 6 PHPStan wants
+	  `WP_REST_Request<array<string, mixed>>` in the @param. Squiz cannot parse a
+	  generic annotation and reports the declared `WP_REST_Request` hint as a
+	  mismatch. Dropping the generic to satisfy Squiz would lose real type
+	  information; this sub-rule is the one that has to give.
+	-->
+	<rule ref="Squiz.Commenting.FunctionComment.IncorrectTypeHint">
+		<severity>0</severity>
+	</rule>
+
 	<config name="minimum_wp_version" value="6.4"/>
 	<config name="testVersion" value="8.1-"/>
 	<rule ref="PHPCompatibilityWP"/>

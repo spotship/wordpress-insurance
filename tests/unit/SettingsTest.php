@@ -20,6 +20,7 @@ final class SettingsTest extends TestCase {
 		parent::setUp();
 		Monkey\setUp();
 
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- this mock IS wp_parse_url; it cannot call itself.
 		Functions\when( 'wp_parse_url' )->alias( static fn( $url ) => parse_url( $url ) );
 		Functions\when( 'home_url' )->justReturn( 'https://example.test' );
 		Functions\when( 'untrailingslashit' )->alias( static fn( $s ) => rtrim( (string) $s, '/' ) );

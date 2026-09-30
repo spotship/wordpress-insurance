@@ -1,15 +1,12 @@
 /**
  * Playwright configuration.
  *
- * ⛔ THESE SPECS HAVE NEVER EXECUTED. Playwright's runner does not start on the
+ * THESE SPECS RUN IN CI, NOT LOCALLY. Playwright's runner does not start on the
  * development machine — `playwright --version` itself hangs, before any browser
- * is involved — which is tracked as ENG-6418 and gates this branch's merge.
- * Until the CI `e2e` job runs green, no WCAG 2.1 AA conformance claim can be
- * made for this plugin.
- *
- * They are committed rather than deferred because the specs are the definition
- * of the acceptance criteria; writing them later would mean writing them to fit
- * whatever the code happens to do.
+ * is involved — which is ENG-6418. That is a local tooling fault; the `e2e` job
+ * in ci.yaml is where these execute and where the accessibility result comes
+ * from, so read CI rather than concluding from a local hang that they are
+ * unproven.
  */
 'use strict';
 

@@ -27,7 +27,9 @@ final class SettingsSanitizeTest extends TestCase {
 		$this->stored = array();
 
 		Functions\when( 'get_option' )->alias(
-			fn( $name, $fallback = array() ) => array() === $this->stored ? $fallback : $this->stored
+			function ( $name, $fallback = array() ) {
+				return array() === $this->stored ? $fallback : $this->stored;
+			}
 		);
 		Functions\when( 'update_option' )->alias(
 			function ( $name, $value ) {
@@ -38,6 +40,7 @@ final class SettingsSanitizeTest extends TestCase {
 		);
 		Functions\when( 'home_url' )->justReturn( 'https://example.test' );
 		Functions\when( 'untrailingslashit' )->alias( fn( $s ) => rtrim( (string) $s, '/' ) );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- this mock IS wp_parse_url; it cannot call itself.
 		Functions\when( 'wp_parse_url' )->alias( fn( $u ) => parse_url( $u ) );
 		Functions\when( 'add_settings_error' )->justReturn( null );
 		Functions\when( 'sanitize_email' )->alias( fn( $e ) => trim( (string) $e ) );

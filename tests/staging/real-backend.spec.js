@@ -26,6 +26,14 @@
  * The replay is also safe to perform: the same contract states it does not
  * re-send the referral email or the Slack message.
  *
+ * §9 ROWS THIS SUITE DELIBERATELY DOES NOT DRIVE, so the gap is visible rather
+ * than implied: the inline 400 field errors, and the 429 Retry-After wait. Both
+ * are covered by the integration and jsdom suites against a stand-in upstream.
+ * Reaching a real 429 means six submits inside the hour — five real leads in a
+ * real inbox to provoke the sixth, which is a worse trade than the coverage is
+ * worth. The three actions the ticket names — killing the backend, revoking the
+ * key and blocking the JS — are all driven, in failure-modes.spec.js.
+ *
  * NOT COVERED, AND NOT COVERABLE FROM HERE: that the referral email and Slack
  * message actually fire. backend/insurance/notifications.py dispatches both
  * fire-and-forget and records no flag, so nothing in the API can be asked. It
@@ -58,7 +66,15 @@ async function api() {
 	return playwrightRequest.newContext( {
 		baseURL: API,
 		extraHTTPHeaders: {
-			Authorization: `Api-Key ${ KEY }`,
+			// `Bearer `, and nothing else. CustomerAccountApiKeyAuthentication
+			// ._extract_key() reads the x-api-key header, or an Authorization
+			// header starting with BEARER_PREFIX — literally "Bearer ". This
+			// said `Api-Key`, which matches neither, so the key was never
+			// extracted, the authenticator chain fell through, and every call
+			// here would have 401'd. replay() is the ONLY thing that evidences
+			// persistence, so the job would have failed on its first real run
+			// and looked like a bad credential rather than a bad spec.
+			Authorization: `Bearer ${ KEY }`,
 			'Content-Type': 'application/json',
 			Accept: 'application/json',
 		},

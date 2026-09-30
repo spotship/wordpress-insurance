@@ -37,12 +37,7 @@
 const fs = require( 'fs' );
 const path = require( 'path' );
 const { test, expect, request: playwrightRequest } = require( '@playwright/test' );
-
-// Created by bin/seed-e2e.sh, which must agree with this.
-const ADMIN = {
-	user: 'e2e-admin',
-	pass: process.env.E2E_ADMIN_PASS || 'e2e-admin-password',
-};
+const { login } = require( '../support/wp-admin.js' );
 
 const API = ( process.env.SPOTSHIP_STAGING_URL || '' ).replace( /\/+$/, '' );
 const KEY = process.env.SPOTSHIP_STAGING_KEY || '';
@@ -68,25 +63,6 @@ async function api() {
 			Accept: 'application/json',
 		},
 	} );
-}
-
-async function login( page ) {
-	await page.goto( '/wp-login.php' );
-
-	if ( ! ( await page.locator( '#wp-submit' ).count() ) ) {
-		return;
-	}
-
-	await page.locator( '#user_login' ).fill( ADMIN.user );
-	await page.locator( '#user_pass' ).fill( ADMIN.pass );
-
-	const submitted = page.waitForURL(
-		( url ) => ! url.pathname.endsWith( 'wp-login.php' ),
-		{ timeout: 30000 }
-	);
-
-	await page.locator( '#wp-submit' ).click();
-	await submitted;
 }
 
 /**

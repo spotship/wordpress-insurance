@@ -15,38 +15,15 @@
 'use strict';
 
 const { test, expect } = require( '@playwright/test' );
+const { login } = require( '../support/wp-admin.js' );
 const AxeBuilder = require( '@axe-core/playwright' ).default;
 
 test.describe.configure( { mode: 'serial' } );
 test.setTimeout( 120000 );
 
-const ADMIN = {
-	user: 'e2e-admin',
-	pass: process.env.E2E_ADMIN_PASS || 'e2e-admin-password',
-};
-
 // Reserved by RFC 2606: guaranteed never to resolve. A real DNS failure inside
 // the same wp_safe_remote_post() a real outage would hit.
 const UNREACHABLE = 'https://spotship-staging-outage.invalid';
-
-async function login( page ) {
-	await page.goto( '/wp-login.php' );
-
-	if ( ! ( await page.locator( '#wp-submit' ).count() ) ) {
-		return;
-	}
-
-	await page.locator( '#user_login' ).fill( ADMIN.user );
-	await page.locator( '#user_pass' ).fill( ADMIN.pass );
-
-	const submitted = page.waitForURL(
-		( url ) => ! url.pathname.endsWith( 'wp-login.php' ),
-		{ timeout: 30000 }
-	);
-
-	await page.locator( '#wp-submit' ).click();
-	await submitted;
-}
 
 /**
  * @param {object} page   Playwright page.

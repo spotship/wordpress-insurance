@@ -17,6 +17,7 @@
 'use strict';
 
 const { test, expect } = require( '@playwright/test' );
+const { login } = require( '../support/wp-admin.js' );
 
 test.describe.configure( { mode: 'serial' } );
 
@@ -24,73 +25,6 @@ test.describe.configure( { mode: 'serial' } );
 // Request_Guard::MIN_AGE before submitting. The 30s default is not enough room
 // for that, and running out of it reads as a hang rather than as a timeout.
 test.setTimeout( 90000 );
-
-// Created by bin/seed-e2e.sh, which must agree with this. wp-env's own default
-// account is not assumed: relying on it cost three CI runs to a login that
-// simply bounced back to the form.
-const ADMIN = {
-	user: 'e2e-admin',
-	pass: process.env.E2E_ADMIN_PASS || 'e2e-admin-password',
-};
-
-async function login( page ) {
-	await page.goto( '/wp-login.php' );
-
-	// Already authenticated: WordPress bounces a logged-in user off wp-login.
-	if ( ! ( await page.locator( '#wp-submit' ).count() ) ) {
-		return;
-	}
-
-	await page.locator( '#user_login' ).fill( ADMIN.user );
-	await page.locator( '#user_pass' ).fill( ADMIN.pass );
-
-	/*
-	 * WAIT FOR THE POST TO LAND, BUT NOT FOR A PARTICULAR DESTINATION.
-	 *
-	 * Two things went wrong here, and both presented as "the first spec in
-	 * this file fails and the rest are fine":
-	 *
-	 * 1. Waiting for a URL matching /wp-admin/ assumed the login lands on the
-	 *    dashboard. It need not — a freshly activated Elementor claims the
-	 *    first admin request for its onboarding wizard.
-	 * 2. Replacing that with waitForLoadState( 'load' ) was worse: the page is
-	 *    ALREADY loaded when the click is issued, so it resolved immediately,
-	 *    and the goto() below then raced the in-flight login POST and
-	 *    cancelled it. The session was never established, wp-admin bounced
-	 *    back to the login form, and the missing admin bar looked like a
-	 *    rendering fault.
-	 *
-	 * Waiting to LEAVE wp-login.php is the condition that actually means the
-	 * credentials were accepted, and it says nothing about where WordPress or
-	 * its plugins choose to go next.
-	 */
-	const submitted = page
-		.waitForURL( ( url ) => ! url.pathname.endsWith( 'wp-login.php' ), { timeout: 20000 } )
-		.catch( async () => {
-			/*
-			 * Still on the form means the credentials were refused. Say so, and
-			 * say what WordPress said: a bare navigation timeout here sent me
-			 * looking at upgrade screens and navigation races for three CI runs
-			 * before the actual cause — a wrong password — was visible.
-			 */
-			const error = await page.locator( '#login_error' ).textContent().catch( () => null );
-
-			throw new Error(
-				`login as "${ ADMIN.user }" was refused; WordPress said: ` +
-					( error ? error.trim() : '(no #login_error on the page)' )
-			);
-		} );
-
-	await page.locator( '#wp-submit' ).click();
-	await submitted;
-
-	await page.goto( '/wp-admin/options-general.php' );
-
-	await expect(
-		page.locator( '#wpadminbar' ),
-		'not authenticated: wp-admin served no admin bar, which means it served the login form'
-	).toBeVisible();
-}
 
 /**
  * @param {object} page Playwright page.

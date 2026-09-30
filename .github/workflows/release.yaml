@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and publish the plugin zip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      # The header and the constant must agree before anything is built: the
+      # update checker reads one and X-Plugin-Version reports the other.
+      - run: bash bin/assert-version.sh
+
+      - name: Generate the bundled fallback rate table
+        # The repository ships an EMPTY table on purpose — these are
+        # commercially approved figures and a hand-written placeholder would be
+        # invented numbers on a customer's public site. The release fetches the
+        # real one. A failure here is fatal rather than degraded: shipping a
+        # silently empty table would remove the offline fallback without anyone
+        # noticing.
+        env:
+          RATES_URL: ${{ secrets.SPOTSHIP_RATES_URL }}
+          RATES_KEY: ${{ secrets.SPOTSHIP_RATES_KEY }}
+        run: bash bin/generate-fallback-rates.sh
+
+      - run: bash bin/build-dist.sh
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true

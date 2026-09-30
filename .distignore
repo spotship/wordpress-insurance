@@ -1,0 +1,27 @@
+# Everything that must NOT reach a customer's server.
+# The zip is unpacked verbatim into wp-content/plugins.
+
+.git
+.github
+.gitignore
+.gitattributes
+.editorconfig
+.distignore
+.pre-commit-config.yaml
+.wp-env.json
+.ship
+.idea
+.DS_Store
+
+tests
+bin
+node_modules
+package.json
+package-lock.json
+phpcs.xml.dist
+phpstan.neon.dist
+phpunit.xml.dist
+Taskfile.yml
+composer.json
+composer.lock
+README.md

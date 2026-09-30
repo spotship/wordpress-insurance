@@ -9,9 +9,10 @@
     "env:stop": "wp-env stop"
   },
   "devDependencies": {
-    "@playwright/test": "^1.47.0",
     "@axe-core/playwright": "^4.10.0",
-    "@wordpress/env": "^10.7.0"
+    "@playwright/test": "^1.47.0",
+    "@wordpress/env": "^10.7.0",
+    "jsdom": "^25.0.0"
   },
   "release": {
     "branches": [

@@ -12,3 +12,7 @@ dist/
 # Local env
 .env
 .DS_Store
+
+# Written by bin/mutation-check.js --suite=php; a transient report, never committed.
+mutation-junit.xml
+mutation-check-php.txt

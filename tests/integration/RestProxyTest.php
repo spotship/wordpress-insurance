@@ -55,9 +55,15 @@ final class RestProxyTest extends WP_UnitTestCase {
 			'args' => $args,
 		);
 
+		// PER PRODUCT. A single hull-shaped answer meant every cargo row in the
+		// parity table below was compared against a response the cargo endpoint
+		// does not emit. Check cargo first: 'cargo_quote_request' contains
+		// 'quote_request' as a substring.
+		$product = str_contains( $url, 'cargo_quote_request' ) ? 'cargo' : 'hull';
+
 		return array(
 			'headers'  => array(),
-			'body'     => (string) wp_json_encode( $this->genuine_201() ),
+			'body'     => (string) wp_json_encode( $this->genuine_201( $product ) ),
 			'response' => array(
 				'code'    => 201,
 				'message' => 'Created',
@@ -66,33 +72,94 @@ final class RestProxyTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Representative values for every key a genuine acceptance can carry.
+	 *
+	 * The VALUES are ours to choose; the KEY SET is not, and is read from
+	 * tests/fixtures/backend-201-keys.json instead — see genuine_201().
+	 *
+	 * @var array<string, mixed>
+	 */
+	private const GENUINE_VALUES = array(
+		'userName'         => 'A Person',
+		'userEmail'        => 'a@example.test',
+		'userPhone'        => '',
+		'vessel'           => null,
+		'handmValue'       => '',
+		'increasedValue'   => '',
+		'fromPort'         => 1,
+		'toPort'           => 2,
+		'cargoDescription' => 'Steel coils',
+		'cargoWeight'      => '1000',
+		'cargoValue'       => '1.00',
+		'cargoCurrency'    => 'USD',
+		'riskZone'         => 'Black Sea',
+		'insuredParty'     => '',
+		'destinations'     => array( 2 ),
+		'notes'            => '',
+		'dataConsent'      => true,
+		'source'           => 'wordpress',
+		'submissionId'     => '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+		'consentGivenAt'   => '2026-09-30T00:00:00Z',
+		'consentText'      => 'Consent text',
+		'privacyNoticeUrl' => 'https://example.test/privacy/',
+		'originSiteUrl'    => 'https://example.test',
+	);
+
+	/**
 	 * A genuine acceptance, as the backend really shapes it.
 	 *
-	 * Sixteen camelCase keys on hull, containing NEITHER `id` NOR `status`.
-	 * Hand-writing a different shape here is how a previous implementation built
-	 * an anti-bot decoy that imitated a response the API never emits.
+	 * THE KEY SET IS NOT OURS TO ASSERT, so it is not written here. It is read
+	 * from tests/fixtures/backend-201-keys.json, which bin/derive-backend-keys.sh
+	 * generates from the backend serializer. Hand-writing a shape the API never
+	 * emits is exactly how a previous implementation built an anti-bot decoy that
+	 * imitated the fixture rather than the backend, and shipped the resulting
+	 * tell. tests/js/contract.test.js already reads the derived list; this side
+	 * did not, so the two could drift apart silently.
 	 *
+	 * Note it contains NEITHER `id` NOR `status`.
+	 *
+	 * @param string $product 'hull' or 'cargo'.
 	 * @return array<string, mixed>
 	 */
-	private function genuine_201(): array {
-		return array(
-			'userName'         => 'A Person',
-			'userEmail'        => 'a@example.test',
-			'userPhone'        => '',
-			'vessel'           => null,
-			'handmValue'       => '',
-			'increasedValue'   => '',
-			'fromPort'         => 1,
-			'toPort'           => 2,
-			'notes'            => '',
-			'dataConsent'      => true,
-			'source'           => 'wordpress',
-			'submissionId'     => '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
-			'consentGivenAt'   => '2026-09-30T00:00:00Z',
-			'consentText'      => 'Consent text',
-			'privacyNoticeUrl' => 'https://example.test/privacy/',
-			'originSiteUrl'    => 'https://example.test',
+	private function genuine_201( string $product ): array {
+		$path = dirname( __DIR__ ) . '/fixtures/backend-201-keys.json';
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- a local test fixture on disk, not a remote resource.
+		$decoded = json_decode( (string) file_get_contents( $path ), true );
+		$derived = is_array( $decoded ) ? $decoded : array();
+
+		// Guarded rather than asserted-and-narrowed: PHPStan runs at level 6
+		// without the PHPUnit extension, so an assertIsArray() would not narrow
+		// json_decode()'s mixed and the offset read below would not type-check.
+		$this->assertNotSame(
+			array(),
+			$derived,
+			"{$path} is missing, empty or not JSON — run bin/derive-backend-keys.sh"
 		);
+
+		$keys = isset( $derived[ $product ] ) && is_array( $derived[ $product ] )
+			? $derived[ $product ]
+			: null;
+
+		$this->assertNotNull( $keys, "backend-201-keys.json has no derived key list for '{$product}'" );
+
+		$body = array();
+
+		foreach ( (array) $keys as $key ) {
+			$name = (string) $key;
+
+			$this->assertArrayHasKey(
+				$name,
+				self::GENUINE_VALUES,
+				"backend-201-keys.json carries '{$name}' and this fixture has no value for it.\n"
+				. "The backend response shape has CHANGED. Add a representative value to\n"
+				. "GENUINE_VALUES. Do not drop the key: the decoy is built to match this\n"
+				. 'shape, and a key it omits is precisely the tell these tests exist to stop.'
+			);
+
+			$body[ $name ] = self::GENUINE_VALUES[ $name ];
+		}
+
+		return $body;
 	}
 
 	/**
@@ -279,17 +346,34 @@ final class RestProxyTest extends WP_UnitTestCase {
 		);
 	}
 
-	public function test_the_decoy_and_a_genuine_acceptance_share_one_body_shape(): void {
-		$genuine = $this->submit( 'hull', $this->good( 'hull' ) )->get_data();
+	/**
+	 * BOTH PRODUCTS. Hull-only left the cargo decoy unasserted, and cargo is the
+	 * shape with the extra fields — the one where a divergence is likelier.
+	 *
+	 * @dataProvider products
+	 * @param string $product 'hull' or 'cargo'.
+	 */
+	public function test_the_decoy_and_a_genuine_acceptance_share_one_body_shape( string $product ): void {
+		$genuine = $this->submit( $product, $this->good( $product ) )->get_data();
 
-		$flagged                 = $this->good( 'hull' );
+		$flagged                 = $this->good( $product );
 		$flagged['sswi_website'] = 'bot';
 
-		$decoy = $this->submit( 'hull', $flagged )->get_data();
+		$decoy = $this->submit( $product, $flagged )->get_data();
 
-		$this->assertSame( array_keys( $genuine ), array_keys( $decoy ) );
-		$this->assertSame( array_keys( $genuine['data'] ), array_keys( $decoy['data'] ) );
-		$this->assertSame( $genuine['data']['submissionId'], $decoy['data']['submissionId'] );
+		$this->assertSame( array_keys( $genuine ), array_keys( $decoy ), "{$product}: envelope keys" );
+		$this->assertSame( array_keys( $genuine['data'] ), array_keys( $decoy['data'] ), "{$product}: receipt keys" );
+		$this->assertSame( $genuine['data']['submissionId'], $decoy['data']['submissionId'], "{$product}: submissionId" );
+	}
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public static function products(): array {
+		return array(
+			'hull'  => array( 'hull' ),
+			'cargo' => array( 'cargo' ),
+		);
 	}
 
 	public function test_an_unauthorised_upstream_never_leaks_credential_state(): void {

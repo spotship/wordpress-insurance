@@ -197,11 +197,28 @@ jobs:
           npx wp-env run tests-cli \
             --env-cwd=wp-content/plugins/$(basename "$PWD") \
             vendor/bin/phpunit -c phpunit-integration.xml.dist --log-junit junit-integration.xml
+
+      # THE SAME PROOF THE JSDOM SUITE GETS, FOR THE PHP TESTS.
+      #
+      # The integration tests had no fail-before-fix evidence: the mutation
+      # harness only drove the jsdom suite, so RenderInstancesTest, RebindTest
+      # and the decoy-parity fixture were all trusted rather than checked.
+      #
+      # One matrix combination, not four. The mutations exercise this plugin's
+      # own logic, which does not vary across the PHP/WP matrix, and each
+      # mutation costs a full suite run.
+      - name: Mutation check (integration)
+        if: matrix.php == '8.3' && matrix.wp == 'latest'
+        run: |
+          set -o pipefail
+          node bin/mutation-check.js --suite=php | tee mutation-check-php.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: phpunit-integration-php${{ matrix.php }}-wp${{ matrix.wp }}
-          path: junit-integration.xml
+          path: |
+            junit-integration.xml
+            mutation-check-php.txt
           if-no-files-found: warn
 
   e2e:

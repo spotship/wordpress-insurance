@@ -16,3 +16,7 @@ dist/
 # Written by bin/mutation-check.js --suite=php; a transient report, never committed.
 mutation-junit.xml
 mutation-check-php.txt
+
+# PHPUnit writes these next to the config it was given; local runs only.
+.phpunit.result.cache
+.phpunit-integration.result.cache

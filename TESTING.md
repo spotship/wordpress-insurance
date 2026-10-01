@@ -159,10 +159,17 @@ comparing the plugin version to the tag being released; and the notes textarea
 missing `data-sswi-field` in **both** templates, so a notes error degraded to
 "temporarily unavailable".
 
+## The real-backend suite: 15/15, after seven runs
+
+**Run `36840956899`, 2026-10-01 — all fifteen specs green, writing half
+included.** What follows is how it got there, because every one of the six runs
+before it failed for a reason the suite had confidently asserted was something
+else. That pattern is the most useful thing in this document.
+
 ## What the first real-backend run found
 
-The suite that talks to the live dev deployment had never executed. It has now,
-and the first thing it found was not in this plugin.
+The suite that talks to the live dev deployment had never executed. The first
+thing it found was not in this plugin.
 
 **Dev's insurance endpoints are failing, and the picture moved between two
 runs twenty minutes apart.**

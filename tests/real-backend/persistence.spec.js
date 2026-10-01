@@ -1,25 +1,36 @@
 /**
  * Persistence, attribution and provenance against the REAL dev backend.
  *
- * ⚠️ THIS FILE HAS NOT BEEN EXECUTED. Treat it as unverified code until a run
- * of .github/workflows/real-backend-e2e.yaml comes back green. It is written
- * against the backend contract as read from source, not against observed
- * behaviour.
+ * EXECUTED, AGAINST A HEALTHY DEPLOYMENT, ON 2026-10-01.
  *
- * What is holding it is no longer a missing secret or a missing trigger — both
- * `dev` secrets are set, and the workflow runs from a `real-backend-*` tag
- * without waiting for a merge. It is that this file WRITES. Every submission
- * below stores a real QuoteRequest on the dev deployment, and the backend fires
- * a referral email and a Slack post for each one, to a webhook that
- * notifications.py says is the same workflow the serica referral views use. A
- * test enquiry can land in front of whoever reads that channel looking exactly
- * like a real one, and cannot be un-sent.
+ * Run 36830368299 drove all four persistence specs green: each submits, takes
+ * the submissionId the browser reported, and replays it server-side, where the
+ * API answers 200 with the ORIGINAL ROW. That row is the evidence, and a 201
+ * there would have meant the first submission never persisted.
+ *
+ * It took seven runs to get there, and the first six are worth knowing about
+ * because every one of them failed for a reason this file had asserted was
+ * something else. See TESTING.md: a probe that gated nothing because it ran
+ * four minutes early, `/api` silently stripped from every direct call, a
+ * revoked key swapped in before the form that needed it, a leak check read off
+ * a page it had navigated away from, and one 429 reported by three assertions
+ * as three different causes.
+ *
+ * THIS FILE WRITES. Every submission below stores a real QuoteRequest on the
+ * dev deployment, and the backend fires a referral email and a Slack post for
+ * each one. The destinations were confirmed before the first writing run: dev's
+ * webhook is NOT prod's, and the email receiver is tech@spot-ship.com. A test
+ * enquiry therefore reaches Spot Ship engineers rather than whoever handles
+ * real referrals — but it still cannot be un-sent.
  *
  * So the submitting tests are tagged `@writes` and excluded from a run unless
  * it asks for them. The other two in this file are NOT tagged and do run: the
  * diagnostics screen reads without submitting, and the revoked-key test submits
  * a credential the backend rejects with a 401, so no row is stored and no
  * referral is sent. Both still exercise the real deployment.
+ *
+ * AND THE WRITING HALF COSTS A BUDGET: `insurance_quote` is throttled at
+ * 20/hour and one run spends about ten. See tests/support/quote-budget.js.
  *
  * PROVENANCE CANNOT BE ASSERTED FROM THE BROWSER, AND THAT IS DELIBERATE.
  *

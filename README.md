@@ -117,37 +117,45 @@ customer who has the zip.
 
 ## Known gaps
 
-- **The real-backend suite has never run.** `tests/real-backend/` talks to the
-  live dev deployment. Both `dev` environment secrets are now set, and the
-  workflow is reachable without waiting for a merge — `workflow_dispatch` only
-  works for files already on the default branch, so it also triggers on a
-  `real-backend-*` tag:
+- **The real-backend suite runs, and has.** `tests/real-backend/` talks to the
+  live dev deployment. Both `dev` environment secrets are set, and the workflow
+  is reachable without waiting for a merge — `workflow_dispatch` only works for
+  files already on the default branch, so it also triggers on a tag:
 
   ```sh
-  git tag real-backend-$(date +%Y%m%d-%H%M) && git push origin --tags
+  # Read-only.
+  git tag real-backend-$(date -u +%Y%m%d-%H%M) && git push origin --tags
+  # Includes the writing pair.
+  git tag real-backend-writes-$(date -u +%Y%m%d-%H%M) && git push origin --tags
   ```
 
-  **A tag run is read-only.** It exercises real autocomplete, real rate data,
-  axe on the real rate table, a real 401 from real authentication, a real DNS
-  failure, the origin-binding refusal and the no-JavaScript case — creating no
-  records and sending nothing.
+  **A `real-backend-2*` tag is read-only.** It exercises real autocomplete, real
+  rate data, axe on the real rate table, a real 401 from real authentication, a
+  real DNS failure, the origin-binding refusal and the no-JavaScript case —
+  creating no records and sending nothing.
 
-  ⚠️ **`DEBUG` appears to be enabled on the dev deployment, which is
+  **A `real-backend-writes-*` tag also stores real rows and sends real
+  referrals.** Run `36830368299` on 2026-10-01 did exactly that and verified
+  persistence, attribution, consent provenance and the one-click re-bind
+  against the real deployment.
+
+  ⚠️ **The writing half runs about once an hour.**
+  `backend/insurance/views.py` throttles both submit endpoints at **20/hour**
+  (`ScopedRateThrottle`, scope `insurance_quote`), and one writing run spends
+  about ten of that budget. Two runs inside one hour exhaust it and the second
+  starts refused — so re-tagging after a failure is not free. See
+  `tests/support/quote-budget.js`, which says so at each assertion.
+
+  ⚠️ **`DEBUG` appeared to be enabled on the dev deployment, which is
   internet-facing.** An anonymous request to a nonexistent path on
-  `backend-dev.spot-ship-app.com` returns Django's technical 404 page, which
-  Django serves only when `DEBUG = True`; the 500s below are correspondingly
-  technical 500 pages. Those carry a traceback with local variables, so an
-  authenticated API request can surface the credential it authenticated with.
-  **This is a backend/infra concern, not a plugin one, and it wants its own
-  ticket.** Flagged here only because this workflow is how it was found.
-
-  ⚠️ **dev's insurance endpoints are intermittently answering HTTP 500.**
-  Three probes over thirty minutes gave all-500, then partial (with
-  `location_search` returning five real Rotterdam hits), then all-500 again —
-  so the data is there and the service is flapping. This is a backend problem
-  and not fixable here; the workflow fails at its probe step and names the
-  endpoints. **No real-backend verification is possible while it flaps**, since
-  the suite cannot get past the probe.
+  `backend-dev.spot-ship-app.com` returned Django's technical 404 page, which
+  Django serves only when `DEBUG = True`, and the probe fingerprinted
+  **36,477-byte debug tracebacks** on the 500s. Those carry local variables, so
+  an authenticated API request can surface the credential it authenticated
+  with. The 500s themselves were fixed on 2026-10-01; **whether `DEBUG` was
+  also turned off has not been re-checked.** A backend/infra concern, not a
+  plugin one, and it wants its own ticket. Flagged here only because this
+  workflow is how it was found.
 
   The two tests that submit a valid payload are tagged `@writes` and excluded
   unless a run asks for them, because the backend fires a referral **email and
@@ -156,13 +164,6 @@ customer who has the zip.
   Workflow Builder workflow the serica referral views use — so a test enquiry
   can land in front of whoever reads that channel looking exactly like a real
   one, and cannot be un-sent.
-
-  ```sh
-  # Read-only.
-  git tag real-backend-$(date +%Y%m%d-%H%M) && git push origin --tags
-  # Includes the writing pair.
-  git tag real-backend-writes-$(date +%Y%m%d-%H%M) && git push origin --tags
-  ```
 
   **Where those notifications go, confirmed 2026-10-01:** dev's
   `INSURANCE_REFERRAL_WEBHOOK_URL` is *not* prod's — the two values differ — and

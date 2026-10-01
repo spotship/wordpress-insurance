@@ -123,7 +123,27 @@ jobs:
             exit 1
           fi
 
+      # THE TAG TRIGGER IS A DELIVERY MECHANISM, NOT THE CONTEXT UNDER TEST.
+      #
+      # bin/assert-version.sh — called by set-version.sh and again by
+      # build-dist.sh — additionally asserts that the plugin version matches
+      # the tag being released whenever GITHUB_REF_TYPE is `tag`. That check is
+      # correct and load-bearing: it is what stops a `v0.2.0` tag publishing a
+      # zip whose header still says 0.1.0.
+      #
+      # But the chain it guards runs, in a real release, from semantic-release's
+      # `prepare` on a push to `dev` or `main` — a BRANCH ref, where the tag
+      # check skips because there is no tag yet; semantic-release creates it
+      # afterwards. This job reaches the same chain through a tag only because
+      # workflow_dispatch is unavailable until the file is on the default
+      # branch, so without this the rehearsal would fail on a condition the
+      # thing it is rehearsing never meets. (It did, on the first run.)
+      #
+      # Declared on both steps that reach assert-version.sh rather than at job
+      # level, so a future step cannot inherit it by accident.
       - name: Set a throwaway version
+        env:
+          GITHUB_REF_TYPE: branch
         run: |
           set -euo pipefail
 
@@ -203,7 +223,27 @@ jobs:
             echo "prod and the committed fixture agree on $live"
           fi
 
+      # THE TAG TRIGGER IS A DELIVERY MECHANISM, NOT THE CONTEXT UNDER TEST.
+      #
+      # bin/assert-version.sh — called by set-version.sh and again by
+      # build-dist.sh — additionally asserts that the plugin version matches
+      # the tag being released whenever GITHUB_REF_TYPE is `tag`. That check is
+      # correct and load-bearing: it is what stops a `v0.2.0` tag publishing a
+      # zip whose header still says 0.1.0.
+      #
+      # But the chain it guards runs, in a real release, from semantic-release's
+      # `prepare` on a push to `dev` or `main` — a BRANCH ref, where the tag
+      # check skips because there is no tag yet; semantic-release creates it
+      # afterwards. This job reaches the same chain through a tag only because
+      # workflow_dispatch is unavailable until the file is on the default
+      # branch, so without this the rehearsal would fail on a condition the
+      # thing it is rehearsing never meets. (It did, on the first run.)
+      #
+      # Declared on both steps that reach assert-version.sh rather than at job
+      # level, so a future step cannot inherit it by accident.
       - name: Build the zip the release would attach
+        env:
+          GITHUB_REF_TYPE: branch
         run: |
           set -euo pipefail
 

@@ -87,8 +87,54 @@ echo "build-dist: ship list clean"
 # A build that shipped a credential would be unrecoverable once a customer had
 # the zip, so the artifact is scanned before it is handed over. tests/ is
 # excluded from the zip already, so any hit here is in shipped code.
-if unzip -p "$OUT/$SLUG-$VERSION.zip" '*.php' | grep -nE "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}" >/dev/null 2>&1; then
+#
+# THE SHAPE IS NOT ARBITRARY. The credential this plugin holds is a
+# Customer.api_key, declared `models.UUIDField( default=uuid.uuid4, unique=True )`
+# in the backend — so a v4-shaped literal in shipped PHP is the exact shape of a
+# leaked key. The scan is aimed correctly and must stay.
+#
+# ONE LITERAL IS EXCLUDED BY NAME. includes/class-payloads.php's KEY_PROBE
+# carries `00000000-0000-4000-8000-000000000000`: v4-SHAPED, but carrying zero
+# random bits, which uuid4() cannot produce. Without this exclusion the scan
+# fires on EVERY build and the plugin can never be released at all.
+#
+# It did exactly that on the first build that ever ran. semantic-release does
+# not execute `prepare` under --dry-run, so no CI run had ever reached this
+# line; .github/workflows/prod-preflight.yaml exists to keep that true.
+#
+# AND IT NOW SAYS WHERE. The previous version reported only that something
+# matched, which leaves a real failure indistinguishable from a placeholder
+# without rebuilding the zip by hand. Matches are reported with the value
+# MASKED: if this ever fires on a live credential, this log must not become
+# the second place it leaks.
+UUID_V4='[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
+NIL_V4='00000000-0000-4000-8000-000000000000'
+
+offenders=""
+
+while IFS= read -r entry; do
+	case "$entry" in
+		*.php ) ;;
+		* ) continue ;;
+	esac
+
+	# The placeholder is neutralised BEFORE the grep rather than filtered out
+	# after it, so a line carrying both it and a real key still reports.
+	hits=$( unzip -p "$OUT/$SLUG-$VERSION.zip" "$entry" \
+		| sed -E "s/$NIL_V4/<known-placeholder>/g" \
+		| grep -nE "$UUID_V4" \
+		| sed -E "s/$UUID_V4/<uuid-v4-literal>/g" ) || true
+
+	if [ -n "$hits" ]; then
+		offenders="${offenders}${entry}
+${hits}
+"
+	fi
+done < <( unzip -Z1 "$OUT/$SLUG-$VERSION.zip" )
+
+if [ -n "$offenders" ]; then
 	echo "build-dist: a UUID-shaped literal is present in the shipped PHP — refusing to publish" >&2
+	printf '%s' "$offenders" >&2
 	exit 1
 fi
 

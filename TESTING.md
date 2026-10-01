@@ -135,6 +135,19 @@ so the second project got a 429 on every submit. It had been happening all
 along and no assertion was strong enough to see it: *"Too many requests. Please
 wait 3488 seconds and try again."* satisfies `not /unavailable/` perfectly well.
 
+**`rate_limited` was a state nothing could ever produce.** It was declared,
+listed in `STATE_CODES`, and written by neither path that should have written
+it: `normalise_code()` sent everything it did not recognise to `unavailable`,
+and `throttled` is not a `STATE_*` constant; while the local throttle answered
+429 with no upstream call, so it never reached `record()` at all. The
+diagnostics blob is what an administrator sends to support, so "unavailable"
+sent that person hunting a network fault when the remedy was to wait or raise a
+ceiling — and an install turning its own visitors away looked perfectly
+healthy. Recording the local throttle also required building the dedup the
+class docblock had always *claimed* ("the cap and the dedup"): the cap was
+real, the dedup was not, and without it twenty identical rows would evict every
+other thing that had happened.
+
 The other confirmed findings: the per-IP limiter counting in PHP rather than in
 the database, so concurrency beat the limit it exists to impose; a fetch-lock
 release that was not ownership-aware, so a slow request could delete the lock of
@@ -145,6 +158,41 @@ live API key in every other site's options; `bin/assert-version.sh` never
 comparing the plugin version to the tag being released; and the notes textarea
 missing `data-sswi-field` in **both** templates, so a notes error degraded to
 "temporarily unavailable".
+
+## What the first real-backend run found
+
+The suite that talks to the live dev deployment had never executed. It has now,
+and the first thing it found was not in this plugin.
+
+**All three insurance endpoints on dev answer HTTP 500.**
+
+```
+rates          : HTTP 500, 36477 bytes
+location_search: HTTP 500, 36566 bytes
+vessel_search  : HTTP 500, 36541 bytes
+```
+
+`rates/` is the one that settles it: it returns a static payload and touches
+neither the search index nor the quote tables, so a 500 from it cannot be about
+data. The same endpoint answers a clean `401` **without** a key, so
+authentication is reached and something after it fails. DRF runs throttles after
+authentication and all three endpoints are `ScopedRateThrottle`-scoped, so a
+cache the throttle cannot reach would produce exactly this; unapplied ENG-5586
+migrations on dev are the other candidate. **Either way it is a backend
+problem, not a plugin one**, and it is not fixable from this repository.
+
+Two things changed here as a result, because the first run could not say any of
+that:
+
+- The job now **probes the endpoints before the browser starts** and prints
+  status and result counts — never the payload, which is commercial figures and
+  customer records, and never the key. On a 5xx it extracts only the exception
+  title: with `DEBUG` on, a Django error page carries settings and local
+  variables, and a public job log is the wrong place for them.
+- It then **fails at the probe** rather than running the suite. Against a
+  deployment that is down, every spec fails describing a symptom — "the real
+  backend returned no locations for rotterdam" — and none names the cause. One
+  accurate failure beats ten misleading ones.
 
 ## Proving a test can fail
 

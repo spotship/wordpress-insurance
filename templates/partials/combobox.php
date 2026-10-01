@@ -6,7 +6,16 @@
  * screen reader's echo of what the user typed. Focus stays on the input and
  * `aria-activedescendant` moves instead.
  *
- * Expects: $sswi_uid, $sswi_combo_name, $sswi_combo_label, $sswi_combo_kind, optional $sswi_combo_hint.
+ * Expects: $sswi_uid, $sswi_combo_name, $sswi_combo_label, $sswi_combo_kind,
+ * $sswi_combo_required, optional $sswi_combo_hint.
+ *
+ * REQUIRED IS `aria-required`, NOT THE NATIVE `required` text-field.php uses.
+ * The control that gets submitted is the hidden input below, written only when
+ * the user picks a row; the visible input is a search box. Native validation
+ * reads the visible one, so it would pass on typed-but-never-chosen text and
+ * block on a chosen value whose search box had been cleared — in both cases
+ * disagreeing with what is actually sent. `aria-required` states the
+ * requirement without claiming the browser will enforce it; the server does.
  *
  * @package Spotship_WI
  */
@@ -23,6 +32,7 @@ defined( 'ABSPATH' ) || exit;
  * @var string $sswi_combo_name
  * @var string $sswi_combo_label
  * @var string $sswi_combo_kind
+ * @var bool $sswi_combo_required
  * @var string $sswi_combo_hint
  */
 
@@ -33,7 +43,13 @@ $sswi_live    = $sswi_id . '-live';
 $sswi_hint_id = '' !== $sswi_combo_hint ? $sswi_id . '-hint' : '';
 ?>
 <div class="sswi-field sswi-combo" data-sswi-combo="<?php echo esc_attr( $sswi_combo_kind ); ?>" data-sswi-field="<?php echo esc_attr( $sswi_combo_name ); ?>">
-	<label for="<?php echo esc_attr( $sswi_id ); ?>"><?php echo esc_html( $sswi_combo_label ); ?></label>
+	<label for="<?php echo esc_attr( $sswi_id ); ?>">
+		<?php echo esc_html( $sswi_combo_label ); ?>
+		<?php if ( ! empty( $sswi_combo_required ) ) : ?>
+			<span class="sswi-required" aria-hidden="true">*</span>
+			<span class="sswi-sr"><?php esc_html_e( '(required)', 'spotship-war-insurance' ); ?></span>
+		<?php endif; ?>
+	</label>
 
 	<?php if ( '' !== $sswi_hint_id ) : ?>
 		<p class="sswi-hint" id="<?php echo esc_attr( $sswi_hint_id ); ?>"><?php echo esc_html( $sswi_combo_hint ); ?></p>
@@ -46,6 +62,9 @@ $sswi_hint_id = '' !== $sswi_combo_hint ? $sswi_id . '-hint' : '';
 		aria-expanded="false"
 		aria-controls="<?php echo esc_attr( $sswi_list ); ?>"
 		aria-autocomplete="list"
+		<?php if ( ! empty( $sswi_combo_required ) ) : ?>
+			aria-required="true"
+		<?php endif; ?>
 		aria-describedby="<?php echo esc_attr( trim( $sswi_hint_id . ' ' . $sswi_err ) ); ?>"
 		autocomplete="off"
 		disabled

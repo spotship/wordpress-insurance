@@ -37,7 +37,7 @@
       [
         "@semantic-release/exec",
         {
-          "prepareCmd": "bash bin/set-version.sh ${nextRelease.version}"
+          "prepareCmd": "bash bin/set-version.sh ${nextRelease.version} && bash bin/generate-fallback-rates.sh && bash bin/build-dist.sh"
         }
       ],
       [
@@ -49,7 +49,17 @@
           "message": "release: v${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
         }
       ],
-      "@semantic-release/github"
+      [
+        "@semantic-release/github",
+        {
+          "assets": [
+            {
+              "path": "dist/*.zip",
+              "label": "Plugin zip"
+            }
+          ]
+        }
+      ]
     ]
   }
 }

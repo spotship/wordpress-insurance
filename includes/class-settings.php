@@ -274,13 +274,23 @@ final class Spotship_WI_Settings {
 	/**
 	 * The host of a URL, lowercased, with a non-default port kept.
 	 *
-	 * Used for same-origin checks, where ONLY the host may be compared. An
+	 * Used for same-origin checks, where the PATH must not be compared. An
 	 * `Origin` header is scheme+host, but a `Referer` is a full URL including the
 	 * path — so comparing normalised URLs matches on Origin and never matches on
 	 * Referer, silently disabling the fallback the check depends on.
 	 *
 	 * The port is retained because host:8080 is a different origin from host:443,
 	 * and dropping it would let a dev server on the same hostname pass.
+	 *
+	 * WHICH PORT IS "DEFAULT" DEPENDS ON THE SCHEME, and getting that wrong is
+	 * how `http://example.test:443` used to normalise to the same string as
+	 * `https://example.test`. 443 is default for https only; 80 for http only.
+	 * An unrecognised or absent scheme has no default, so nothing is stripped —
+	 * a bare `//host:443` stays distinct rather than being guessed into a match.
+	 *
+	 * This returns the host half only. The scheme is compared separately by the
+	 * caller, because the two halves have different rules — see
+	 * Spotship_WI_Rest_Proxy::same_origin().
 	 *
 	 * @param string $url Candidate URL.
 	 */
@@ -291,10 +301,19 @@ final class Spotship_WI_Settings {
 			return '';
 		}
 
-		$host = strtolower( (string) $parts['host'] );
-		$port = isset( $parts['port'] ) ? (int) $parts['port'] : 0;
+		$host   = strtolower( (string) $parts['host'] );
+		$port   = isset( $parts['port'] ) ? (int) $parts['port'] : 0;
+		$scheme = self::scheme_of( $url );
 
-		if ( 0 !== $port && 80 !== $port && 443 !== $port ) {
+		$default = 0;
+
+		if ( 'https' === $scheme ) {
+			$default = 443;
+		} elseif ( 'http' === $scheme ) {
+			$default = 80;
+		}
+
+		if ( 0 !== $port && $port !== $default ) {
 			$host .= ':' . $port;
 		}
 
@@ -302,10 +321,32 @@ final class Spotship_WI_Settings {
 	}
 
 	/**
+	 * The scheme of a URL, lowercased, or '' when it has none.
+	 *
+	 * @param string $url Candidate URL.
+	 */
+	public static function scheme_of( string $url ): string {
+		$parts = wp_parse_url( trim( $url ) );
+
+		if ( ! is_array( $parts ) || empty( $parts['scheme'] ) ) {
+			return '';
+		}
+
+		return strtolower( (string) $parts['scheme'] );
+	}
+
+	/**
 	 * This site's host, for same-origin comparison.
 	 */
 	public static function current_host(): string {
 		return self::host_of( home_url() );
+	}
+
+	/**
+	 * This site's scheme, for same-origin comparison.
+	 */
+	public static function current_scheme(): string {
+		return self::scheme_of( home_url() );
 	}
 
 	/**

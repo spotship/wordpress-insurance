@@ -532,4 +532,63 @@ final class RestProxyTest extends WP_UnitTestCase {
 
 		$this->assertNotSame( 401, rest_get_server()->dispatch( $request )->get_status() );
 	}
+
+	/**
+	 * AN ORIGIN IS SCHEME + HOST + PORT, and all three are compared.
+	 *
+	 * The scheme half is compared in ONE direction only. A plaintext origin for
+	 * an https site is a downgrade and is refused; an https origin for a site
+	 * whose home_url() says http is the reverse-proxy misconfiguration — TLS
+	 * terminated upstream without X-Forwarded-Proto — and is accepted, because
+	 * serving https on that hostname already requires controlling it.
+	 *
+	 * These routes carry no nonce by design, so this comparison is the whole of
+	 * the cross-origin defence.
+	 *
+	 * @dataProvider origins
+	 * @param string $home     What home_url() reports.
+	 * @param string $header   'origin' or 'referer'.
+	 * @param string $value    The header value, '' to send none.
+	 * @param bool   $expected Whether the request is same-origin.
+	 * @param string $why      What this row is pinning down.
+	 */
+	public function test_same_origin_compares_scheme_host_and_port( string $home, string $header, string $value, bool $expected, string $why ): void {
+		// No parameter: this replaces home_url()'s value outright rather than
+		// filtering it, and an unused $url would only invite someone to use it.
+		$filter = static fn() => $home;
+
+		add_filter( 'home_url', $filter );
+
+		$request = new WP_REST_Request( 'POST', '/spotship/v1/quote-request' );
+
+		if ( '' !== $value ) {
+			$request->set_header( $header, $value );
+		}
+
+		$actual = Spotship_WI_Rest_Proxy::same_origin( $request );
+
+		remove_filter( 'home_url', $filter );
+
+		$this->assertSame( $expected, $actual, $why );
+	}
+
+	/**
+	 * @return array<string, array{0: string, 1: string, 2: string, 3: bool, 4: string}>
+	 */
+	public static function origins(): array {
+		return array(
+			'the site itself'           => array( 'https://example.test', 'origin', 'https://example.test', true, 'the ordinary same-origin case must still pass' ),
+			'a referer carrying a path' => array( 'https://example.test', 'referer', 'https://example.test/insurance/?utm=x', true, 'the Referer fallback must survive the path' ),
+			'a plaintext downgrade'     => array( 'https://example.test', 'origin', 'http://example.test', false, 'http is not the origin of an https site' ),
+			'the https port over http'  => array( 'https://example.test', 'origin', 'http://example.test:443', false, 'naming the https port does not make a plaintext origin the site' ),
+			// Same scheme both sides, so the downgrade rule above cannot be what
+			// rejects this one — it is the port, and 443 is not http's default.
+			'443 on a plaintext site'   => array( 'http://example.test', 'origin', 'http://example.test:443', false, '443 is not the default port for http, so this is a different origin' ),
+			'another host'              => array( 'https://example.test', 'origin', 'https://evil.test', false, 'a different host is a different origin' ),
+			'another port'              => array( 'https://example.test', 'origin', 'https://example.test:8080', false, 'a dev server on the same hostname is a different origin' ),
+			'tls terminated at a proxy' => array( 'http://example.test', 'origin', 'https://example.test', true, 'home_url() says http only because X-Forwarded-Proto was dropped' ),
+			'no origin and no referer'  => array( 'https://example.test', 'origin', '', false, 'a request naming no origin must not pass' ),
+			'an unparseable origin'     => array( 'https://example.test', 'origin', 'not a url', false, 'garbage must not match' ),
+		);
+	}
 }

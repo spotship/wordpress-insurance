@@ -90,25 +90,32 @@ $sswi_notes_err = $sswi_notes_id . '-error';
 		?>
 
 		<?php
-		$sswi_combo_name  = 'vessel';
-		$sswi_combo_label = __( 'Vessel (optional)', 'spotship-war-insurance' );
-		$sswi_combo_kind  = 'vessel';
-		$sswi_combo_hint  = __( 'Type at least two characters, then choose from the list.', 'spotship-war-insurance' );
+		$sswi_combo_name     = 'vessel';
+		$sswi_combo_label    = __( 'Vessel (optional)', 'spotship-war-insurance' );
+		$sswi_combo_kind     = 'vessel';
+		$sswi_combo_required = false;
+		$sswi_combo_hint     = __( 'Type at least two characters, then choose from the list.', 'spotship-war-insurance' );
 		require SPOTSHIP_WI_PATH . 'templates/partials/combobox.php';
 
-		$sswi_combo_name  = 'fromPort';
-		$sswi_combo_label = __( 'From location', 'spotship-war-insurance' );
-		$sswi_combo_kind  = 'location';
-		$sswi_combo_hint  = __( 'Type at least two characters, then choose from the list.', 'spotship-war-insurance' );
+		$sswi_combo_name     = 'fromPort';
+		$sswi_combo_label    = __( 'From location', 'spotship-war-insurance' );
+		$sswi_combo_kind     = 'location';
+		$sswi_combo_required = true;
+		$sswi_combo_hint     = __( 'Type at least two characters, then choose from the list.', 'spotship-war-insurance' );
 		require SPOTSHIP_WI_PATH . 'templates/partials/combobox.php';
 		?>
 
 		<?php /* Ordered, multi-select. Each chip carries its own labelled remove button. */ ?>
 		<div class="sswi-field sswi-destinations" data-sswi-destinations data-sswi-field="destinations">
-			<label for="<?php echo esc_attr( $sswi_dest_id ); ?>"><?php esc_html_e( 'Destinations', 'spotship-war-insurance' ); ?></label>
+			<?php /* At least one destination is required — Spotship_WI_Payloads::MIN_DESTINATIONS. */ ?>
+			<label for="<?php echo esc_attr( $sswi_dest_id ); ?>">
+				<?php esc_html_e( 'Destinations', 'spotship-war-insurance' ); ?>
+				<span class="sswi-required" aria-hidden="true">*</span>
+				<span class="sswi-sr"><?php esc_html_e( '(required)', 'spotship-war-insurance' ); ?></span>
+			</label>
 			<ul class="sswi-chips" data-sswi-chips></ul>
 			<input type="text" id="<?php echo esc_attr( $sswi_dest_id ); ?>" role="combobox" aria-expanded="false"
-				aria-controls="<?php echo esc_attr( $sswi_dest_list ); ?>" aria-autocomplete="list"
+				aria-controls="<?php echo esc_attr( $sswi_dest_list ); ?>" aria-autocomplete="list" aria-required="true"
 				aria-describedby="<?php echo esc_attr( $sswi_dest_err ); ?>" autocomplete="off" disabled>
 			<ul class="sswi-listbox" id="<?php echo esc_attr( $sswi_dest_list ); ?>" role="listbox" hidden></ul>
 			<p class="sswi-sr" role="status" aria-live="polite" data-sswi-chip-live></p>

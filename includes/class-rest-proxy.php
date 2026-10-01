@@ -117,14 +117,42 @@ final class Spotship_WI_Rest_Proxy {
 		}
 
 		/*
-		 * HOSTS, not normalised URLs. `Origin` is scheme+host, but `Referer` is a
-		 * FULL URL including the path — so comparing whole URLs matches on Origin
-		 * and never on Referer, which silently disables the fallback this check
-		 * depends on for browsers and proxies that strip Origin.
+		 * HOST+PORT, not normalised URLs. `Origin` is scheme+host, but `Referer`
+		 * is a FULL URL including the path — so comparing whole URLs matches on
+		 * Origin and never on Referer, which silently disables the fallback this
+		 * check depends on for browsers and proxies that strip Origin.
 		 */
 		$host = Spotship_WI_Settings::host_of( $origin );
 
-		return '' !== $host && Spotship_WI_Settings::current_host() === $host;
+		if ( '' === $host || Spotship_WI_Settings::current_host() !== $host ) {
+			return false;
+		}
+
+		/*
+		 * THE SCHEME IS COMPARED IN ONE DIRECTION ONLY, because the two
+		 * directions are not the same risk.
+		 *
+		 * Rejected: a plaintext origin for a site that is https. That is a
+		 * downgrade — anyone able to inject into http on this hostname (captive
+		 * portal, hostile LAN, stripped TLS) could otherwise script a page that
+		 * this check accepts as the site itself. These routes carry no nonce by
+		 * design, so this comparison is the whole of the cross-origin defence.
+		 *
+		 * Accepted: an https origin for a site whose home_url() says http. That
+		 * is the single most common WordPress deployment mistake — TLS
+		 * terminated at a reverse proxy that does not forward
+		 * X-Forwarded-Proto, so WordPress believes it is plaintext while the
+		 * browser correctly reports https. Rejecting it would break submission
+		 * on working sites to defend against an attacker who, to serve https on
+		 * this hostname, must already hold a valid certificate for it — i.e.
+		 * already controls the site.
+		 */
+		if ( 'https' === Spotship_WI_Settings::current_scheme()
+			&& 'https' !== Spotship_WI_Settings::scheme_of( $origin ) ) {
+			return false;
+		}
+
+		return true;
 	}
 
 	/**

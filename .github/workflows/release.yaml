@@ -1,23 +1,33 @@
 name: Release
 
-# THREE WAYS IN, ONE BUILD.
+# THE BY-HAND PATH. The automated one is semantic-release.yaml.
 #
-# `workflow_call` exists so semantic-release.yaml can publish the zip for a tag
-# it has just created, WITHOUT a second copy of the build chain. A tag pushed by
-# a job using GITHUB_TOKEN does not start another workflow — GitHub suppresses
-# that deliberately, to stop workflows triggering themselves forever — so the
-# `push: tags` trigger below never fires for an automated release. Duplicating
-# the rate fetch and the zip build into the release job instead would give this
-# repository two builders that drift, and the one that ships to customers would
-# be the one nobody looks at.
+# An automated release does NOT come through here. A tag pushed by a job using
+# GITHUB_TOKEN does not start another workflow — GitHub suppresses that
+# deliberately, to stop workflows triggering themselves forever — so the
+# `push: tags` trigger below never fires for a tag semantic-release created.
+# semantic-release therefore builds the zip in its own `prepare` step and
+# attaches it as part of publishing the release, which also means a failed build
+# aborts before anything is published rather than leaving a release with no
+# asset. Both paths run the same two scripts, so there is one build chain, not
+# two that drift.
+#
+# What is left for this workflow is the manual cases: someone pushes a version
+# tag by hand, or re-attaches a zip to a release whose build failed.
+#
+# THE MANUAL TRIGGER MUST NAME A TAG. Without an input, `inputs.tag` is empty on
+# a workflow_dispatch, so the checkout takes the selected BRANCH and
+# action-gh-release falls back to `github.ref_name` — publishing a release
+# literally tagged `main`, built from a tree that is not any released version.
+# The branch picker GitHub shows for a manual run selects which copy of this
+# file to run, not what to build; `tag` is what to build.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
-  workflow_call:
     inputs:
       tag:
-        description: 'Tag to build and attach the zip to. Omit on a tag push.'
+        description: 'Existing version tag to build and attach the zip to, e.g. v1.2.3.'
         required: true
         type: string
 

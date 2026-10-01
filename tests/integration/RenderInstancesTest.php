@@ -131,4 +131,71 @@ final class RenderInstancesTest extends WP_UnitTestCase {
 		$this->assertCount( 2, $honeypots, 'each form renders exactly one honeypot id' );
 		$this->assertSame( $honeypots, array_unique( $honeypots ), 'and the two ids are not the same' );
 	}
+
+	/**
+	 * A REQUIRED COMBOBOX MUST SAY SO.
+	 *
+	 * The text fields have carried `required` and a visible marker from the
+	 * start; the comboboxes carried neither, so a screen reader announced the
+	 * hull vessel and both locations as optional and the only correction was the
+	 * server rejecting the submission.
+	 *
+	 * It is `aria-required` rather than the native `required` used by
+	 * text-field.php because the control that gets submitted is the hidden input
+	 * beside the search box — see templates/partials/combobox.php.
+	 */
+	public function test_a_required_combobox_announces_that_it_is_required(): void {
+		$hull  = Spotship_WI_Renderer::render( 'hull' );
+		$cargo = Spotship_WI_Renderer::render( 'cargo' );
+
+		foreach ( array( 'vessel', 'fromPort', 'toPort' ) as $name ) {
+			$this->assertStringContainsString(
+				'aria-required="true"',
+				$this->field_block( $hull, $name ),
+				"hull's {$name} is required and must say so"
+			);
+		}
+
+		foreach ( array( 'fromPort', 'destinations' ) as $name ) {
+			$this->assertStringContainsString(
+				'aria-required="true"',
+				$this->field_block( $cargo, $name ),
+				"cargo's {$name} is required and must say so"
+			);
+		}
+
+		// NON-VACUITY, and a requirement in its own right: vessel is optional on
+		// cargo — Spotship_WI_Payloads::vessel() returns null for an empty one —
+		// so a blanket aria-required would be a lie in the other direction.
+		$this->assertStringNotContainsString(
+			'aria-required="true"',
+			$this->field_block( $cargo, 'vessel' ),
+			"cargo's vessel is optional and must not claim otherwise"
+		);
+
+		// Programmatic is not enough on its own; the requirement is conveyed to
+		// sighted users too.
+		$this->assertStringContainsString(
+			'(required)',
+			$this->field_block( $hull, 'vessel' ),
+			'the requirement is stated in text, not only in an ARIA attribute'
+		);
+	}
+
+	/**
+	 * The markup of one field, from its own wrapper up to the next field's.
+	 *
+	 * @param string $html Rendered form.
+	 * @param string $name The data-sswi-field value to isolate.
+	 */
+	private function field_block( string $html, string $name ): string {
+		$start = strpos( $html, 'data-sswi-field="' . $name . '"' );
+
+		$this->assertNotFalse( $start, "the {$name} field is rendered at all" );
+
+		$start = (int) $start;
+		$next  = strpos( $html, '<div class="sswi-field', $start );
+
+		return false === $next ? substr( $html, $start ) : substr( $html, $start, $next - $start );
+	}
 }

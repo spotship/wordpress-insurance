@@ -2,9 +2,10 @@
 /**
  * Bundled fallback rate table — GENERATED AT RELEASE TIME, do not hand-edit.
  *
- * `bin/build-dist.sh` replaces this file by fetching the live rates endpoint
- * when the release zip is built, so a customer install with no connectivity
- * still has something to show.
+ * `bin/generate-fallback-rates.sh` replaces this file by fetching the live
+ * rates endpoint, and semantic-release runs it from its `prepare` step just
+ * before `bin/build-dist.sh` zips the result — so a customer install with no
+ * connectivity still has something to show.
  *
  * IN THE REPOSITORY IT IS DELIBERATELY EMPTY. These are commercially approved
  * figures; a hand-written placeholder would be invented numbers published on a

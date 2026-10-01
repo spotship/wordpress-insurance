@@ -1,0 +1,238 @@
+name: Prod release preflight
+
+# THE REHEARSAL FOR THE ONE STEP CI HAS NEVER RUN.
+#
+# semantic-release's lifecycle is verifyConditions -> analyzeCommits ->
+# generateNotes -> prepare -> publish, and `prepare` DOES NOT RUN under
+# --dry-run. Every dry run this repository has ever executed therefore stopped
+# immediately before the only step that touches the prod credential or builds
+# the artifact. The first time `prepare` executes for real will be the first
+# push to `dev` that merges a feature — and if it fails there, it fails after
+# analyzeCommits, with the release half-attempted.
+#
+# This job runs that same chain, on demand, against prod, and publishes
+# nothing. It converts "find out during the release" into "find out in ninety
+# seconds".
+#
+# WHAT IT ACTUALLY PROVES.
+#
+# package.json's prepareCmd is, verbatim:
+#
+#   bash bin/set-version.sh ${nextRelease.version}
+#     && bash bin/generate-fallback-rates.sh
+#     && bash bin/build-dist.sh
+#
+# This job runs all three with a throwaway version, so a green run means:
+#
+#   1. the prod SPOTSHIP_API_URL/SPOTSHIP_API_KEY pair authenticates against
+#      GET /insurance/rates/ and returns a rate table, not a 401 or a 429;
+#   2. includes/data/rates-fallback.php generates and parses — the `php -r`
+#      shaping in generate-fallback-rates.sh is exercised, not assumed;
+#   3. the zip builds, passes its ship-list allow-list, and passes its
+#      credential scan.
+#
+# (3) matters as much as (1). semantic-release attaches dist/*.zip when it
+# creates the release, so a build that fails after the tag exists leaves a
+# published version with no asset — which breaks auto-update for every install
+# and is NOT self-healing, because the next run sees that version as already
+# released and never retries it. See the long note in semantic-release.yaml.
+#
+# WHAT IT DOES NOT DO.
+#
+# No tag, no commit, no push, no GitHub release, no asset upload, and no write
+# of any kind back to this repository. set-version.sh does edit
+# spotship-war-insurance.php, but it edits the runner's throwaway checkout and
+# the runner is destroyed; `contents: read` below makes that structural rather
+# than merely true.
+#
+# It is also not a drift check. It does not fail when prod's figures differ
+# from tests/fixtures/backend-rates.json — the fixture is derived from backend
+# origin/dev, dev deploys ahead of prod, and a lag between them is normal. The
+# two updatedAt values are reported side by side so a human can judge, and
+# rates-drift.yaml is the job that actually polices the fixture (against dev,
+# for the reasons set out there).
+#
+# WHY prod AND NOT dev.
+#
+# These are environment secrets: the same two names hold dev values on the
+# `dev` environment and prod values on `prod`. A green rates-drift run proves
+# the DEV credential works and says nothing whatever about the prod one. The
+# release reads prod. So does this.
+#
+# TRIGGERS, AND WHY THERE IS A TAG ONE.
+#
+# `workflow_dispatch` is read from the DEFAULT branch only, so this file cannot
+# be dispatched until it has merged — and the entire point is to run it BEFORE
+# merging the first feature to `dev`. The tag trigger is the way out of that,
+# and is how this job was proven on the pull request that added it:
+#
+#   git tag prod-preflight-$(date +%Y%m%d-%H%M) && git push origin --tags
+#
+# COST: one request against the `insurance_rates` scope, throttled at 30/hour
+# in config/settings/base.py. Run it as often as you like.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'prod-preflight-*'
+
+concurrency:
+  group: prod-preflight
+  cancel-in-progress: false
+
+# Read-only. The release job needs `contents: write` to push its version commit
+# and tag; this one must not be able to, even by accident.
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: The release's prepare step, against prod, publishing nothing
+    runs-on: ubuntu-latest
+    # Declaring the environment is what makes the secrets resolve. A job naming
+    # no environment sees only repository secrets, and there are none.
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same version the release job pins. generate-fallback-rates.sh shapes
+      # the payload with `php -r`, and build-dist.sh runs composer.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      # Fail loudly rather than skip. A green run that never made the request
+      # is worse than no run at all.
+      - name: Require credentials
+        env:
+          URL: ${{ secrets.SPOTSHIP_API_URL }}
+          KEY: ${{ secrets.SPOTSHIP_API_KEY }}
+        run: |
+          missing=""
+          [ -n "$URL" ] || missing="$missing SPOTSHIP_API_URL"
+          [ -n "$KEY" ] || missing="$missing SPOTSHIP_API_KEY"
+
+          if [ -n "$missing" ]; then
+            echo "::error::Missing secret(s) on the 'prod' environment:$missing"
+            echo "These are ENVIRONMENT secrets on 'prod', not repository secrets,"
+            echo "and they are a DIFFERENT pair from the ones on 'dev':"
+            echo "  gh secret set SPOTSHIP_API_URL --env prod"
+            echo "  gh secret set SPOTSHIP_API_KEY --env prod"
+            exit 1
+          fi
+
+      - name: Set a throwaway version
+        run: |
+          set -euo pipefail
+
+          # Nothing is tagged or committed, so the number only has to satisfy
+          # set-version.sh's own semver guard and leave an obvious fingerprint
+          # if it ever escaped into an artifact somebody kept.
+          bash bin/set-version.sh 0.0.0-preflight
+
+      - name: Generate the fallback table from the live prod endpoint
+        env:
+          SPOTSHIP_API_URL: ${{ secrets.SPOTSHIP_API_URL }}
+          SPOTSHIP_API_KEY: ${{ secrets.SPOTSHIP_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          # The script itself, not a re-implementation of it. A preflight that
+          # curled the endpoint by hand would pass on the day the script's own
+          # URL construction or `php -r` block was broken.
+          bash bin/generate-fallback-rates.sh
+
+      - name: Report what prod served
+        run: |
+          set -euo pipefail
+
+          TABLE=includes/data/rates-fallback.php
+
+          # `php -l` only proves it parses; requiring it proves it returns the
+          # array the plugin will read. Printed as JSON so jq can count zones.
+          #
+          # ABSPATH HAS TO BE DEFINED FIRST. Every shipped PHP file in this
+          # plugin guards itself with `defined( 'ABSPATH' ) || exit;` so it
+          # cannot be fetched directly over HTTP. Outside WordPress that guard
+          # fires, `exit` ends the process with status 0, and the require
+          # produces nothing — so without this define the step would fail on
+          # empty input and blame the rate table for a missing constant.
+          php -r '
+            define( "ABSPATH", __DIR__ . "/" );
+            $t = require "includes/data/rates-fallback.php";
+            if ( ! is_array( $t ) || ! isset( $t["updatedAt"] ) ) {
+              fwrite( STDERR, "preflight: generated table is not a rate table\n" );
+              exit( 1 );
+            }
+            echo json_encode( $t );
+          ' > generated.json
+
+          if [ ! -s generated.json ]; then
+            echo "::error::the generated table produced no output when required"
+            exit 1
+          fi
+
+          live=$(jq -r '.updatedAt' generated.json)
+          hull=$(jq -r '.hull.zones | length' generated.json)
+          cargo=$(jq -r '.cargo.zones | length' generated.json)
+          fixture=$(jq -r '.updatedAt' tests/fixtures/backend-rates.json)
+
+          echo "prod rates updatedAt: $live"
+          echo "hull zones:           $hull"
+          echo "cargo zones:          $cargo"
+          echo "generated table:      $(wc -c < "$TABLE") bytes"
+          echo
+
+          # An empty or single-zone table parses perfectly well and would be a
+          # catastrophic thing to bundle, so assert a plausible shape rather
+          # than trusting that the fetch succeeded.
+          if [ "$hull" -lt 1 ] || [ "$cargo" -lt 1 ]; then
+            echo "::error::prod returned a table with no zones (hull=$hull cargo=$cargo)"
+            exit 1
+          fi
+
+          # INFORMATIONAL ONLY — see the header. dev running ahead of prod is
+          # the normal state of the world, not a failure.
+          if [ "$live" != "$fixture" ]; then
+            echo "::notice::prod is serving $live; tests/fixtures/backend-rates.json is $fixture."
+            echo "That is expected while a rates change has reached dev but not prod."
+            echo "If prod is AHEAD of the fixture, the fixture is stale — see rates-drift.yaml."
+          else
+            echo "prod and the committed fixture agree on $live"
+          fi
+
+      - name: Build the zip the release would attach
+        run: |
+          set -euo pipefail
+
+          bash bin/build-dist.sh
+
+          # build-dist.sh already enforces the ship list and the credential
+          # scan and fails on either, so reaching here means both passed. All
+          # that is left is to prove the file exists and is not a husk.
+          zip=$(ls dist/*.zip)
+          bytes=$(wc -c < "$zip")
+
+          echo "built $(basename "$zip") — $bytes bytes, $(unzip -Z1 "$zip" | wc -l) entries"
+
+          if [ "$bytes" -lt 10000 ]; then
+            echo "::error::$zip is $bytes bytes — too small to be a complete plugin"
+            exit 1
+          fi
+
+      - name: Confirm nothing was published
+        if: always()
+        run: |
+          set -euo pipefail
+
+          # The value of this job depends on it being a rehearsal. If a future
+          # edit ever gives it a push, this is what notices.
+          dirty=$(git status --porcelain | grep -v '^?? ' || true)
+
+          echo "local edits (discarded with the runner):"
+          echo "${dirty:-  none}"
+          echo
+          echo "commits ahead of origin: $(git rev-list --count '@{upstream}..HEAD' 2>/dev/null || echo 'n/a — detached or tag build')"
+          echo "no tag, no release and no asset was created by this run."

@@ -141,9 +141,10 @@ customer who has the zip.
 
   ⚠️ **The writing half runs about once an hour.**
   `backend/insurance/views.py` throttles both submit endpoints at **20/hour**
-  (`ScopedRateThrottle`, scope `insurance_quote`), and one writing run spends
-  about ten of that budget. Two runs inside one hour exhaust it and the second
-  starts refused — so re-tagging after a failure is not free. See
+  (`ScopedRateThrottle`, scope `insurance_quote`), and a writing run spends
+  about **fifteen** of that budget — five of them §9's throttle test alone. Two
+  runs inside one hour exhaust it and the second starts refused, so re-tagging
+  after a failure is not free. The read-only half costs about six. See
   `tests/support/quote-budget.js`, which says so at each assertion.
 
   ⚠️ **`DEBUG` appeared to be enabled on the dev deployment, which is

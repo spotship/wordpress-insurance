@@ -46,9 +46,11 @@ name: Real backend E2E
 #
 # backend/insurance/views.py puts both submit endpoints behind
 # ScopedRateThrottle with scope `insurance_quote`, which config/settings/base.py
-# sets to 20/hour. One writing run spends about ten of that budget: four
-# submissions, four replays, the re-bind submission and the invalid-email row.
-# So TWO writing runs inside one hour exhaust it and the second starts refused.
+# sets to 20/hour. A writing run spends about FIFTEEN of that budget: four
+# submissions, four replays, the re-bind, the invalid-email row, and five more
+# for the throttle test, which must reach the plugin's own limit of 5 before
+# the 6th is refused locally. So TWO writing runs inside one hour exhaust it
+# and the second starts refused. The read-only half still costs about six.
 #
 # This is not theoretical. A run at 07:36 on 2026-10-01 went 14/15; a run at
 # 07:46 came back 8/15 with every writing test answering 429, reported by three

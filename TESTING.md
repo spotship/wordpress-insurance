@@ -375,10 +375,13 @@ was HTTP 429.
 
 `backend/insurance/views.py` puts both submit endpoints behind
 `ScopedRateThrottle` with scope `insurance_quote`, and
-`config/settings/base.py` sets it to **20/hour**. One writing run spends about
-ten of that: four submissions, four replays, the re-bind and the invalid-email
-row. The revoked-key submission does not count, because DRF authenticates
-before it checks throttles.
+`config/settings/base.py` sets it to **20/hour**. A writing run spends about
+**fifteen** of that: four submissions, four replays, the re-bind, the
+invalid-email row, and five more for §9's throttle test, which must reach the
+plugin's own limit of 5 before the 6th is refused locally. The revoked-key
+submission does not count, because DRF authenticates before it checks
+throttles. The read-only half still costs about six, five of them that same
+throttle test.
 
 **So the writing half runs about once an hour, and that is a hard limit.**
 Re-tagging after a failure is not free.

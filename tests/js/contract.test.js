@@ -359,8 +359,24 @@ test( 'exactly one place mints a submissionId after the first', () => {
 	assert.equal(
 		mints.length,
 		1,
-		'startAttempt() is the only place a submissionId may be minted; a second ' +
-			'mint site is how a reused id reported a false success'
+		'mintSubmissionId() is the only place a submissionId may be assigned; a ' +
+			'second mint site is how a reused id reported a false success'
+	);
+
+	// Both retirement paths must go through it. startAttempt() is the confirmed
+	// attempt; forget() is the attempt the visitor invalidated mid-flight, which
+	// used to clear the submission lock while leaving the id in place.
+	[ 'startAttempt', 'forget' ].forEach( ( caller ) => {
+		assert.ok(
+			new RegExp( caller ).test( script ),
+			`${ caller } still exists to retire an id`
+		);
+	} );
+
+	assert.equal(
+		[ ...script.matchAll( /mintSubmissionId\(\)/g ) ].length,
+		3,
+		'one declaration plus the two retirement paths that must call it'
 	);
 } );
 

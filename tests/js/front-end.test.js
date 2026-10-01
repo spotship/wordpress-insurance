@@ -166,6 +166,59 @@ test( 'a second submission does not reuse the first submissionId', async () => {
 	);
 } );
 
+test( 'a control changed mid-flight does not let the next submit replay the first id', async () => {
+	const bodies = [];
+
+	const h = boot( {
+		fetch: ( url, init ) => {
+			if ( url.includes( '-search' ) ) {
+				return { status: 200, body: { results: PORTS } };
+			}
+
+			bodies.push( JSON.parse( init.body ) );
+
+			return {
+				status: 201,
+				body: { success: true, message: 'THANKS', data: { submissionId: 'x', status: 'received' } },
+			};
+		},
+	} );
+
+	await h.ready();
+
+	h.document.querySelector( '#sswi-consent' ).checked = true;
+	h.form.dispatchEvent( new h.window.Event( 'submit', { bubbles: true, cancelable: true } ) );
+
+	/*
+	 * SYNCHRONOUSLY, while the POST is still in flight. Typing into a combobox
+	 * runs commit( null ) -> forget(), which used to clear the submission lock
+	 * without minting a new id — so the next submit carried the first one and
+	 * the backend answered it as an idempotent replay.
+	 */
+	const input = h.document.querySelector( '#sswi-fromPort' );
+	input.value = 'rot';
+	input.dispatchEvent( new h.window.Event( 'input', { bubbles: true } ) );
+
+	await h.settle( 300 );
+
+	assert.notEqual(
+		h.document.querySelector( '[data-sswi-result]' ).textContent,
+		'THANKS',
+		'the abandoned answer describes a payload the form no longer holds and must not report success'
+	);
+
+	h.document.querySelector( '#sswi-consent' ).checked = true;
+	h.form.dispatchEvent( new h.window.Event( 'submit', { bubbles: true, cancelable: true } ) );
+	await h.settle( 300 );
+
+	assert.equal( bodies.length, 2, 'both submissions reached the proxy' );
+	assert.notEqual(
+		bodies[ 0 ].submissionId,
+		bodies[ 1 ].submissionId,
+		'replaying the id makes the backend answer 200 for the record it already holds, and the form reports success for an edited payload it never received'
+	);
+} );
+
 test( 'consent is sent as a boolean the backend can reject when absent', async () => {
 	const bodies = [];
 

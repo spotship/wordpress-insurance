@@ -281,12 +281,44 @@
 		var submissionId = uuid();
 		var pending = false;
 
+		/**
+		 * Which submission the in-flight handlers belong to.
+		 *
+		 * Bumped whenever an attempt is abandoned, so the answer to a payload the
+		 * visitor has already moved away from cannot land as though it described
+		 * the form as it now stands.
+		 */
+		var attempt = 0;
+
 		var state = {
 			config: config,
 
-			/** This control changed; any pending attempt is now invalid. */
+			/**
+			 * This control changed; any pending attempt is now invalid.
+			 *
+			 * MINTING A NEW submissionId HERE IS THE WHOLE POINT. Clearing
+			 * `pending` on its own re-opened submission while the first POST was
+			 * still in flight, and the second one then carried the SAME
+			 * submissionId — which is exactly the replay startAttempt() exists to
+			 * prevent: the backend answers 200 for the record it already holds,
+			 * and the form reports success for an edited payload it never
+			 * received.
+			 *
+			 * The in-flight request is deliberately NOT aborted. It may already
+			 * have been received and stored, so correctness cannot rest on
+			 * cancelling it; `attempt` is what makes its answer inert.
+			 */
 			forget: function () {
+				if ( ! pending ) {
+					return;
+				}
+
+				attempt += 1;
+				mintSubmissionId();
 				pending = false;
+
+				text( result, '' );
+				applyLookupState();
 			},
 
 			lookup: function ( kind, term ) {
@@ -368,15 +400,25 @@
 		}
 
 		/**
-		 * The backend confirmed this attempt.
+		 * Retire the current submissionId and mint a fresh one.
 		 *
-		 * The ONLY place a submissionId is minted after the first. Reusing one
-		 * across submissions makes the backend treat the second as an idempotent
-		 * replay of the first and answer 200, which the form would report as a
-		 * fresh success for a request that was never recorded.
+		 * THE ONLY WRITER, and a contract test counts the assignment sites. An id
+		 * is retired for exactly two reasons — the backend confirmed the attempt
+		 * (startAttempt), or the visitor changed a control while it was still in
+		 * flight (forget) — and both must produce a NEW one. Reusing one makes the
+		 * backend treat the next submit as an idempotent replay of the first and
+		 * answer 200, which the form would report as a fresh success for a request
+		 * that was never recorded.
+		 */
+		function mintSubmissionId() {
+			submissionId = uuid();
+		}
+
+		/**
+		 * The backend confirmed this attempt.
 		 */
 		function startAttempt() {
-			submissionId = uuid();
+			mintSubmissionId();
 			pending = false;
 			form.reset();
 
@@ -655,6 +697,13 @@
 			hide( summary );
 
 			pending = true;
+			attempt += 1;
+
+			// Which attempt the handlers below belong to. forget() bumps this
+			// when a control changes mid-flight, which is how their answer is
+			// discarded rather than applied to a form that has moved on.
+			var mine = attempt;
+
 			applyLookupState();
 			text( result, String( i18n.sending || '' ) );
 
@@ -695,6 +744,13 @@
 					);
 				} )
 				.then( function ( answer ) {
+					// Abandoned while in flight: a control changed, a new
+					// submissionId has already been minted, and this answer
+					// describes a payload the form no longer holds.
+					if ( mine !== attempt ) {
+						return;
+					}
+
 					pending = false;
 
 					if ( answer.body && true === answer.body.success ) {
@@ -741,6 +797,10 @@
 					applyLookupState();
 				} )
 				.catch( function () {
+					if ( mine !== attempt ) {
+						return;
+					}
+
 					pending = false;
 					text( result, String( i18n.unavailable || '' ) );
 					applyLookupState();

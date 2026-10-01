@@ -123,7 +123,7 @@ fi
 	echo
 
 	rb=$( gh run list --repo "$REPO" --workflow real-backend-e2e.yaml --commit "$HEAD_SHA" \
-		--json databaseId,conclusion,url,displayTitle,event \
+		--json databaseId,conclusion,url,displayTitle,event,headBranch \
 		--jq 'sort_by(.databaseId) | last' 2>/dev/null || echo '' )
 
 	if [ -z "$rb" ] || [ "$rb" = "null" ]; then
@@ -139,19 +139,36 @@ fi
 		echo "| Result | **$( jq -r .conclusion <<<"$rb" )** |"
 		echo
 
-		# A tag run excludes @writes, so it proves the read-only half only.
-		# Saying so matters: a green tick here would otherwise read as though
-		# persistence had been covered, which is the claim most worth not
-		# overstating in this whole file.
-		if [ "$( jq -r .event <<<"$rb" )" = "push" ]; then
-			echo "**Scope: read-only.** A tag run excludes the two \`@writes\` tests that"
-			echo "store a quote row and fire a referral email and Slack post, so"
-			echo "persistence, attribution and consent provenance are NOT covered here."
-			echo "Only \`workflow_dispatch\` with \`writes=true\` covers those."
-		else
-			echo "Scope: a \`workflow_dispatch\` run. It covers the \`@writes\` tests only if"
-			echo "it was dispatched with \`writes=true\`; check the run's inputs."
-		fi
+		# WHICH HALF RAN IS READ FROM THE TAG, NOT FROM THE EVENT TYPE.
+		#
+		# This said "a push event means read-only", which was true when
+		# `real-backend-2*` was the only tag pattern. `real-backend-writes-*`
+		# is also a push and DOES run the @writes pair, so the rule wrote
+		# "persistence is NOT covered here" onto exactly the runs that cover
+		# it. A file whose whole purpose is to keep a claim and its evidence
+		# together had started describing the wrong scope — the silent
+		# degradation it exists to prevent, in itself.
+		ref=$( jq -r .headBranch <<<"$rb" )
+
+		case "$( jq -r .event <<<"$rb" )/$ref" in
+			push/real-backend-writes-*)
+				echo "**Scope: includes \`@writes\`.** The tag \`$ref\` runs the two tests that"
+				echo "store a quote row and fire a referral email and Slack post, so"
+				echo "persistence, attribution and consent provenance ARE in scope —"
+				echo "but only if the run got past the health probe. A failure at the"
+				echo "probe means the browser never started and nothing was sent."
+				;;
+			push/*)
+				echo "**Scope: read-only.** A \`$ref\` tag excludes the two \`@writes\` tests that"
+				echo "store a quote row and fire a referral email and Slack post, so"
+				echo "persistence, attribution and consent provenance are NOT covered here."
+				echo "Only a \`real-backend-writes-*\` tag or \`writes=true\` covers those."
+				;;
+			*)
+				echo "Scope: a \`workflow_dispatch\` run. It covers the \`@writes\` tests only if"
+				echo "it was dispatched with \`writes=true\`; check the run's inputs."
+				;;
+		esac
 	fi
 } > "$OUT"
 

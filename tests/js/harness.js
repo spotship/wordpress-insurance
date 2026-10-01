@@ -21,7 +21,6 @@ const SCRIPT = path.join( __dirname, '..', '..', 'assets', 'js', 'war-insurance.
 const CONFIG = {
 	root: 'https://example.test/wp-json/spotship/v1',
 	product: 'hull',
-	minAgeSeconds: 3,
 	minQueryLength: 2,
 	maxDestinations: 50,
 	bounds: { userName: 255, userEmail: 254 },

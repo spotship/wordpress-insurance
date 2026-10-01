@@ -121,6 +121,36 @@ test( 'every bound the proxy validates is published to the browser', () => {
 	} );
 } );
 
+test( 'the anti-bot thresholds are never published to the browser', () => {
+	/*
+	 * THE INVERSE OF THE TEST ABOVE, AND IT HAS THE OPPOSITE SIGN.
+	 *
+	 * A BOUND must be published, because enforcing an undisclosed limit turns
+	 * the hoist above the decoy gates into a probe. A TRAP must not be, because
+	 * publishing it tells a bot author exactly how to avoid it.
+	 *
+	 * `minAgeSeconds` was published for the whole life of this file and never
+	 * read by any JavaScript. It bought nothing and it printed the decoy's
+	 * threshold into the page source: sleep that long and the timing trap never
+	 * fires. A guard that tells you how to get past it is not a guard.
+	 */
+	const forbidden = [ 'minAgeSeconds', 'MIN_AGE', 'MAX_AGE', 'FAKE_SUCCESS' ];
+
+	forbidden.forEach( ( name ) => {
+		assert.ok(
+			! new RegExp( `'[a-zA-Z]+'\\s*=>\\s*[^,]*${ name }` ).test( RENDERER ),
+			`Renderer::config() publishes "${ name }" to the browser — an anti-bot threshold must not be readable from the page`
+		);
+	} );
+
+	// Non-vacuity: the regex above must be capable of matching this file at
+	// all, or the assertions pass by never looking at anything.
+	assert.ok(
+		/'[a-zA-Z]+'\s*=>\s*[^,]*MAX_DESTINATIONS/.test( RENDERER ),
+		'the published-key pattern matched nothing, so the assertions above prove nothing'
+	);
+} );
+
 test( 'the e2e upstream fixture emits exactly the keys the backend serializer does', () => {
 	/*
 	 * The shape of a genuine 201 is not ours to assert. A previous

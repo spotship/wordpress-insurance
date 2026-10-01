@@ -45,7 +45,7 @@ test( 'with the backend down, a submission is refused rather than reported as se
 	 * these specs assert against the decoy and pass or fail for reasons that
 	 * have nothing to do with the injected fault.
 	 */
-	await page.waitForTimeout( 3500 );
+	await page.waitForTimeout( 1500 );
 
 	await page.locator( '.sswi-submit' ).click();
 	await page.waitForTimeout( 800 );
@@ -99,7 +99,7 @@ test( 'a revoked key produces the neutral sentence and never names the credentia
 	 * these specs assert against the decoy and pass or fail for reasons that
 	 * have nothing to do with the injected fault.
 	 */
-	await page.waitForTimeout( 3500 );
+	await page.waitForTimeout( 1500 );
 
 	await page.locator( '.sswi-submit' ).click();
 	await page.waitForTimeout( 800 );

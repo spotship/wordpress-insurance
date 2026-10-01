@@ -39,10 +39,34 @@ final class Spotship_WI_Request_Guard {
 	public const EXPIRED      = 'expired';
 
 	/**
-	 * A human cannot complete either of these forms in under three seconds.
-	 * Anything faster is automation, and is answered with a decoy.
+	 * Faster than this since the form RENDERED is treated as automation and
+	 * answered with a decoy.
+	 *
+	 * THIS WAS THREE SECONDS, AND THREE SECONDS COST REAL ENQUIRIES.
+	 *
+	 * The decoy is byte-identical to a success and sends nothing upstream —
+	 * that is the whole point, so a bot cannot tell it was caught. The price is
+	 * that a HUMAN cannot tell either: they see "thank you", the enquiry is
+	 * gone, and nothing anywhere records it. Nobody will ever report it.
+	 *
+	 * The old comment said "a human cannot complete either of these forms in
+	 * under three seconds", which is true and beside the point. Nothing
+	 * requires the form to be COMPLETE to submit it: an incomplete payload
+	 * reaches the serializer and comes back as field errors telling the visitor
+	 * what is missing. So the realistic victim was never a fast typist — it was
+	 * someone who clicked submit within three seconds of the page rendering
+	 * with a half-filled form, and got a fabricated thank-you instead of the
+	 * help they needed.
+	 *
+	 * One second still catches an instant machine submit, and is short enough
+	 * that an impatient or accidental click is very unlikely to reach it. It is
+	 * also the weakest of the three signals: the honeypot and a signature
+	 * mismatch are unambiguous automation, while "fast" is a guess that any bot
+	 * defeats with a four-second sleep. Weighted against a lead-capture form on
+	 * a customer's public site, silently destroying a real enquiry is the worse
+	 * error.
 	 */
-	public const MIN_AGE = 3;
+	public const MIN_AGE = 1;
 
 	/**
 	 * A day. Beyond this the form is treated as stale and the visitor is told to

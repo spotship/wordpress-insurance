@@ -150,7 +150,7 @@ test( 'an unreachable backend refuses rather than reporting a submission as sent
 
 	// Out-wait MIN_AGE or the decoy answers, which would report a success that
 	// never left the server — the precise failure this test exists to exclude.
-	await page.waitForTimeout( 3500 );
+	await page.waitForTimeout( 1500 );
 
 	await page.locator( '.sswi-submit' ).click();
 	await page.waitForTimeout( 2000 );
@@ -181,7 +181,7 @@ test( 'a site bound elsewhere cannot submit to the real backend', async ( { page
 	await page.locator( '[data-sswi-field="userName"] input' ).fill( 'CI clone' );
 	await page.locator( '[data-sswi-field="userEmail"] input' ).fill( 'ci+clone@spot-ship.com' );
 	await page.locator( '[data-sswi-consent]' ).check();
-	await page.waitForTimeout( 3500 );
+	await page.waitForTimeout( 1500 );
 
 	await page.locator( '.sswi-submit' ).click();
 	await page.waitForTimeout( 1500 );

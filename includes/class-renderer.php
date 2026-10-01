@@ -99,7 +99,19 @@ final class Spotship_WI_Renderer {
 		return array(
 			'root'            => esc_url_raw( rest_url( Spotship_WI_Rest_Proxy::NAMESPACE_V1 ) ),
 			'product'         => $product,
-			'minAgeSeconds'   => Spotship_WI_Request_Guard::MIN_AGE,
+
+			/*
+			 * `minAgeSeconds` USED TO BE PUBLISHED HERE. It was never read.
+			 *
+			 * No code in assets/js/war-insurance.js consumed it, so it bought
+			 * nothing — and it published the decoy's exact threshold into the
+			 * page source, which is the one parameter a bot author needs: sleep
+			 * for that long and the timing trap never fires. A guard that tells
+			 * you how to get past it is not a guard.
+			 *
+			 * The same reasoning is already written down two paragraphs up for
+			 * MAX_DESTINATIONS. This value simply predated it.
+			 */
 			'minQueryLength'  => 2,
 			'maxDestinations' => Spotship_WI_Payloads::MAX_DESTINATIONS,
 			'bounds'          => array(

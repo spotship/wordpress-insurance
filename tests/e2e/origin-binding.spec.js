@@ -44,7 +44,7 @@ async function submitForm( page ) {
 
 	// Out-wait Request_Guard::MIN_AGE, or the decoy answers instead and the
 	// assertion is about the anti-bot path rather than the binding.
-	await page.waitForTimeout( 3500 );
+	await page.waitForTimeout( 1500 );
 
 	await page.locator( '.sswi-submit' ).click();
 	await page.waitForTimeout( 900 );

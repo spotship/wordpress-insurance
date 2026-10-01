@@ -221,7 +221,7 @@ async function submit( page, urlPath, marker, beforeSubmit = null ) {
 	// Out-wait Request_Guard::MIN_AGE, or the anti-bot decoy answers with a
 	// success that never reached the backend — which would make this whole job
 	// report a persistence it never performed.
-	await page.waitForTimeout( 3500 );
+	await page.waitForTimeout( 1500 );
 
 	/*
 	 * A LAST CHANCE TO CHANGE THE WORLD, AFTER THE FORM IS VALID.
@@ -534,7 +534,7 @@ test( '§9: an upstream 400 lands as an inline field error, not the generic sent
 
 	// Out-wait MIN_AGE, or the decoy answers with a fabricated success and no
 	// field error ever arrives.
-	await page.waitForTimeout( 3500 );
+	await page.waitForTimeout( 1500 );
 
 	const [ response ] = await Promise.all( [
 		page.waitForResponse( ( r ) => /quote[-_]request/.test( r.url() ), { timeout: 30000 } ),
@@ -590,7 +590,7 @@ test( '§9: a throttled submit names the wait, against the real deployment', asy
 			await page.locator( '[data-sswi-field="userName"] input' ).fill( `CI throttle ${ i }` );
 			await page.locator( '[data-sswi-field="userEmail"] input' ).fill( 'not-an-email-address' );
 			await page.locator( '[data-sswi-consent]' ).check();
-			await page.waitForTimeout( 3500 );
+			await page.waitForTimeout( 1500 );
 
 			const [ response ] = await Promise.all( [
 				page.waitForResponse( ( r ) => /quote[-_]request/.test( r.url() ), { timeout: 30000 } ),

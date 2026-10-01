@@ -81,6 +81,18 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: 'the decoy threshold goes back into the page source',
+		file: 'includes/class-renderer.php',
+		from: "'minQueryLength'  => 2,",
+		to: "'minAgeSeconds'   => Spotship_WI_Request_Guard::MIN_AGE,\n\t\t\t'minQueryLength'  => 2,",
+		// The shipped state. It was published for the whole life of the file,
+		// read by no JavaScript, and told a bot author exactly how long to
+		// sleep to walk past the timing trap.
+		mustFail: [ 'the anti-bot thresholds are never published to the browser' ],
+	},
+
+	{
+		suite: 'js',
 		what: '.distignore names one playwright config instead of the shape',
 		file: '.distignore',
 		from: 'playwright*.config.js',

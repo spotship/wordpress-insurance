@@ -44,12 +44,43 @@ final class RequestGuardTest extends TestCase {
 		);
 	}
 
+	/**
+	 * Derived from the constant, never a literal. This asserted an age of
+	 * exactly 1 against a MIN_AGE of 3; lowering MIN_AGE to 1 turned the case
+	 * it was testing into a PASSING one, and the test would have failed
+	 * claiming the decoy was broken rather than that its own fixture had
+	 * drifted.
+	 */
 	public function test_a_submission_faster_than_a_human_gets_a_decoy(): void {
 		$sig = Spotship_WI_Request_Guard::sign( 1000, 'form-1' );
 
 		$this->assertSame(
 			Spotship_WI_Request_Guard::FAKE_SUCCESS,
-			Spotship_WI_Request_Guard::verify( 1000, 'form-1', $sig, 1001 )
+			Spotship_WI_Request_Guard::verify(
+				1000,
+				'form-1',
+				$sig,
+				1000 + Spotship_WI_Request_Guard::MIN_AGE - 1
+			)
+		);
+	}
+
+	/**
+	 * The other side of the boundary, which nothing covered: a submission at
+	 * exactly MIN_AGE must be let through. Without this, MIN_AGE could be
+	 * raised to any value at all and every test here would still pass.
+	 */
+	public function test_a_submission_at_exactly_min_age_is_allowed(): void {
+		$sig = Spotship_WI_Request_Guard::sign( 1000, 'form-1' );
+
+		$this->assertSame(
+			Spotship_WI_Request_Guard::VALID,
+			Spotship_WI_Request_Guard::verify(
+				1000,
+				'form-1',
+				$sig,
+				1000 + Spotship_WI_Request_Guard::MIN_AGE
+			)
 		);
 	}
 

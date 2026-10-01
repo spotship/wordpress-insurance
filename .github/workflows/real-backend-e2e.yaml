@@ -39,8 +39,15 @@ name: Real backend E2E
 # no-JavaScript case. Those need no permission from anyone, so they are the
 # default and the writing pair is held behind `writes`.
 #
-# A tag run is read-only. Use workflow_dispatch with writes=true when the
-# referral destinations have been confirmed and somebody is watching them.
+# A `real-backend-2*` tag is read-only. `real-backend-writes-*` includes the
+# writing pair, as does workflow_dispatch with writes=true.
+#
+# The referral destinations were confirmed on 2026-10-01: dev's
+# INSURANCE_REFERRAL_WEBHOOK_URL is NOT prod's (the two differ), and
+# INSURANCE_REFERRAL_EMAIL_RECEIVER on dev is tech@spot-ship.com — an internal
+# engineering inbox. So a writing run notifies Spot Ship engineers, not whoever
+# handles real customer referrals. That was the question worth answering before
+# ever running it.
 on:
   workflow_dispatch:
     inputs:
@@ -55,7 +62,13 @@ on:
         default: false
   push:
     tags:
-      - 'real-backend-*'
+      # Read-only.
+      - 'real-backend-2*'
+      # Includes the @writes tests. A separate, deliberately uglier prefix,
+      # because `workflow_dispatch` with writes=true is unavailable until this
+      # file reaches the default branch and the writing half should not be one
+      # typo away from an ordinary run.
+      - 'real-backend-writes-*'
 
 concurrency:
   # Never two at once: concurrent runs would interleave submissions and make
@@ -266,7 +279,7 @@ jobs:
           SPOTSHIP_API_KEY: ${{ secrets.SPOTSHIP_API_KEY }}
           SPOTSHIP_UPSTREAM: ${{ secrets.SPOTSHIP_API_URL }}
           REASON: ${{ inputs.reason || format('pushed tag {0}', github.ref_name) }}
-          WRITES: ${{ inputs.writes }}
+          WRITES: ${{ inputs.writes || startsWith(github.ref_name, 'real-backend-writes-') }}
         run: |
           set -euo pipefail
 

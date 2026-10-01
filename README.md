@@ -158,13 +158,21 @@ customer who has the zip.
   one, and cannot be un-sent.
 
   ```sh
-  gh workflow run real-backend-e2e.yaml -f reason="…" -f writes=true
+  # Read-only.
+  git tag real-backend-$(date +%Y%m%d-%H%M) && git push origin --tags
+  # Includes the writing pair.
+  git tag real-backend-writes-$(date +%Y%m%d-%H%M) && git push origin --tags
   ```
 
-  Confirm where dev's `INSURANCE_REFERRAL_WEBHOOK_URL` and
-  `INSURANCE_REFERRAL_EMAIL_RECEIVER` point first, and have somebody watching
-  them — that run is also the only way to confirm referral delivery at all,
-  since both are dispatched fire-and-forget with no flag to query afterwards.
+  **Where those notifications go, confirmed 2026-10-01:** dev's
+  `INSURANCE_REFERRAL_WEBHOOK_URL` is *not* prod's — the two values differ — and
+  `INSURANCE_REFERRAL_EMAIL_RECEIVER` on dev is `tech@spot-ship.com`. So a
+  writing run notifies Spot Ship engineers rather than whoever handles real
+  customer referrals, which is what made it safe to run at all.
+
+  That run is also the only way to confirm referral delivery, since both are
+  dispatched fire-and-forget with no flag to query afterwards — so somebody has
+  to be watching the inbox and the channel while it runs.
 
   Until it runs with `writes=true`, persistence, attribution and consent
   provenance are verified only against a stand-in upstream. Treat those specs

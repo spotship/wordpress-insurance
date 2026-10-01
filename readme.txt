@@ -74,6 +74,25 @@ That is deliberate. The plugin binds to the site URL it was configured on, so a
 clone carrying a copy of the key cannot submit. An admin notice offers one-click
 re-binding on the site you intend to use.
 
+= Who do I contact if something is wrong? =
+
+Spot Ship, through the contact you were given with your API key. The address is
+also recorded in Settings -> Spot Ship War Insurance, under **Support email**,
+and the site administrator who set the plugin up will have it.
+
+That same settings screen has a **Copy diagnostics** button. Send its output
+with any report: it contains the plugin, PHP and WordPress versions, which cache
+tier is currently serving the rate table and when that table was published, the
+last few upstream errors with their status codes, and the result of an
+outbound-HTTPS test. Your API key is masked in it, and no visitor data is
+included.
+
+Note that this address is also shown to your visitors: when the form cannot be
+served at all, the page offers it so a would-be enquirer is not left with a dead
+end. Set it to something that can field that, not to a developer's inbox. A
+submitted enquiry does not use it — those reach the Spot Ship insurance desk
+directly and are answered from there.
+
 == Changelog ==
 
 = 0.1.0 =

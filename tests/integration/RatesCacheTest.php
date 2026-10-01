@@ -248,6 +248,7 @@ final class RatesCacheTest extends WP_UnitTestCase {
 		// A lock older than the TTL, as a crashed request would leave.
 		add_option( Spotship_WI_Rates_Cache::LOCK, ( time() - 3600 ) . ':crashedrequest', '', false );
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- option_id is a column no WordPress API exposes, and it is the whole point of this test.
 		$id_before = $wpdb->get_var(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $wpdb->options is a table name.
@@ -260,6 +261,7 @@ final class RatesCacheTest extends WP_UnitTestCase {
 
 		Spotship_WI_Rates_Cache::get();
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- as above.
 		$id_after = $wpdb->get_var(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $wpdb->options is a table name.

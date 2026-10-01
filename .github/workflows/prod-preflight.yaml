@@ -93,6 +93,11 @@ jobs:
     # Declaring the environment is what makes the secrets resolve. A job naming
     # no environment sees only repository secrets, and there are none.
     environment: prod
+    env:
+      # The one place the throwaway version is written. Deliberately 0.0.0 and
+      # deliberately suffixed: if it ever turned up in a kept artifact it would
+      # be unmistakable, and it sorts below every real release.
+      PREFLIGHT_VERSION: 0.0.0-preflight
     steps:
       - uses: actions/checkout@v4
 
@@ -125,32 +130,36 @@ jobs:
 
       # THE TAG TRIGGER IS A DELIVERY MECHANISM, NOT THE CONTEXT UNDER TEST.
       #
-      # bin/assert-version.sh — called by set-version.sh and again by
-      # build-dist.sh — additionally asserts that the plugin version matches
-      # the tag being released whenever GITHUB_REF_TYPE is `tag`. That check is
-      # correct and load-bearing: it is what stops a `v0.2.0` tag publishing a
-      # zip whose header still says 0.1.0.
+      # bin/assert-version.sh — reached from set-version.sh here and again from
+      # build-dist.sh below — additionally asserts that the plugin version
+      # matches the tag being released. That check is correct and load-bearing:
+      # it is what stops a `v0.2.0` tag publishing a zip whose header still
+      # says 0.1.0. It fires whenever GITHUB_REF_TYPE is `tag`, which on this
+      # job is always, because a tag is the only way to run a workflow that is
+      # not yet on the default branch.
       #
-      # But the chain it guards runs, in a real release, from semantic-release's
-      # `prepare` on a push to `dev` or `main` — a BRANCH ref, where the tag
-      # check skips because there is no tag yet; semantic-release creates it
-      # afterwards. This job reaches the same chain through a tag only because
-      # workflow_dispatch is unavailable until the file is on the default
-      # branch, so without this the rehearsal would fail on a condition the
-      # thing it is rehearsing never meets. (It did, on the first run.)
+      # So the rehearsal tells it which tag to expect, using the EXPECTED_TAG
+      # input assert-version.sh provides for exactly this reason (release.yaml
+      # passes it too, from the semantic-release job that made the tag). The
+      # check then RUNS AND PASSES rather than being skipped — strictly more
+      # coverage than the real `prepare`, which meets it on a branch ref and
+      # skips it.
       #
-      # Declared on both steps that reach assert-version.sh rather than at job
-      # level, so a future step cannot inherit it by accident.
+      # DO NOT "FIX" THIS BY SETTING GITHUB_REF_TYPE. That was tried: the step
+      # env block renders in the log exactly as written, and the runner then
+      # re-exports the GITHUB_* defaults over it, so the script still sees
+      # `tag`. Reserved-prefix variables cannot be overridden from a workflow.
       - name: Set a throwaway version
-        env:
-          GITHUB_REF_TYPE: branch
         run: |
           set -euo pipefail
 
           # Nothing is tagged or committed, so the number only has to satisfy
           # set-version.sh's own semver guard and leave an obvious fingerprint
-          # if it ever escaped into an artifact somebody kept.
-          bash bin/set-version.sh 0.0.0-preflight
+          # if it ever escaped into an artifact somebody kept. PREFLIGHT_VERSION
+          # is declared once at job level so it cannot drift from EXPECTED_TAG.
+          export EXPECTED_TAG="v$PREFLIGHT_VERSION"
+
+          bash bin/set-version.sh "$PREFLIGHT_VERSION"
 
       - name: Generate the fallback table from the live prod endpoint
         env:
@@ -223,29 +232,13 @@ jobs:
             echo "prod and the committed fixture agree on $live"
           fi
 
-      # THE TAG TRIGGER IS A DELIVERY MECHANISM, NOT THE CONTEXT UNDER TEST.
-      #
-      # bin/assert-version.sh — called by set-version.sh and again by
-      # build-dist.sh — additionally asserts that the plugin version matches
-      # the tag being released whenever GITHUB_REF_TYPE is `tag`. That check is
-      # correct and load-bearing: it is what stops a `v0.2.0` tag publishing a
-      # zip whose header still says 0.1.0.
-      #
-      # But the chain it guards runs, in a real release, from semantic-release's
-      # `prepare` on a push to `dev` or `main` — a BRANCH ref, where the tag
-      # check skips because there is no tag yet; semantic-release creates it
-      # afterwards. This job reaches the same chain through a tag only because
-      # workflow_dispatch is unavailable until the file is on the default
-      # branch, so without this the rehearsal would fail on a condition the
-      # thing it is rehearsing never meets. (It did, on the first run.)
-      #
-      # Declared on both steps that reach assert-version.sh rather than at job
-      # level, so a future step cannot inherit it by accident.
       - name: Build the zip the release would attach
-        env:
-          GITHUB_REF_TYPE: branch
         run: |
           set -euo pipefail
+
+          # build-dist.sh calls assert-version.sh too — same reasoning as the
+          # set-version step above.
+          export EXPECTED_TAG="v$PREFLIGHT_VERSION"
 
           bash bin/build-dist.sh
 

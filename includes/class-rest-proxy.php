@@ -594,6 +594,22 @@ final class Spotship_WI_Rest_Proxy {
 			return null;
 		}
 
+		/*
+		 * A LOCAL REFUSAL IS STILL SOMETHING THE ADMINISTRATOR NEEDS TO SEE.
+		 *
+		 * This path returns 429 without any upstream call, so it never reached
+		 * Diagnostics::record() and left no trace at all. An install quietly
+		 * turning visitors away at its own limit therefore looked perfectly
+		 * healthy in the support blob — the one place someone would go to find
+		 * out why enquiries stopped arriving.
+		 *
+		 * Recorded as a state rather than an endpoint failure because there is
+		 * no upstream request behind it: status 0, no endpoint. The dedup in
+		 * Diagnostics::append() is what keeps a scraper from filling the ledger
+		 * with twenty identical rows and evicting the history around them.
+		 */
+		Spotship_WI_Diagnostics::record_state( Spotship_WI_Diagnostics::STATE_RATE_LIMITED );
+
 		return self::respond(
 			429,
 			array(

@@ -206,6 +206,36 @@ const MUTATIONS = [
 	},
 	{
 		suite: 'php',
+		what: 'an upstream 429 is filed as "unavailable" again',
+		file: 'includes/class-diagnostics.php',
+		from: 'if ( Spotship_WI_Api_Client::THROTTLED === $code ) {',
+		to: 'if ( false ) {',
+		// The shipped state: STATE_RATE_LIMITED was defined, listed, and written
+		// by nothing, so the blob sent someone hunting an outage.
+		mustFail: [ 'test_an_upstream_429_is_recorded_as_rate_limited' ],
+	},
+	{
+		suite: 'php',
+		what: 'a local throttle stops being recorded',
+		file: 'includes/class-rest-proxy.php',
+		from: 'Spotship_WI_Diagnostics::record_state( Spotship_WI_Diagnostics::STATE_RATE_LIMITED );',
+		to: '/* not recorded */',
+		// The shipped state: an install turning visitors away at its own limit
+		// looked healthy in the one place anyone would check.
+		mustFail: [ 'test_a_local_throttle_is_recorded_with_no_endpoint' ],
+	},
+	{
+		suite: 'php',
+		what: 'the ledger dedup the docblock promises goes away again',
+		file: 'includes/class-diagnostics.php',
+		from: '$newest = $ledger[0] ?? null;',
+		to: '$newest = null;',
+		// Twenty identical rows evict the 401 and the binding failure around
+		// them, leaving a blob that says only "rate limited, twenty times".
+		mustFail: [ 'test_a_repeat_collapses_rather_than_evicting_history' ],
+	},
+	{
+		suite: 'php',
 		what: 'the rate table reads columns from the top level again',
 		file: 'templates/partials/rates-table.php',
 		from: "$sswi_section['columns']",

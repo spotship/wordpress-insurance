@@ -141,9 +141,11 @@ jobs:
         run: |
           set -uo pipefail
 
+          RATES_STATUS=""
+
           probe() {
             local label="$1" path="$2"
-            local body status
+            local body status title
 
             body=$( curl -sS --max-time 20 -w '\n%{http_code}' \
               -H "Authorization: Bearer ${KEY}" \
@@ -159,6 +161,17 @@ jobs:
             # A count, not the payload: these are commercial figures and
             # customer-facing records, and the job log is not the place for them.
             echo "  $label: HTTP $status, $( printf '%s' "$body" | head -c 200000 | grep -o '"id"' | wc -l | tr -d ' ' ) object(s) with an id, $( printf '%s' "$body" | wc -c | tr -d ' ' ) bytes"
+
+            # Django's error page puts "ExceptionType at /path" in the title.
+            # That names the fault without dumping a body that, with DEBUG on,
+            # would carry settings and local variables into a public log.
+            if [ "$status" -ge 500 ]; then
+              title=$( printf '%s' "$body" | tr -d '\n' | sed -n 's/.*<title>\(.*\)<\/title>.*/\1/p' | head -c 200 )
+              [ -n "$title" ] && echo "  $label: ^ $title"
+            fi
+
+            [ "$label" = "rates          " ] && RATES_STATUS="$status"
+            return 0
           }
 
           echo "--- the endpoints this suite depends on"
@@ -166,10 +179,47 @@ jobs:
           probe "location_search" "insurance/location_search/?query=rotterdam"
           probe "vessel_search  " "insurance/vessel_search/?query=ever"
           echo
-          echo "A location_search answering 200 with 0 objects means the dev"
-          echo "search index is empty — the plugin is calling it correctly and"
-          echo "there is nothing to find. 401/403 means the key lacks search"
-          echo "entitlement. 5xx means the search backend itself is down."
+
+          # STOP HERE IF THE DEPLOYMENT IS NOT SERVING.
+          #
+          # Every spec in this suite talks to these endpoints, so letting the
+          # browser run against a broken deployment produces ten failures that
+          # all describe symptoms — "the real backend returned no locations for
+          # rotterdam" — and none that name the cause. One accurate failure
+          # beats ten misleading ones.
+          #
+          # `rates/` is the right canary: it builds a static payload and touches
+          # neither the search index nor the database, so anything other than
+          # 200 from it is about the deployment, not the data.
+          case "$RATES_STATUS" in
+            200)
+              echo "The deployment is serving. Any empty search result below is"
+              echo "about the data in the dev index, not about reachability."
+              ;;
+            401|403)
+              echo "::error::The dev key was rejected (HTTP $RATES_STATUS)."
+              echo "SPOTSHIP_API_KEY on the 'dev' environment is wrong, revoked, or"
+              echo "belongs to a Customer that is no longer active."
+              exit 1
+              ;;
+            *)
+              echo "::error::The dev deployment answered HTTP $RATES_STATUS on insurance/rates/."
+              echo
+              echo "This is a BACKEND problem, not a plugin one. rates/ returns a"
+              echo "static payload — no search index, no quote tables — so a 5xx"
+              echo "from it means the request never got as far as this plugin's"
+              echo "concerns. Note that the same endpoint answers 401 cleanly"
+              echo "WITHOUT a key, so authentication is reached and it is what"
+              echo "happens after it that fails."
+              echo
+              echo "Worth checking on the dev deployment: whether ENG-5586's"
+              echo "migrations are applied, and whether the cache backend DRF's"
+              echo "ScopedRateThrottle depends on is reachable — a throttle that"
+              echo "cannot reach its cache raises, and every one of these"
+              echo "endpoints is scoped-throttled."
+              exit 1
+              ;;
+          esac
 
       - uses: actions/setup-node@v4
         with:

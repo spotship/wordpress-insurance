@@ -186,6 +186,24 @@ final class Spotship_WI_Diagnostics {
 			return $code;
 		}
 
+		/*
+		 * THROTTLED HAS ITS OWN STATE, AND IT HAD BEEN COLLAPSING INTO
+		 * "UNAVAILABLE".
+		 *
+		 * Everything this function did not recognise fell through to
+		 * UNAVAILABLE, and `throttled` is not a STATE_* constant, so an upstream
+		 * 429 was filed as "the backend could not be reached". STATE_RATE_LIMITED
+		 * was defined, listed in STATE_CODES, and never written by anything.
+		 *
+		 * The blob is what an administrator sends to support, so the distinction
+		 * is the whole point of recording it: "unavailable" sends someone
+		 * hunting a network fault or an outage, when the actual answer is that
+		 * the install is over a limit and the remedy is to wait or to raise it.
+		 */
+		if ( Spotship_WI_Api_Client::THROTTLED === $code ) {
+			return self::STATE_RATE_LIMITED;
+		}
+
 		return Spotship_WI_Api_Client::UNAUTHORISED === $code
 			? self::STATE_UNAUTHORISED
 			: self::STATE_UNAVAILABLE;
@@ -198,6 +216,41 @@ final class Spotship_WI_Diagnostics {
 	 */
 	private static function append( array $entry ): void {
 		$ledger = self::ledger();
+
+		/*
+		 * COLLAPSE A REPEAT INSTEAD OF STACKING IT.
+		 *
+		 * The class docblock has always claimed this ledger had "the cap and the
+		 * dedup". The cap was real; the dedup was not, and nothing had noticed
+		 * because the only call sites fired rarely.
+		 *
+		 * It stops being harmless the moment a throttle is recorded. A scraper
+		 * that trips the search limit produces one entry per request, so twenty
+		 * identical `rate_limited` rows evict every other thing that happened —
+		 * the 401 that preceded them, the binding failure, the last successful
+		 * fetch — and the blob an administrator sends to support says only that
+		 * they were rate limited, twenty times, with no history.
+		 *
+		 * So a repeat of the newest entry updates its timestamp and counts
+		 * rather than pushing a row off the end. `first_at` keeps the start of
+		 * the run, which is what makes "47 times since 09:12" readable.
+		 */
+		$newest = $ledger[0] ?? null;
+
+		if ( is_array( $newest )
+			&& ( $newest['code'] ?? null ) === $entry['code']
+			&& ( $newest['endpoint'] ?? null ) === $entry['endpoint']
+			&& ( $newest['status'] ?? null ) === $entry['status']
+		) {
+			$newest['count']    = ( isset( $newest['count'] ) ? (int) $newest['count'] : 1 ) + 1;
+			$newest['first_at'] = $newest['first_at'] ?? $newest['at'];
+			$newest['at']       = $entry['at'];
+			$ledger[0]          = $newest;
+
+			set_transient( self::LEDGER, $ledger, self::LEDGER_TTL );
+
+			return;
+		}
 
 		array_unshift( $ledger, $entry );
 

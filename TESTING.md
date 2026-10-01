@@ -182,6 +182,20 @@ Rotterdam hits.
 A later run made it ten attempts over three and a half minutes and never found
 a healthy window — all 500 — so the flap is wide.
 
+The first **writing** run, on 2026-10-01, measured the cycle properly. Six
+consecutive attempts at twenty-second intervals were all-500; the seventh was
+all-200 with five Rotterdam locations and ten vessels:
+
+```
+06:13:27  attempt 1/10   rates 500  location_search 500  vessel_search 500
+   …                     (attempts 2–6, all 500)
+06:15:46  attempt 7/10   rates 200  location_search 200  vessel_search 200
+```
+
+So the unhealthy stretch is **at least two minutes** and the healthy window is
+short. That number is what makes the probe's POSITION in the job matter — see
+below.
+
 The body fingerprint on those 500s says **Django debug traceback (DEBUG on)**,
 and that is the more serious finding. An anonymous request to a nonexistent
 path on the dev host returns Django's technical 404 page, which is served only
@@ -209,6 +223,75 @@ that:
   rotterdam", or "the real vessel search returned nothing for 'ever'", which
   reads as missing data and is a 500. One accurate failure beats ten misleading
   ones.
+
+## What the first WRITING run found
+
+Run `36823624368`, 2026-10-01, from tag `real-backend-writes-20261001-0613`:
+**7 passed, 7 failed, 1 did not run.** No row was stored and no referral was
+sent — every writing test failed before it reached the submit button.
+
+Three of the four causes were in this repository.
+
+### The probe gated nothing, because it ran four minutes early
+
+It found its healthy window at **06:15:46**. The first test started at
+**06:19:21**. In between sat `setup-node`, `npm ci`, `playwright install` and
+`wp-env start` — and `wp-env start` alone took **134 seconds**. The gate had
+proved a window *existed*, which is not the question; the question is whether
+one exists when the browser starts, and the flap cycle measured above is about
+two minutes. Seven tests then failed on empty comboboxes.
+
+The slow setup now runs **before** the probe, and nothing at all runs between
+the probe and the suite. The check is cheap and it was in the wrong place.
+
+### "The real backend returned no options" was never checked
+
+`handle_search()` turns an upstream failure into `200 { results: [],
+unavailable: true }` — deliberately, so a visitor never meets a stack trace on
+a customer's marketing site. The cost lands on the tests: an empty index, a key
+without search entitlement and a 500 all arrive as the same empty listbox.
+Both specs asserted the *first* of those as fact, and said so while dev was
+serving 36KB Django tracebacks.
+
+`unavailable` is the plugin's own verdict on the request that actually failed.
+`tests/support/search-diagnostics.js` records it from the response the page
+received — not by re-asking the upstream afterwards, which samples a different
+moment of a flapping service and would make the message a coin toss in its own
+right. Failures now read:
+
+```
+no options appeared for "rotterdam" in [data-sswi-field="fromPort"].
+
+WHY: the proxy reported `unavailable` — THE UPSTREAM FAILED. A backend
+fault, not an empty index and not a plugin bug
+```
+
+### The re-bind test could never have passed
+
+`one click rebinds … and submission recovers @writes` filled name, email and
+consent, then asserted the result region contained "thank". `QuoteRequest`
+requires `vessel`, `from_port` and `to_port`, so the serializer answered 400
+with `fields` — and the form **empties the result region** when field errors
+land, showing the error summary instead. The assertion read `""` and reported
+*"the re-bind reported success but submissions are still refused"*, blaming the
+re-bind for a payload the test never made valid.
+
+Exactly the defect fixed in `persistence.spec.js` one round earlier, surviving
+in the file that fix did not touch — because reaching for `pick()` would have
+meant importing from a spec. The helpers now live in
+`tests/support/combobox.js`, with `fillRequiredHullFields()` naming the
+requirement once.
+
+It also waited a fixed 2500ms after clicking, which is shorter than the 8s
+upstream timeout: against a slow deployment it read the region before the
+answer arrived and could not tell "refused" from "not finished yet". It now
+waits for an answer rather than for a duration, and names field errors as the
+test's own fault rather than evidence about the binding.
+
+### And one that is not ours
+
+The remaining failures are the flap. Nothing in this repository fixes a
+deployment that answers 500 for two minutes in every three.
 
 ## The real-backend suite could not have passed
 

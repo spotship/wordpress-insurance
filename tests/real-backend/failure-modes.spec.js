@@ -21,6 +21,8 @@
 
 const { test, expect } = require( '@playwright/test' );
 const { login } = require( '../support/wp-admin.js' );
+const { watchSearches, explain } = require( '../support/search-diagnostics.js' );
+const { fillRequiredHullFields } = require( '../support/combobox.js' );
 const AxeBuilder = require( '@axe-core/playwright' ).default;
 
 test.describe.configure( { mode: 'serial' } );
@@ -67,6 +69,10 @@ test( 'autocomplete resolves against real data and commits the id it displayed',
 	 */
 	await page.goto( '/insurance/' );
 
+	// Before the requests below, never inside a failure path — the listener
+	// cannot record a response it was attached after. See search-diagnostics.
+	watchSearches( page );
+
 	const input = page.locator( '[data-sswi-field="fromPort"] input[role="combobox"]' );
 
 	await input.fill( 'rotterdam' );
@@ -74,7 +80,11 @@ test( 'autocomplete resolves against real data and commits the id it displayed',
 
 	const options = page.locator( '[data-sswi-field="fromPort"] [role="option"]' );
 
-	await expect( options.first(), 'the real backend returned no locations for "rotterdam"' ).toBeVisible();
+	try {
+		await expect( options.first() ).toBeVisible();
+	} catch ( error ) {
+		explain( page, error, 'locations for "rotterdam"' );
+	}
 
 	const shownText = ( await options.first().textContent() ).trim();
 
@@ -94,10 +104,13 @@ test( 'autocomplete resolves against real data and commits the id it displayed',
 	await vessel.fill( 'ever' );
 	await page.waitForTimeout( 900 );
 
-	await expect(
-		page.locator( '[data-sswi-field="vessel"] [role="option"]' ).first(),
-		'the real vessel search returned nothing for "ever"'
-	).toBeVisible();
+	try {
+		await expect(
+			page.locator( '[data-sswi-field="vessel"] [role="option"]' ).first()
+		).toBeVisible();
+	} catch ( error ) {
+		explain( page, error, 'vessels for "ever"' );
+	}
 } );
 
 test( 'axe is clean on the real rate table', async ( { page } ) => {
@@ -201,13 +214,59 @@ test( 'one click rebinds against the real backend and submission recovers @write
 	await page.goto( '/insurance/' );
 	await page.locator( '[data-sswi-field="userName"] input' ).fill( 'CI rebound' );
 	await page.locator( '[data-sswi-field="userEmail"] input' ).fill( 'ci+rebound@spot-ship.com' );
+
+	/*
+	 * EVERY REQUIRED FIELD, OR THIS ASSERTS NOTHING.
+	 *
+	 * This filled name, email and consent and stopped. QuoteRequest requires
+	 * vessel, from_port and to_port, so the serializer answered 400 with
+	 * `fields` — and handle submit() EMPTIES the result region when field
+	 * errors land, showing the error summary instead. The assertion below then
+	 * read "" and reported "submissions are still refused", blaming the re-bind
+	 * for a payload this test never made valid. Being @writes it had never run
+	 * to say so; the 2026-10-01 run is the first time it did.
+	 */
+	await fillRequiredHullFields( page );
+
 	await page.locator( '[data-sswi-consent]' ).check();
-	await page.waitForTimeout( 3500 );
 
 	await page.locator( '.sswi-submit' ).click();
-	await page.waitForTimeout( 2500 );
 
-	const shown = ( await page.locator( '[data-sswi-result]' ).textContent() ).toLowerCase();
+	/*
+	 * Wait for an ANSWER, not for a duration. The upstream timeout is 8s, so a
+	 * fixed 2500ms read the region before a slow deployment had replied and
+	 * could not tell "refused" from "not finished yet".
+	 */
+	const result = page.locator( '[data-sswi-result]' );
+	const summary = page.locator( '[data-sswi-summary]' );
+
+	await expect
+		.poll(
+			async () =>
+				(
+					( ( await result.textContent() ) || '' ) +
+					( ( await summary.textContent() ) || '' )
+				).trim().length,
+			{
+				timeout: 20000,
+				message: 'the form rendered no answer at all — neither a result nor an error summary',
+			}
+		)
+		.toBeGreaterThan( 0 );
+
+	const shown = ( await result.textContent() ).toLowerCase();
+
+	// Name the other outcome rather than blaming the re-bind for it: field
+	// errors mean the payload was rejected, which is this test's own fault and
+	// not evidence about the binding.
+	const fieldErrors = await page.locator( '[data-sswi-error]:not(:empty)' ).allTextContents();
+
+	expect(
+		fieldErrors,
+		`the submission was rejected on its fields, so this says nothing about the re-bind: ${ fieldErrors.join(
+			'; '
+		) }`
+	).toEqual( [] );
 
 	// The success sentence, not just the absence of the refusal — an empty
 	// result or a validation error satisfies `not unavailable` too, and this is

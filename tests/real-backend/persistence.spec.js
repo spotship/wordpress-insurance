@@ -69,6 +69,7 @@ const fs = require( 'fs' );
 const path = require( 'path' );
 const { test, expect, request: playwrightRequest } = require( '@playwright/test' );
 const { login } = require( '../support/wp-admin.js' );
+const { pick, addDestination } = require( '../support/combobox.js' );
 
 const API = ( process.env.SPOTSHIP_API_URL || '' ).replace( /\/+$/, '' );
 const KEY = process.env.SPOTSHIP_API_KEY || '';
@@ -114,65 +115,6 @@ async function api() {
  * @param {string} urlPath Page carrying the form.
  * @param {string} marker  Identifier written into the submission.
  */
-async function pick( page, selector, term ) {
-	/*
-	 * Commit a combobox the way a visitor does: type, wait past the 200ms
-	 * debounce for the real upstream to answer, then ArrowDown + Enter. The
-	 * hidden input only receives an id when an option is actually chosen, so
-	 * filling the visible text alone submits nothing.
-	 */
-	const input = page.locator( `${ selector } input[role="combobox"]` );
-
-	await input.fill( term );
-
-	const option = page.locator( `${ selector } [role="option"]` ).first();
-
-	await expect(
-		option,
-		`the real backend returned no options for "${ term }" in ${ selector }`
-	).toBeVisible( { timeout: 15000 } );
-
-	await input.press( 'ArrowDown' );
-	await input.press( 'Enter' );
-
-	const committed = await page.locator( `${ selector } [data-sswi-value]` ).inputValue();
-
-	expect( committed, `${ selector } committed no id` ).not.toEqual( '' );
-}
-
-/**
- * Add one destination chip.
- *
- * NOT the same as pick(). The destinations widget has no hidden input — its ids
- * live in JS state and are read by destinationsField.ids() at submit time — so
- * there is no [data-sswi-value] to assert on. The chip is the visible proof the
- * id was taken, and the ordering of chips is itself meaningful: the backend
- * stores position through CargoQuoteDestination.
- *
- * @param {object} page Playwright page.
- * @param {string} term Search term.
- */
-async function addDestination( page, term ) {
-	const wrap = '[data-sswi-destinations]';
-	const input = page.locator( `${ wrap } input[role="combobox"]` );
-	const before = await page.locator( `${ wrap } [data-sswi-chips] li` ).count();
-
-	await input.fill( term );
-
-	await expect(
-		page.locator( `${ wrap } [role="option"]` ).first(),
-		`the real backend returned no destinations for "${ term }"`
-	).toBeVisible( { timeout: 15000 } );
-
-	await input.press( 'ArrowDown' );
-	await input.press( 'Enter' );
-
-	await expect(
-		page.locator( `${ wrap } [data-sswi-chips] li` ),
-		'choosing a destination added no chip, so no id was committed'
-	).toHaveCount( before + 1 );
-}
-
 async function submit( page, urlPath, marker ) {
 	await page.goto( urlPath );
 	await expect( page.locator( '[data-sswi-root]' ) ).toHaveCount( 1 );

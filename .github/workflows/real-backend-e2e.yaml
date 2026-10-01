@@ -132,7 +132,31 @@ jobs:
             exit 1
           fi
 
-      # WHAT DOES THE DEPLOYMENT ACTUALLY ANSWER? ASK BEFORE THE BROWSER DOES.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      # EVERYTHING SLOW HAPPENS BEFORE THE PROBE, NOT AFTER IT.
+      #
+      # `wp-env start` pulls and boots containers and takes over two minutes on
+      # a cold runner. It needs nothing from the dev deployment, so there is no
+      # reason for it to sit between the health check and the suite — see the
+      # probe's own comment for what it cost when it did.
+      - name: Bring up WordPress
+        env:
+          SPOTSHIP_UPSTREAM: ${{ secrets.SPOTSHIP_API_URL }}
+          SPOTSHIP_API_KEY: ${{ secrets.SPOTSHIP_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          npx wp-env start
+          bash bin/seed-e2e.sh
+
+      # WHAT DOES THE DEPLOYMENT ACTUALLY ANSWER? ASK IMMEDIATELY BEFORE THE
+      # BROWSER DOES — NOT FOUR MINUTES EARLIER.
       #
       # The first real run failed with "the real backend returned no locations
       # for rotterdam", and that message cannot tell you WHY: an empty search
@@ -140,10 +164,20 @@ jobs:
       # OpenSearch all look identical from inside a combobox. The artifact that
       # would have said is only reachable by downloading it.
       #
-      # So the facts go in the JOB LOG, before anything else runs. This is the
-      # same move ci.yaml makes for the stand-in upstream, where three specs
-      # once failed on a missing aria-activedescendant that was really an
-      # unreachable host.
+      # So the facts go in the JOB LOG. This is the same move ci.yaml makes for
+      # the stand-in upstream, where three specs once failed on a missing
+      # aria-activedescendant that was really an unreachable host.
+      #
+      # THE POSITION OF THIS STEP IS THE WHOLE POINT, AND IT WAS WRONG.
+      #
+      # It used to run before setup-node, npm ci, playwright install and
+      # `wp-env start`. On 2026-10-01 it found its healthy window at 06:15:46
+      # and the first test did not start until 06:19:21 — three and a half
+      # minutes later, while the attempt table immediately above it showed a
+      # flap cycle of about two minutes. Seven tests then failed with empty
+      # comboboxes. The gate had proved a window EXISTED, which is not the
+      # question; the question is whether one exists when the browser starts.
+      # Nothing here runs between this step and the suite.
       #
       # The key is passed as a header from the environment and never echoed;
       # only the status and the result COUNT are printed.
@@ -258,33 +292,21 @@ jobs:
           echo "All three endpoints answered 2xx. Any empty result below is about"
           echo "the data in the dev index, not about reachability."
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-
       - name: Run against the real backend
         env:
-          # The specs read SPOTSHIP_API_URL/KEY; bin/seed-e2e.sh reads
-          # SPOTSHIP_UPSTREAM/SPOTSHIP_API_KEY. Setting all three here rather
-          # than re-exporting them inline keeps the credential out of the
-          # shell's argument list.
+          # The specs read SPOTSHIP_API_URL/KEY. Setting them here rather than
+          # re-exporting them inline keeps the credential out of the shell's
+          # argument list.
           #
           # Seeded against the REAL endpoint, so no stand-in is involved and no
           # mu-plugin host allowance is needed: the dev deployment is a public
           # host.
           SPOTSHIP_API_URL: ${{ secrets.SPOTSHIP_API_URL }}
           SPOTSHIP_API_KEY: ${{ secrets.SPOTSHIP_API_KEY }}
-          SPOTSHIP_UPSTREAM: ${{ secrets.SPOTSHIP_API_URL }}
           REASON: ${{ inputs.reason || format('pushed tag {0}', github.ref_name) }}
           WRITES: ${{ inputs.writes || startsWith(github.ref_name, 'real-backend-writes-') }}
         run: |
           set -euo pipefail
-
-          npx wp-env start
-          bash bin/seed-e2e.sh
 
           # Read-only unless explicitly asked for: @writes marks the two tests
           # that store a row and trigger a referral email and Slack post.

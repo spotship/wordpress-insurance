@@ -132,13 +132,13 @@ customer who has the zip.
   failure, the origin-binding refusal and the no-JavaScript case — creating no
   records and sending nothing.
 
-  ⚠️ **`vessel_search` is answering HTTP 500 on dev.** `rates/` and
-  `location_search` are healthy — the latter returns real Rotterdam hits — so
-  this is one index, not the deployment. An earlier run had all three failing
-  and that had cleared twenty minutes later, so treat any single reading as a
-  snapshot. This is a backend problem and not fixable here; the workflow fails
-  at its probe step and names the endpoint. Until it is resolved the vessel
-  autocomplete cannot be verified against real data.
+  ⚠️ **dev's insurance endpoints are intermittently answering HTTP 500.**
+  Three probes over thirty minutes gave all-500, then partial (with
+  `location_search` returning five real Rotterdam hits), then all-500 again —
+  so the data is there and the service is flapping. This is a backend problem
+  and not fixable here; the workflow fails at its probe step and names the
+  endpoints. **No real-backend verification is possible while it flaps**, since
+  the suite cannot get past the probe.
 
   The two tests that submit a valid payload are tagged `@writes` and excluded
   unless a run asks for them, because the backend fires a referral **email and

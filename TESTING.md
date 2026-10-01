@@ -168,20 +168,21 @@ and the first thing it found was not in this plugin.
 runs twenty minutes apart.**
 
 ```
-run 1:  rates 500   location_search 500   vessel_search 500
-run 2:  rates 200   location_search 200 (5 hits)   vessel_search 500
+00:08   rates 500   location_search 500            vessel_search 500
+00:23   rates 200   location_search 200 (5 hits)   vessel_search 500
+00:38   rates 500   location_search 500            vessel_search 500
 ```
 
-So the first reading — "the deployment is down" — was true when it was taken
-and wrong by the next run. What is left is narrower and more useful:
-**`vessel_search` answers 500 while `location_search` answers 200 with real
-Rotterdam hits.** They are separate indexes behind separate `entity_search`
-viewsets, so one can be healthy while the other is not.
+**It is flapping, not down.** Any single reading would have produced a
+confident and wrong conclusion — "the deployment is down", then "only the
+vessel index is broken", then "the deployment is down" again — and the middle
+one proves the data is there, because `location_search` returned five real
+Rotterdam hits.
 
-Either way it is a backend problem, not a plugin one, and not fixable from this
-repository. The transient first reading is worth keeping because it is the
-reason the probe prints rather than concludes: a single observation of a shared
-deployment is a snapshot, and this one aged out in twenty minutes.
+It is a backend problem, not a plugin one, and not fixable from this
+repository. The flapping is also the reason the probe PRINTS rather than
+concludes: a single observation of a shared deployment is a snapshot, and these
+aged out in fifteen minutes.
 
 Two things changed here as a result, because the first run could not say any of
 that:

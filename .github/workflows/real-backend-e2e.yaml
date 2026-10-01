@@ -163,12 +163,28 @@ jobs:
             # customer-facing records, and the job log is not the place for them.
             echo "  $label: HTTP $status, $( printf '%s' "$body" | head -c 200000 | grep -o '"id"' | wc -l | tr -d ' ' ) object(s) with an id, $( printf '%s' "$body" | wc -c | tr -d ' ' ) bytes"
 
-            # Django's error page puts "ExceptionType at /path" in the title.
-            # That names the fault without dumping a body that, with DEBUG on,
-            # would carry settings and local variables into a public log.
+            # NAME THE FAULT WITHOUT DUMPING THE BODY. With DEBUG on, a Django
+            # error page carries settings and local variables, and a public job
+            # log is the wrong place for them.
+            #
+            # Django's debug page puts "ExceptionType at /path" in its <title>.
+            # The 500s seen so far carry no <title> at all, so the fallback
+            # reports which known marker the body matches — enough to tell a
+            # debug traceback from a plain error page from a proxy's own page,
+            # which is what decides where to go looking.
             if [ "$status" -ge 500 ]; then
               title=$( printf '%s' "$body" | tr -d '\n' | sed -n 's/.*<title>\(.*\)<\/title>.*/\1/p' | head -c 200 )
-              [ -n "$title" ] && echo "  $label: ^ $title"
+
+              if [ -n "$title" ]; then
+                echo "  $label: ^ $title"
+              else
+                marker="unrecognised body"
+                printf '%s' "$body" | grep -qi 'Traceback'        && marker="Django debug traceback (DEBUG is on)"
+                printf '%s' "$body" | grep -qi 'Server Error (500)' && marker="Django 500 page (DEBUG is off)"
+                printf '%s' "$body" | grep -qi 'nginx'            && marker="nginx error page — did not reach Django"
+                printf '%s' "$body" | grep -qi '502 Bad Gateway'  && marker="502 from a proxy — Django did not answer"
+                echo "  $label: ^ $marker, no <title>"
+              fi
             fi
 
             [ "$label" = "rates          " ] && RATES_STATUS="$status"

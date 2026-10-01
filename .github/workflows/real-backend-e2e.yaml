@@ -391,6 +391,13 @@ jobs:
             echo "them needs the dev mailbox and the Slack channel. Check both by"
             echo "hand for the markers in the receipts above, and note that a REPLAY"
             echo "deliberately does not re-send either."
+            echo
+            echo "Both were confirmed by hand on 2026-10-01, against the ten rows"
+            echo "stored by runs 36830368299 and 36840956899: the referral email"
+            echo "reached tech@spot-ship.com and the Slack post reached dev's own"
+            echo "workflow. That is a reading of ONE day's dispatches, not a"
+            echo "guarantee for later ones - this section still says DOES NOT PROVE"
+            echo "because no run can prove it for itself."
           } > real-backend-evidence/RUN.md
 
       - uses: actions/upload-artifact@v4

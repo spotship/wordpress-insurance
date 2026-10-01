@@ -384,6 +384,15 @@ throttles. The read-only half still costs about six, five of them that same
 throttle test.
 
 **So the writing half runs about once an hour, and that is a hard limit.**
+
+### What the suite cannot prove about itself
+
+The referral email and the Slack post. `notifications.py` dispatches both
+fire-and-forget and records no flag, so there is nothing in the API to ask and
+no run can ever close it. **Both were confirmed by hand on 2026-10-01** against
+the ten rows stored by runs `36830368299` and `36840956899` — the email reached
+`tech@spot-ship.com`, the Slack post reached dev's own workflow. That is a
+reading of one day's dispatches, not a standing guarantee.
 Re-tagging after a failure is not free.
 
 Three assertions reported that one 429 as three different causes — *"the real

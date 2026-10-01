@@ -200,7 +200,21 @@ jobs:
           # So poll for a window in which all three answer 2xx, and only then
           # start the browser. Bounded: if no window appears, the run fails with
           # the attempt table, which IS the evidence of flapping.
-          ATTEMPTS=10
+          #
+          # TEN ATTEMPTS WAS TOO IMPATIENT FOR WHAT WE NOW KNOW.
+          #
+          # Four writing runs on 2026-10-01 measured the deployment properly.
+          # One found its window on attempt 7 of 10; one found it on attempt 1;
+          # two exhausted all ten. When a window does open it stays open for at
+          # least three minutes — run 36828243053 drove fifteen specs against
+          # real data without a single search failing — so the problem is
+          # purely how long we are willing to wait for one to start.
+          #
+          # Thirty attempts is ten minutes of polling on a runner that is
+          # already paid for, against a suite that cannot be verified any other
+          # way. A run that fails here costs ten minutes; a run that gives up
+          # too early costs another full cycle of push, tag and wait.
+          ATTEMPTS=30
           GAP=20
 
           probe_one() {

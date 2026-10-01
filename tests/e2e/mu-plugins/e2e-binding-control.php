@@ -51,6 +51,19 @@ defined( 'ABSPATH' ) || exit;
 add_action(
 	'rest_api_init',
 	static function (): void {
+		/*
+		 * UNLESS A TEST ASKS TO KEEP THEM.
+		 *
+		 * §9 requires the 429 path to be driven, and it cannot be while this
+		 * resets the buckets before every request — the limiter would never
+		 * trip. A test that wants to observe throttling sets
+		 * `spotship_e2e_keep_limits` first and clears it afterwards, so the
+		 * default stays "the limiter is out of the way" for every other spec.
+		 */
+		if ( get_option( 'spotship_e2e_keep_limits' ) ) {
+			return;
+		}
+
 		Spotship_WI_Rate_Limiter::reset( 'submit' );
 		Spotship_WI_Rate_Limiter::reset( 'search' );
 	},
@@ -79,6 +92,22 @@ add_action(
 		 * original settings instead, and `spotship_e2e_restore=1` puts them
 		 * back without the key ever appearing in a query string.
 		 */
+
+		/*
+		 * Keep or drop the per-IP limiter reset above. Separate from the settings
+		 * stash because it is not a setting — it changes how the TEST ENVIRONMENT
+		 * behaves, not how the plugin is configured.
+		 */
+		if ( isset( $_GET['spotship_e2e_keep_limits'] ) ) {
+			if ( '' === sanitize_text_field( wp_unslash( (string) $_GET['spotship_e2e_keep_limits'] ) ) ) {
+				delete_option( 'spotship_e2e_keep_limits' );
+			} else {
+				update_option( 'spotship_e2e_keep_limits', '1', false );
+			}
+
+			return;
+		}
+
 		if ( isset( $_GET['spotship_e2e_restore'] ) ) {
 			$stashed = get_option( 'spotship_e2e_stash', null );
 

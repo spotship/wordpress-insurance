@@ -210,6 +210,37 @@ that:
   reads as missing data and is a 500. One accurate failure beats ten misleading
   ones.
 
+## The real-backend suite could not have passed
+
+Written blind against the backend contract as read from source, it carried
+three defects that no amount of a healthy deployment would have fixed.
+
+**Neither product's submission filled the fields the serializer requires.** The
+helper filled name, email, notes and consent and stopped. `QuoteRequest`
+requires `vessel`, `from_port` and `to_port`; `CargoQuoteRequest` requires
+`cargo_description`, `cargo_weight`, `cargo_value`, `cargo_currency`,
+`risk_zone`, `from_port`, and `destinations` with `allow_empty=False`. None
+carries `blank=True` or `null=True`. Every persistence test would have answered
+400 on its first real run and read it as "persistence failed".
+
+**The replay was not a valid payload either.** `IdempotentCreateMixin.create()`
+calls `is_valid(raise_exception=True)` *before* the insert, so a replay never
+reaches the `submission_id` lookup unless every required field is present — and
+it was sending `{}` for hull.
+
+**It unwrapped a response shape the API does not emit.** `PortSearchViewSet`
+returns a bare array; the test read `.results` off it, so its list was always
+empty and the assertion that followed could never have passed. The same mistake
+as the rates payload, in a different file.
+
+§9 is now fully driven too. The 400 row comes from a payload the plugin
+forwards and the serializer rejects — an unparseable email address, since the
+plugin deliberately leaves format to the backend — and the 429 row is the
+plugin's *own* throttle, so it needs no upstream traffic at all. The note that
+used to justify omitting it said reaching a 429 meant "five real leads in a real
+inbox", which confused the plugin's limit with the backend's. Neither test
+stores a row, so both run in the read-only half.
+
 ## Proving a test can fail
 
 **A passing test proves nothing until it has been shown to fail.** Every jsdom

@@ -41,13 +41,21 @@
  * The replay is also safe to perform: the same contract states it does not
  * re-send the referral email or the Slack message.
  *
- * §9 ROWS THIS SUITE DELIBERATELY DOES NOT DRIVE, so the gap is visible rather
- * than implied: the inline 400 field errors, and the 429 Retry-After wait. Both
- * are covered by the integration and jsdom suites against a stand-in upstream.
- * Reaching a real 429 means six submits inside the hour — five real leads in a
- * real inbox to provoke the sixth, which is a worse trade than the coverage is
- * worth. The three actions the ticket names — killing the backend, revoking the
- * key and blocking the JS — are all driven, in failure-modes.spec.js.
+ * §9 IS NOW FULLY DRIVEN. The two rows this file used to omit are covered
+ * below, and neither writes a row:
+ *
+ *   - The inline 400 field errors come from a payload the PLUGIN forwards and
+ *     the SERIALIZER rejects — an unparseable email address. The plugin
+ *     deliberately does not duplicate the backend's schema, so this reaches the
+ *     real validator and comes back as a real field error. A rejected payload
+ *     stores nothing.
+ *   - The 429 is the plugin's OWN throttle, so it needs no upstream traffic at
+ *     all: the submits that provoke it are refused locally and never leave the
+ *     server. The earlier note here said reaching it meant "five real leads in
+ *     a real inbox", which confused the plugin's limit with the backend's.
+ *
+ * The three actions the ticket names — killing the backend, revoking the key
+ * and blocking the JS — are all driven, in failure-modes.spec.js.
  *
  * NOT COVERED, AND NOT COVERABLE FROM HERE: that the referral email and Slack
  * message actually fire. backend/insurance/notifications.py dispatches both
@@ -106,12 +114,123 @@ async function api() {
  * @param {string} urlPath Page carrying the form.
  * @param {string} marker  Identifier written into the submission.
  */
+async function pick( page, selector, term ) {
+	/*
+	 * Commit a combobox the way a visitor does: type, wait past the 200ms
+	 * debounce for the real upstream to answer, then ArrowDown + Enter. The
+	 * hidden input only receives an id when an option is actually chosen, so
+	 * filling the visible text alone submits nothing.
+	 */
+	const input = page.locator( `${ selector } input[role="combobox"]` );
+
+	await input.fill( term );
+
+	const option = page.locator( `${ selector } [role="option"]` ).first();
+
+	await expect(
+		option,
+		`the real backend returned no options for "${ term }" in ${ selector }`
+	).toBeVisible( { timeout: 15000 } );
+
+	await input.press( 'ArrowDown' );
+	await input.press( 'Enter' );
+
+	const committed = await page.locator( `${ selector } [data-sswi-value]` ).inputValue();
+
+	expect( committed, `${ selector } committed no id` ).not.toEqual( '' );
+}
+
+/**
+ * Add one destination chip.
+ *
+ * NOT the same as pick(). The destinations widget has no hidden input — its ids
+ * live in JS state and are read by destinationsField.ids() at submit time — so
+ * there is no [data-sswi-value] to assert on. The chip is the visible proof the
+ * id was taken, and the ordering of chips is itself meaningful: the backend
+ * stores position through CargoQuoteDestination.
+ *
+ * @param {object} page Playwright page.
+ * @param {string} term Search term.
+ */
+async function addDestination( page, term ) {
+	const wrap = '[data-sswi-destinations]';
+	const input = page.locator( `${ wrap } input[role="combobox"]` );
+	const before = await page.locator( `${ wrap } [data-sswi-chips] li` ).count();
+
+	await input.fill( term );
+
+	await expect(
+		page.locator( `${ wrap } [role="option"]` ).first(),
+		`the real backend returned no destinations for "${ term }"`
+	).toBeVisible( { timeout: 15000 } );
+
+	await input.press( 'ArrowDown' );
+	await input.press( 'Enter' );
+
+	await expect(
+		page.locator( `${ wrap } [data-sswi-chips] li` ),
+		'choosing a destination added no chip, so no id was committed'
+	).toHaveCount( before + 1 );
+}
+
 async function submit( page, urlPath, marker ) {
 	await page.goto( urlPath );
 	await expect( page.locator( '[data-sswi-root]' ) ).toHaveCount( 1 );
 
+	const isCargo = urlPath.includes( 'cargo' );
+
 	await page.locator( '[data-sswi-field="userName"] input' ).fill( `CI ${ marker }` );
 	await page.locator( '[data-sswi-field="userEmail"] input' ).fill( `ci+${ marker }@spot-ship.com` );
+
+	/*
+	 * EVERY FIELD THE BACKEND REQUIRES, OR THIS VERIFIES NOTHING.
+	 *
+	 * This helper used to fill name, email, notes and consent, and stop. Both
+	 * products need more than that and the serializer rejects what is missing,
+	 * so every persistence test here would have answered 400 the first time it
+	 * ran against a real deployment — a suite that could not pass, asserting a
+	 * persistence that never happened.
+	 *
+	 * QuoteRequest requires vessel, from_port and to_port; CargoQuoteRequest
+	 * requires cargo_description, cargo_weight, cargo_value, cargo_currency,
+	 * risk_zone, from_port, and destinations with allow_empty=False. None of
+	 * them carries blank=True or null=True, which is what makes them required.
+	 *
+	 * The comboboxes are driven against the REAL search endpoints, which is the
+	 * point: an id committed here is an id the backend will resolve.
+	 */
+	if ( isCargo ) {
+		await page.locator( '[data-sswi-field="cargoDescription"] input' ).fill( `Steel coils (${ marker })` );
+		await page.locator( '[data-sswi-field="cargoWeight"] input' ).fill( '12000 MT' );
+		await page.locator( '[data-sswi-field="cargoValue"] input' ).fill( '250000' );
+
+		// Selects, not comboboxes: pick the first real option rather than
+		// hardcoding a value the backend's choices may not contain.
+		const currency = page.locator( 'select[name="cargoCurrency"]' );
+		const currencyValue = await currency.locator( 'option:not([value=""])' ).first().getAttribute( 'value' );
+
+		await currency.selectOption( currencyValue );
+
+		// riskZone is populated from the rates endpoint, so this also proves
+		// that population happened against real data.
+		const zone = page.locator( 'select[name="riskZone"]' );
+
+		await expect(
+			zone.locator( 'option:not([value=""])' ).first(),
+			'the risk-zone select is empty — the rates payload did not populate it'
+		).toHaveCount( 1, { timeout: 15000 } );
+
+		const zoneValue = await zone.locator( 'option:not([value=""])' ).first().getAttribute( 'value' );
+
+		await zone.selectOption( zoneValue );
+
+		await pick( page, '[data-sswi-field="fromPort"]', 'rotterdam' );
+		await addDestination( page, 'rotterdam' );
+	} else {
+		await pick( page, '[data-sswi-field="vessel"]', 'ever' );
+		await pick( page, '[data-sswi-field="fromPort"]', 'rotterdam' );
+		await pick( page, '[data-sswi-field="toPort"]', 'rotterdam' );
+	}
 
 	const notes = page.locator( 'textarea[name="notes"]' );
 
@@ -149,6 +268,66 @@ async function submit( page, urlPath, marker ) {
  * @param {string} submissionId The id the browser reported.
  * @param {object} extra        Product-specific required fields.
  */
+/**
+ * Reference ids from the REAL deployment, for building a valid replay.
+ *
+ * Both search endpoints return a bare array; the `.results` unwrapping that
+ * used to be here matched no response this API emits. Tolerating both shapes
+ * costs nothing and means a future envelope does not silently empty the list.
+ *
+ * @param {string} path Search path with its query.
+ */
+async function search( path ) {
+	const client = await api();
+	const response = await client.get( path );
+	const body = await response.json().catch( () => [] );
+
+	await client.dispose();
+
+	return Array.isArray( body ) ? body : body.results || [];
+}
+
+/**
+ * Every field the serializer requires, with ids resolved from the deployment.
+ *
+ * Hardcoding ids would be asserting that a particular dev database row exists;
+ * these are whatever the deployment actually has.
+ *
+ * @param {string} product 'hull' or 'cargo'.
+ */
+async function replayFields( product ) {
+	const ports = await search( '/insurance/location_search/?query=rot' );
+
+	expect( ports.length, 'the deployment returned no locations to replay with' ).toBeGreaterThan( 0 );
+
+	if ( 'cargo' === product ) {
+		// cargo_description, cargo_weight, cargo_value, cargo_currency,
+		// risk_zone and from_port are all non-blank on the model, and
+		// destinations is allow_empty=False on the serializer.
+		return {
+			cargoDescription: 'CI replay — automated dev verification',
+			cargoWeight: '12000 MT',
+			cargoValue: '250000.00',
+			cargoCurrency: 'USD',
+			riskZone: 'Hormuz Passage',
+			fromPort: ports[ 0 ].id,
+			destinations: [ ports[ 0 ].id ],
+		};
+	}
+
+	const vessels = await search( '/insurance/vessel_search/?query=ever' );
+
+	expect( vessels.length, 'the deployment returned no vessels to replay with' ).toBeGreaterThan( 0 );
+
+	// QuoteRequest.vessel, from_port and to_port are plain FKs with neither
+	// blank nor null, so all three are required.
+	return {
+		vessel: vessels[ 0 ].id,
+		fromPort: ports[ 0 ].id,
+		toPort: ports[ ports.length > 1 ? 1 : 0 ].id,
+	};
+}
+
 async function replay( product, submissionId, extra = {} ) {
 	const client = await api();
 	const route = 'cargo' === product ? 'cargo_quote_request' : 'quote_request';
@@ -203,22 +382,21 @@ for ( const [ product, urlPath, label ] of [
 
 		expect( submissionId, 'the receipt must echo the submission id' ).toBeTruthy();
 
-		// What only the backend can confirm.
-		let extra = {};
-
-		if ( 'cargo' === product ) {
-			// destinations is required and must be non-empty, so the replay
-			// needs a real Port id. Taken from the same API rather than
-			// hardcoded, because the deployment's ids are not ours to assume.
-			const client = await api();
-			const found = await client.get( '/insurance/location_search/?query=rot' );
-			const rows = ( await found.json().catch( () => ( {} ) ) ).results || [];
-
-			await client.dispose();
-
-			expect( rows.length, 'need at least one location to replay a cargo row' ).toBeGreaterThan( 0 );
-			extra = { destinations: [ rows[ 0 ].id ], cargoDescription: 'CI replay' };
-		}
+		/*
+		 * THE REPLAY MUST BE A FULLY VALID PAYLOAD.
+		 *
+		 * IdempotentCreateMixin.create() calls is_valid(raise_exception=True)
+		 * BEFORE the insert, so the replay never reaches the submission_id
+		 * lookup unless every required field is present. This used to send
+		 * `{}` for hull and `{destinations, cargoDescription}` for cargo, so
+		 * both would have answered 400 and the test would have read it as
+		 * "persistence failed" rather than "the request was malformed".
+		 *
+		 * It also read `.results` off the search response. PortSearchViewSet
+		 * returns a BARE ARRAY, so `rows` was always empty and the assertion
+		 * below could never have passed.
+		 */
+		const extra = await replayFields( product );
 
 		const stored = await replay( product, submissionId, extra );
 
@@ -292,5 +470,121 @@ test( 'a bad credential against the real backend degrades to the neutral sentenc
 
 	for ( const leak of [ 'api key', 'token', 'unauthorized', 'unauthorised', '401' ] ) {
 		expect( shown, `the page must not contain "${ leak }"` ).not.toContain( leak );
+	}
+} );
+
+test( '§9: an upstream 400 lands as an inline field error, not the generic sentence', async ( {
+	page,
+} ) => {
+	/*
+	 * The plugin validates BOUNDS and deliberately leaves requiredness and
+	 * format to the backend, so an unparseable address passes the proxy and is
+	 * rejected by the real serializer's EmailField. That is the only honest way
+	 * to drive a REAL upstream 400 from the browser.
+	 *
+	 * Read-only: a 400 stores nothing and sends nothing, so this is not tagged
+	 * @writes.
+	 */
+	await page.goto( '/insurance/' );
+
+	await page.locator( '[data-sswi-field="userName"] input' ).fill( 'CI four hundred' );
+	await page.locator( '[data-sswi-field="userEmail"] input' ).fill( 'not-an-email-address' );
+
+	await pick( page, '[data-sswi-field="vessel"]', 'ever' );
+	await pick( page, '[data-sswi-field="fromPort"]', 'rotterdam' );
+	await pick( page, '[data-sswi-field="toPort"]', 'rotterdam' );
+
+	await page.locator( '[data-sswi-consent]' ).check();
+
+	// Out-wait MIN_AGE, or the decoy answers with a fabricated success and no
+	// field error ever arrives.
+	await page.waitForTimeout( 3500 );
+
+	const [ response ] = await Promise.all( [
+		page.waitForResponse( ( r ) => /quote[-_]request/.test( r.url() ), { timeout: 30000 } ),
+		page.locator( '.sswi-submit' ).click(),
+	] );
+
+	expect( response.status(), 'the real serializer must reject this address' ).toBe( 400 );
+
+	evidence( 'upstream-400.json', JSON.stringify( await response.json().catch( () => null ), null, 2 ) );
+
+	// The error must reach the FIELD. Falling back to the generic sentence
+	// tells the visitor the service is down when their address was simply
+	// mistyped — and they have no way to find the real reason.
+	const slot = page.locator( '[data-sswi-field="userEmail"] [data-sswi-error]' );
+
+	await expect( slot ).toBeVisible();
+	await expect( slot ).not.toBeEmpty();
+	await expect( page.locator( '[data-sswi-field="userEmail"] input' ) ).toHaveAttribute(
+		'aria-invalid',
+		'true'
+	);
+
+	const shown = ( await page.locator( '[data-sswi-result]' ).textContent() ).toLowerCase();
+
+	expect( shown, 'a field error must not also claim the service is unavailable' ).not.toMatch(
+		/unavailable/
+	);
+} );
+
+test( '§9: a throttled submit names the wait, against the real deployment', async ( { page } ) => {
+	/*
+	 * This is the PLUGIN's limit, not the backend's. The refusals happen in the
+	 * proxy and never leave the server, so provoking it costs no upstream
+	 * traffic and stores nothing — read-only, and not tagged @writes.
+	 *
+	 * The e2e mu-plugin normally resets the buckets before every REST request,
+	 * because the browser suite runs every spec twice from one runner IP. That
+	 * has to be switched off for the duration or the limiter can never trip.
+	 */
+	await login( page );
+	await page.goto( '/wp-admin/?spotship_e2e_keep_limits=1' );
+
+	try {
+		let throttled = null;
+
+		// SUBMIT_LIMIT is 5/hour; the sixth must be refused. The payload is
+		// deliberately invalid so that if a request ever did reach the backend
+		// it would be rejected rather than stored.
+		for ( let i = 0; i < 8 && ! throttled; i++ ) {
+			await page.goto( '/insurance/' );
+			await page.locator( '[data-sswi-field="userName"] input' ).fill( `CI throttle ${ i }` );
+			await page.locator( '[data-sswi-field="userEmail"] input' ).fill( 'not-an-email-address' );
+			await page.locator( '[data-sswi-consent]' ).check();
+			await page.waitForTimeout( 3500 );
+
+			const [ response ] = await Promise.all( [
+				page.waitForResponse( ( r ) => /quote[-_]request/.test( r.url() ), { timeout: 30000 } ),
+				page.locator( '.sswi-submit' ).click(),
+			] );
+
+			if ( 429 === response.status() ) {
+				throttled = response;
+			}
+		}
+
+		expect( throttled, 'the submit limit was never reached, so nothing was under test' ).not.toBeNull();
+
+		const body = await throttled.json().catch( () => ( {} ) );
+
+		evidence( 'throttled.json', JSON.stringify( body, null, 2 ) );
+
+		// The honest wait, in BOTH places the front end reads it.
+		expect( body.retry, 'the body must carry the wait' ).toBeGreaterThan( 0 );
+		expect(
+			throttled.headers()[ 'retry-after' ],
+			'Retry-After must be sent as a header too'
+		).toBeTruthy();
+
+		// And the visitor must be told how long, not that the service is down.
+		const shown = ( await page.locator( '[data-sswi-result]' ).textContent() ).toLowerCase();
+
+		expect( shown ).toMatch( /wait|too many/ );
+		expect( shown ).not.toMatch( /unavailable/ );
+	} finally {
+		// Always hand the environment back with the limiter reset restored,
+		// or every spec after this one inherits an exhausted bucket.
+		await page.goto( '/wp-admin/?spotship_e2e_keep_limits=' );
 	}
 } );

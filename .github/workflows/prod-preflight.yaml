@@ -179,6 +179,17 @@ jobs:
 
           TABLE=includes/data/rates-fallback.php
 
+          # OUTSIDE THE CHECKOUT, DELIBERATELY.
+          #
+          # Written into the repo root, this scratch file was picked up by
+          # bin/build-dist.sh's ship-list allow-list and failed the build with
+          # "generated.json ... would reach a customer's server" — which is the
+          # allow-list doing exactly its job, and a reminder that it is a real
+          # control and not a formality. Note that the "Confirm nothing was
+          # published" step would NOT have caught this: the file was untracked,
+          # and that step filters untracked entries.
+          SCRATCH="${RUNNER_TEMP:-/tmp}/prod-preflight-generated.json"
+
           # `php -l` only proves it parses; requiring it proves it returns the
           # array the plugin will read. Printed as JSON so jq can count zones.
           #
@@ -196,16 +207,16 @@ jobs:
               exit( 1 );
             }
             echo json_encode( $t );
-          ' > generated.json
+          ' > "$SCRATCH"
 
-          if [ ! -s generated.json ]; then
+          if [ ! -s "$SCRATCH" ]; then
             echo "::error::the generated table produced no output when required"
             exit 1
           fi
 
-          live=$(jq -r '.updatedAt' generated.json)
-          hull=$(jq -r '.hull.zones | length' generated.json)
-          cargo=$(jq -r '.cargo.zones | length' generated.json)
+          live=$(jq -r '.updatedAt' "$SCRATCH")
+          hull=$(jq -r '.hull.zones | length' "$SCRATCH")
+          cargo=$(jq -r '.cargo.zones | length' "$SCRATCH")
           fixture=$(jq -r '.updatedAt' tests/fixtures/backend-rates.json)
 
           echo "prod rates updatedAt: $live"

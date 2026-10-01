@@ -1,0 +1,111 @@
+name: Semantic release
+
+# THE PIECE THAT WAS DECLARED AND NEVER INSTALLED.
+#
+# package.json has carried a `release` block — `main` releases, `dev`
+# prereleases — since the repository was scaffolded, and nothing read it:
+# semantic-release was in no devDependency and no workflow invoked it. The
+# configuration described an automation that did not exist, which is worse than
+# having none, because `.ship/TICKET.md` lists it as delivered and a reader of
+# package.json would reasonably believe it.
+#
+# WHAT RUNS WHERE.
+#
+#   push to dev   -> prerelease   vX.Y.Z-dev.N
+#   push to main  -> release      vX.Y.Z
+#
+# The version lives in spotship-war-insurance.php, twice, and nowhere else —
+# package.json has no version field to bump, because this is a WordPress plugin
+# and package.json exists only to carry this configuration. bin/set-version.sh
+# writes both places and reads them back; bin/assert-version.sh then refuses any
+# tag that disagrees with them.
+#
+# WHY THE ZIP IS BUILT BY A DIFFERENT WORKFLOW.
+#
+# A tag pushed by a job using GITHUB_TOKEN does not start another workflow, so
+# release.yaml's `push: tags` trigger never fires for an automated release. The
+# publish job below calls release.yaml directly instead. Copying the rate fetch
+# and the zip build into this file would have been the obvious alternative and
+# would have left two builders to drift apart, with the customer-facing one
+# being the copy nobody reads.
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+concurrency:
+  # One release at a time. Two overlapping runs would both compute "the next
+  # version" from the same tag and race to create it.
+  group: semantic-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  version:
+    name: Decide the version and tag it
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.release.outputs.published }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # semantic-release reads the whole history to find the last tag and
+          # the commits since it. A shallow clone makes it believe every release
+          # is the first one.
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run semantic-release
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+
+          npx semantic-release 2>&1 | tee release.log
+
+          # `published` drives the build job below, and it has to be read from
+          # what semantic-release actually did rather than assumed from the exit
+          # code: a run with no releasable commits exits 0 and publishes
+          # nothing, and building a zip for a tag that does not exist would fail
+          # noisily for the wrong reason.
+          if grep -q 'Published release' release.log; then
+            TAG=$( grep -oE 'Published release [0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.-]*' release.log | head -1 | awk '{print "v"$3}' )
+
+            if [ -z "$TAG" ]; then
+              echo "::error::semantic-release published a release but the tag could not be read from its output."
+              exit 1
+            fi
+
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "released $TAG"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "no releasable commits since the last tag"
+          fi
+
+  publish:
+    name: Build and attach the zip
+    needs: [version]
+    if: needs.version.outputs.published == 'true'
+    # The ONE build chain, called rather than copied. It carries the prod
+    # environment and therefore the secrets the bundled rate table needs.
+    uses: ./.github/workflows/release.yaml
+    with:
+      tag: ${{ needs.version.outputs.tag }}
+    secrets: inherit

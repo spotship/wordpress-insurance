@@ -33,13 +33,27 @@ fi
 # to 0.1.0 and no site would ever have taken it. A silent non-release.
 #
 # GITHUB_REF_NAME is set on tag runs only; nothing here fires on other events.
-if [ -n "${GITHUB_REF_NAME:-}" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
-	if [ "$GITHUB_REF_NAME" != "v$header" ]; then
-		echo "assert-version: TAG MISMATCH — tag '$GITHUB_REF_NAME' vs plugin version '$header' (expected 'v$header')" >&2
+#
+# EXPECTED_TAG EXISTS BECAUSE THE TAG CHECK MUST SURVIVE BEING CALLED.
+#
+# release.yaml is now also reachable through `workflow_call`, from the
+# semantic-release job that creates the tag in the first place. In that context
+# GITHUB_REF_TYPE is not `tag` — it is the caller's ref — so the check above
+# would silently skip, and skipping is the one outcome it exists to prevent.
+# The caller passes the tag it just made instead.
+expected="${EXPECTED_TAG:-}"
+
+if [ -z "$expected" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+	expected="${GITHUB_REF_NAME:-}"
+fi
+
+if [ -n "$expected" ]; then
+	if [ "$expected" != "v$header" ]; then
+		echo "assert-version: TAG MISMATCH — tag '$expected' vs plugin version '$header' (expected 'v$header')" >&2
 		exit 1
 	fi
 
-	echo "assert-version: $header (matches tag $GITHUB_REF_NAME)"
+	echo "assert-version: $header (matches tag $expected)"
 	exit 0
 fi
 

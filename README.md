@@ -132,6 +132,15 @@ customer who has the zip.
   failure, the origin-binding refusal and the no-JavaScript case — creating no
   records and sending nothing.
 
+  ⚠️ **`DEBUG` appears to be enabled on the dev deployment, which is
+  internet-facing.** An anonymous request to a nonexistent path on
+  `backend-dev.spot-ship-app.com` returns Django's technical 404 page, which
+  Django serves only when `DEBUG = True`; the 500s below are correspondingly
+  technical 500 pages. Those carry a traceback with local variables, so an
+  authenticated API request can surface the credential it authenticated with.
+  **This is a backend/infra concern, not a plugin one, and it wants its own
+  ticket.** Flagged here only because this workflow is how it was found.
+
   ⚠️ **dev's insurance endpoints are intermittently answering HTTP 500.**
   Three probes over thirty minutes gave all-500, then partial (with
   `location_search` returning five real Rotterdam hits), then all-500 again —

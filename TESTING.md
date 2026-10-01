@@ -179,6 +179,17 @@ vessel index is broken", then "the deployment is down" again — and the middle
 one proves the data is there, because `location_search` returned five real
 Rotterdam hits.
 
+A later run made it ten attempts over three and a half minutes and never found
+a healthy window — all 500 — so the flap is wide.
+
+The body fingerprint on those 500s says **Django debug traceback (DEBUG on)**,
+and that is the more serious finding. An anonymous request to a nonexistent
+path on the dev host returns Django's technical 404 page, which is served only
+under `DEBUG = True`, so the 500s are technical 500 pages carrying a traceback
+with local variables — on an internet-facing host, to an authenticated API
+caller. The probe deliberately fingerprints rather than prints those bodies for
+exactly this reason.
+
 It is a backend problem, not a plugin one, and not fixable from this
 repository. The flapping is also the reason the probe PRINTS rather than
 concludes: a single observation of a shared deployment is a snapshot, and these

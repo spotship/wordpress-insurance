@@ -443,6 +443,7 @@ test( 'a bad credential against the real backend degrades to the neutral sentenc
 	await login( page );
 
 	let answer;
+	let shown;
 
 	try {
 		/*
@@ -465,6 +466,18 @@ test( 'a bad credential against the real backend degrades to the neutral sentenc
 
 			expect( swap.status(), 'the credential swap did not take' ).toBeLessThan( 400 );
 		} );
+
+		/*
+		 * READ THE PAGE BEFORE THE RESTORE NAVIGATES AWAY FROM IT.
+		 *
+		 * The leak assertions below are about what the VISITOR is shown on the
+		 * form page. This read ran after the `finally`, by which point the
+		 * browser was sitting on wp-admin — which has no `.spotship-wi` at all,
+		 * so the locator waited out the whole 60s test timeout. The test had
+		 * never reached this line before, because it used to die filling the
+		 * form; fixing that is what exposed it.
+		 */
+		shown = ( await page.locator( '.spotship-wi' ).textContent() ).toLowerCase();
 	} finally {
 		// Via the mu-plugin's stash, never by re-sending the real key: a live
 		// credential in a query string lands in the access log, in Playwright's
@@ -476,8 +489,6 @@ test( 'a bad credential against the real backend degrades to the neutral sentenc
 
 	expect( answer.status ).toBeGreaterThanOrEqual( 400 );
 	expect( answer.body.success ).not.toBe( true );
-
-	const shown = ( await page.locator( '.spotship-wi' ).textContent() ).toLowerCase();
 
 	for ( const leak of [ 'api key', 'token', 'unauthorized', 'unauthorised', '401' ] ) {
 		expect( shown, `the page must not contain "${ leak }"` ).not.toContain( leak );

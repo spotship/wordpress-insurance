@@ -141,129 +141,109 @@ jobs:
         run: |
           set -uo pipefail
 
-          RATES_STATUS=""
-          BROKEN=""
+          # WAIT FOR A HEALTHY WINDOW RATHER THAN SAMPLING ONCE.
+          #
+          # Three probes over thirty minutes gave all-500, then all-200 with
+          # five real Rotterdam hits, then all-500 again. The dev deployment is
+          # FLAPPING, not down — and a single sample of a flapping service turns
+          # a whole suite into a coin toss, which is how two confident and
+          # contradictory conclusions got written into this repository's docs
+          # before anyone noticed the pattern.
+          #
+          # So poll for a window in which all three answer 2xx, and only then
+          # start the browser. Bounded: if no window appears, the run fails with
+          # the attempt table, which IS the evidence of flapping.
+          ATTEMPTS=10
+          GAP=20
 
-          probe() {
-            local label="$1" path="$2"
-            local body status title
-
-            body=$( curl -sS --max-time 20 -w '\n%{http_code}' \
+          probe_one() {
+            local path="$1"
+            curl -sS --max-time 20 -o /tmp/probe-body -w '%{http_code}' \
               -H "Authorization: Bearer ${KEY}" \
               -H 'Accept: application/json' \
-              "${URL%/}/${path}" 2>/dev/null ) || {
-                echo "  $label: request failed outright"
-                return
-              }
-
-            status=$( printf '%s' "$body" | tail -n1 )
-            body=$( printf '%s' "$body" | sed '$d' )
-
-            # A count, not the payload: these are commercial figures and
-            # customer-facing records, and the job log is not the place for them.
-            echo "  $label: HTTP $status, $( printf '%s' "$body" | head -c 200000 | grep -o '"id"' | wc -l | tr -d ' ' ) object(s) with an id, $( printf '%s' "$body" | wc -c | tr -d ' ' ) bytes"
-
-            # NAME THE FAULT WITHOUT DUMPING THE BODY. With DEBUG on, a Django
-            # error page carries settings and local variables, and a public job
-            # log is the wrong place for them.
-            #
-            # Django's debug page puts "ExceptionType at /path" in its <title>.
-            # The 500s seen so far carry no <title> at all, so the fallback
-            # reports which known marker the body matches — enough to tell a
-            # debug traceback from a plain error page from a proxy's own page,
-            # which is what decides where to go looking.
-            if [ "$status" -ge 500 ]; then
-              title=$( printf '%s' "$body" | tr -d '\n' | sed -n 's/.*<title>\(.*\)<\/title>.*/\1/p' | head -c 200 )
-
-              if [ -n "$title" ]; then
-                echo "  $label: ^ $title"
-              else
-                marker="unrecognised body"
-                printf '%s' "$body" | grep -qi 'Traceback'        && marker="Django debug traceback (DEBUG is on)"
-                printf '%s' "$body" | grep -qi 'Server Error (500)' && marker="Django 500 page (DEBUG is off)"
-                printf '%s' "$body" | grep -qi 'nginx'            && marker="nginx error page — did not reach Django"
-                printf '%s' "$body" | grep -qi '502 Bad Gateway'  && marker="502 from a proxy — Django did not answer"
-                echo "  $label: ^ $marker, no <title>"
-              fi
-            fi
-
-            [ "$label" = "rates          " ] && RATES_STATUS="$status"
-
-            # ANY 5xx is the deployment's problem, not this plugin's, whichever
-            # endpoint it came from. The run before this one had all three
-            # failing; the one after it had only vessel_search, and the browser
-            # suite reported that as "the real vessel search returned nothing
-            # for ever" — a sentence that sounds like missing data and is not.
-            [ "$status" -ge 500 ] && BROKEN="$BROKEN $( echo "$label" | tr -d ' ' )($status)"
-
-            return 0
+              "${URL%/}/${path}" 2>/dev/null || echo "000"
           }
 
-          echo "--- the endpoints this suite depends on"
-          probe "rates          " "insurance/rates/"
-          probe "location_search" "insurance/location_search/?query=rotterdam"
-          probe "vessel_search  " "insurance/vessel_search/?query=ever"
-          echo
+          describe() {
+            # A count and a size, never the payload: these are commercial
+            # figures and customer records, and a job log is public to everyone
+            # with repository access.
+            local status="$1"
 
-          # STOP HERE IF THE DEPLOYMENT IS NOT SERVING.
-          #
-          # Every spec in this suite talks to these endpoints, so letting the
-          # browser run against a broken deployment produces ten failures that
-          # all describe symptoms — "the real backend returned no locations for
-          # rotterdam" — and none that name the cause. One accurate failure
-          # beats ten misleading ones.
-          #
-          # `rates/` is the right canary: it builds a static payload and touches
-          # neither the search index nor the database, so anything other than
-          # 200 from it is about the deployment, not the data.
-          case "$RATES_STATUS" in
-            200)
-              echo "rates/ is serving, so the deployment itself is up."
-              ;;
-            401|403)
-              echo "::error::The dev key was rejected (HTTP $RATES_STATUS)."
-              echo "SPOTSHIP_API_KEY on the 'dev' environment is wrong, revoked, or"
-              echo "belongs to a Customer that is no longer active."
-              exit 1
-              ;;
-            *)
-              echo "::error::The dev deployment answered HTTP $RATES_STATUS on insurance/rates/."
-              echo
-              echo "This is a BACKEND problem, not a plugin one. rates/ returns a"
-              echo "static payload — no search index, no quote tables — so a 5xx"
-              echo "from it means the request never got as far as this plugin's"
-              echo "concerns. Note that the same endpoint answers 401 cleanly"
-              echo "WITHOUT a key, so authentication is reached and it is what"
-              echo "happens after it that fails."
-              echo
-              echo "Worth checking on the dev deployment: whether ENG-5586's"
-              echo "migrations are applied, and whether the cache backend DRF's"
-              echo "ScopedRateThrottle depends on is reachable — a throttle that"
-              echo "cannot reach its cache raises, and every one of these"
-              echo "endpoints is scoped-throttled."
-              exit 1
-              ;;
-          esac
+            printf '%s objects, %s bytes' \
+              "$( grep -o '"id"' /tmp/probe-body 2>/dev/null | wc -l | tr -d ' ' )" \
+              "$( wc -c < /tmp/probe-body 2>/dev/null | tr -d ' ' )"
 
-          # rates/ being healthy is not the whole story: the endpoints are
-          # backed by different indexes and fail independently.
-          if [ -n "$BROKEN" ]; then
+            if [ "$status" -ge 500 ] 2>/dev/null; then
+              local title marker
+              title=$( tr -d '\n' < /tmp/probe-body | sed -n 's/.*<title>\(.*\)<\/title>.*/\1/p' | head -c 160 )
+
+              if [ -n "$title" ]; then
+                printf ' — %s' "$title"
+              else
+                # Which kind of 500 decides where to look: Django raised, or
+                # Django never answered.
+                marker="unrecognised body"
+                grep -qi 'Traceback' /tmp/probe-body          && marker="Django debug traceback (DEBUG on)"
+                grep -qi 'Server Error (500)' /tmp/probe-body && marker="Django 500 page (DEBUG off)"
+                grep -qi 'nginx' /tmp/probe-body              && marker="nginx page — did not reach Django"
+                grep -qi '502 Bad Gateway' /tmp/probe-body    && marker="502 from a proxy — Django did not answer"
+                printf ' — %s' "$marker"
+              fi
+            fi
+          }
+
+          HEALTHY=""
+
+          for attempt in $( seq 1 "$ATTEMPTS" ); do
+            R=$( probe_one "insurance/rates/" );                                  R_D=$( describe "$R" )
+            L=$( probe_one "insurance/location_search/?query=rotterdam" );         L_D=$( describe "$L" )
+            V=$( probe_one "insurance/vessel_search/?query=ever" );                V_D=$( describe "$V" )
+
+            echo "attempt $attempt/$ATTEMPTS  rates=$R  location_search=$L  vessel_search=$V"
+            echo "    rates           $R_D"
+            echo "    location_search $L_D"
+            echo "    vessel_search   $V_D"
+
+            case "$R$L$V" in
+              200200200) HEALTHY="yes"; break ;;
+            esac
+
+            case "$R" in
+              401|403)
+                echo "::error::The dev key was rejected (HTTP $R). Retrying will not help."
+                echo "SPOTSHIP_API_KEY on the 'dev' environment is wrong, revoked, or"
+                echo "belongs to a Customer that is no longer active."
+                exit 1
+                ;;
+            esac
+
+            [ "$attempt" -lt "$ATTEMPTS" ] && sleep "$GAP"
+          done
+
+          if [ -z "$HEALTHY" ]; then
             echo
-            echo "::error::Endpoint(s) answering 5xx on the dev deployment:$BROKEN"
+            echo "::error::No window in which all three endpoints answered 2xx, over $ATTEMPTS attempts."
             echo
-            echo "A 5xx is the deployment's problem and not this plugin's, and"
-            echo "running the browser suite on top of one produces failures that"
-            echo "describe symptoms instead. \"The real vessel search returned"
-            echo "nothing for 'ever'\" reads as missing data; it is a 500."
+            echo "The attempt table above IS the finding: a deployment that"
+            echo "answers 200 sometimes and 500 the rest of the time is a backend"
+            echo "fault, not a plugin one, and nothing in this repository can fix"
+            echo "it. Running the browser suite on top of it would produce"
+            echo "failures describing symptoms — \"the real backend returned no"
+            echo "locations for rotterdam\" — and none naming the cause."
             echo
-            echo "location_search and vessel_search are separate indexes behind"
-            echo "separate entity_search viewsets, so one can be healthy while"
-            echo "the other is not. Check the index backing the failing one."
+            echo "location_search and vessel_search sit behind separate"
+            echo "entity_search viewsets and separate indexes, and rates/ serves"
+            echo "a static payload and touches neither. A 500 from rates/ is"
+            echo "therefore about the deployment, not the data — note it answers"
+            echo "401 cleanly WITHOUT a key, so authentication is reached and"
+            echo "what follows it is what fails."
             exit 1
           fi
 
-          echo "All probed endpoints answered 2xx. Any empty result below is"
-          echo "about the data in the dev index, not about reachability."
+          echo
+          echo "All three endpoints answered 2xx. Any empty result below is about"
+          echo "the data in the dev index, not about reachability."
 
       - uses: actions/setup-node@v4
         with:

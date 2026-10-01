@@ -23,6 +23,7 @@ const { test, expect } = require( '@playwright/test' );
 const { login } = require( '../support/wp-admin.js' );
 const { watchSearches, explain } = require( '../support/search-diagnostics.js' );
 const { fillRequiredHullFields } = require( '../support/combobox.js' );
+const { assertPageNotThrottled } = require( '../support/quote-budget.js' );
 const AxeBuilder = require( '@axe-core/playwright' ).default;
 
 test.describe.configure( { mode: 'serial' } );
@@ -272,6 +273,8 @@ test( 'one click rebinds against the real backend and submission recovers @write
 		.not.toEqual( 'pending' );
 
 	const shown = ( await result.textContent() ).toLowerCase();
+
+	assertPageNotThrottled( shown, 'the re-bound submission was never attempted upstream.' );
 
 	// Name the other outcome rather than blaming the re-bind for it: field
 	// errors mean the payload was rejected, which is this test's own fault and

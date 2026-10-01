@@ -345,6 +345,43 @@ placeholder. It reported *"submissions are still refused"* with the received
 string `"sending your request…"`, which is neither. It waits for whatever
 *replaces* that text now, or for an error summary.
 
+## The run that proved persistence, and the one that proved the budget
+
+Run `36830368299`, 2026-10-01 07:36 — the probe polled for **seven minutes**
+before dev came back, which the old ten-attempt limit would have given up on.
+**14 passed, 1 failed.** All four persistence `@writes` specs passed, so
+persistence, attribution and consent provenance are verified against the real
+deployment for the first time: each submits, takes the `submissionId`, and
+replays it server-side, where the API answers 200 with the **original row**. A
+201 there would mean the first submission never persisted.
+
+The one failure was reachable only because everything before it finally worked:
+the revoked-key test read `.spotship-wi` *after* its `finally` had navigated to
+wp-admin to restore the settings — a page with no such element — so the locator
+waited out the whole 60s test timeout. Its substantive assertions had already
+passed. The read belongs on the form page, before the restore.
+
+### Then the writing half ran twice in ten minutes
+
+Run `36831874480` at 07:46 came back **8 passed, 6 failed**, and every failure
+was HTTP 429.
+
+`backend/insurance/views.py` puts both submit endpoints behind
+`ScopedRateThrottle` with scope `insurance_quote`, and
+`config/settings/base.py` sets it to **20/hour**. One writing run spends about
+ten of that: four submissions, four replays, the re-bind and the invalid-email
+row. The revoked-key submission does not count, because DRF authenticates
+before it checks throttles.
+
+**So the writing half runs about once an hour, and that is a hard limit.**
+Re-tagging after a failure is not free.
+
+Three assertions reported that one 429 as three different causes — *"the real
+backend must accept the submission"*, *"the re-bind reported success but
+submissions are still refused"*, *"the real serializer must reject this
+address"*. None was true. `tests/support/quote-budget.js` names it now, in all
+three places.
+
 ### And the diagnostic added last round overclaimed
 
 `lastSearchVerdict()` said `unavailable` meant "A backend fault, not an empty

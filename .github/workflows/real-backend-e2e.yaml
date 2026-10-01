@@ -42,6 +42,22 @@ name: Real backend E2E
 # A `real-backend-2*` tag is read-only. `real-backend-writes-*` includes the
 # writing pair, as does workflow_dispatch with writes=true.
 #
+# THE WRITING HALF RUNS ABOUT ONCE AN HOUR, AND THAT IS A HARD LIMIT.
+#
+# backend/insurance/views.py puts both submit endpoints behind
+# ScopedRateThrottle with scope `insurance_quote`, which config/settings/base.py
+# sets to 20/hour. One writing run spends about ten of that budget: four
+# submissions, four replays, the re-bind submission and the invalid-email row.
+# So TWO writing runs inside one hour exhaust it and the second starts refused.
+#
+# This is not theoretical. A run at 07:36 on 2026-10-01 went 14/15; a run at
+# 07:46 came back 8/15 with every writing test answering 429, reported by three
+# different assertions as three different confident and wrong causes. See
+# tests/support/quote-budget.js, which now names it instead.
+#
+# Re-tagging after a failure is therefore NOT free. If the writing half failed
+# on anything other than the probe, check the clock before tagging again.
+#
 # The referral destinations were confirmed on 2026-10-01: dev's
 # INSURANCE_REFERRAL_WEBHOOK_URL is NOT prod's (the two differ), and
 # INSURANCE_REFERRAL_EMAIL_RECEIVER on dev is tech@spot-ship.com — an internal

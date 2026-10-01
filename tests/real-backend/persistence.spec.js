@@ -70,6 +70,7 @@ const path = require( 'path' );
 const { test, expect, request: playwrightRequest } = require( '@playwright/test' );
 const { login } = require( '../support/wp-admin.js' );
 const { pick, addDestination } = require( '../support/combobox.js' );
+const { assertNotThrottled } = require( '../support/quote-budget.js' );
 
 const API = ( process.env.SPOTSHIP_API_URL || '' ).replace( /\/+$/, '' );
 const KEY = process.env.SPOTSHIP_API_KEY || '';
@@ -366,6 +367,8 @@ for ( const [ product, urlPath, label ] of [
 
 		evidence( `${ product }-${ label }-receipt.json`, JSON.stringify( answer, null, 2 ) );
 
+		assertNotThrottled( answer.status, `${ product } via ${ label } could not submit.` );
+
 		// What the browser is allowed to know, and all of it.
 		expect( answer.status, 'the real backend must accept the submission' ).toBeLessThan( 300 );
 		expect( answer.body.success ).toBe( true );
@@ -526,6 +529,8 @@ test( '§9: an upstream 400 lands as an inline field error, not the generic sent
 		page.waitForResponse( ( r ) => /quote[-_]request/.test( r.url() ), { timeout: 30000 } ),
 		page.locator( '.sswi-submit' ).click(),
 	] );
+
+	assertNotThrottled( response.status(), 'the invalid-email row never reached the serializer.' );
 
 	expect( response.status(), 'the real serializer must reject this address' ).toBe( 400 );
 

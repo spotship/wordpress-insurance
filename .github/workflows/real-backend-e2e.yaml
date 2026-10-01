@@ -119,6 +119,58 @@ jobs:
             exit 1
           fi
 
+      # WHAT DOES THE DEPLOYMENT ACTUALLY ANSWER? ASK BEFORE THE BROWSER DOES.
+      #
+      # The first real run failed with "the real backend returned no locations
+      # for rotterdam", and that message cannot tell you WHY: an empty search
+      # index, a 403 on a key without search entitlement, and a 503 from
+      # OpenSearch all look identical from inside a combobox. The artifact that
+      # would have said is only reachable by downloading it.
+      #
+      # So the facts go in the JOB LOG, before anything else runs. This is the
+      # same move ci.yaml makes for the stand-in upstream, where three specs
+      # once failed on a missing aria-activedescendant that was really an
+      # unreachable host.
+      #
+      # The key is passed as a header from the environment and never echoed;
+      # only the status and the result COUNT are printed.
+      - name: What does the dev backend answer?
+        env:
+          URL: ${{ secrets.SPOTSHIP_API_URL }}
+          KEY: ${{ secrets.SPOTSHIP_API_KEY }}
+        run: |
+          set -uo pipefail
+
+          probe() {
+            local label="$1" path="$2"
+            local body status
+
+            body=$( curl -sS --max-time 20 -w '\n%{http_code}' \
+              -H "Authorization: Bearer ${KEY}" \
+              -H 'Accept: application/json' \
+              "${URL%/}/${path}" 2>/dev/null ) || {
+                echo "  $label: request failed outright"
+                return
+              }
+
+            status=$( printf '%s' "$body" | tail -n1 )
+            body=$( printf '%s' "$body" | sed '$d' )
+
+            # A count, not the payload: these are commercial figures and
+            # customer-facing records, and the job log is not the place for them.
+            echo "  $label: HTTP $status, $( printf '%s' "$body" | head -c 200000 | grep -o '"id"' | wc -l | tr -d ' ' ) object(s) with an id, $( printf '%s' "$body" | wc -c | tr -d ' ' ) bytes"
+          }
+
+          echo "--- the endpoints this suite depends on"
+          probe "rates          " "insurance/rates/"
+          probe "location_search" "insurance/location_search/?query=rotterdam"
+          probe "vessel_search  " "insurance/vessel_search/?query=ever"
+          echo
+          echo "A location_search answering 200 with 0 objects means the dev"
+          echo "search index is empty — the plugin is calling it correctly and"
+          echo "there is nothing to find. 401/403 means the key lacks search"
+          echo "entitlement. 5xx means the search backend itself is down."
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

@@ -142,6 +142,7 @@ jobs:
           set -uo pipefail
 
           RATES_STATUS=""
+          BROKEN=""
 
           probe() {
             local label="$1" path="$2"
@@ -171,6 +172,14 @@ jobs:
             fi
 
             [ "$label" = "rates          " ] && RATES_STATUS="$status"
+
+            # ANY 5xx is the deployment's problem, not this plugin's, whichever
+            # endpoint it came from. The run before this one had all three
+            # failing; the one after it had only vessel_search, and the browser
+            # suite reported that as "the real vessel search returned nothing
+            # for ever" — a sentence that sounds like missing data and is not.
+            [ "$status" -ge 500 ] && BROKEN="$BROKEN $( echo "$label" | tr -d ' ' )($status)"
+
             return 0
           }
 
@@ -193,8 +202,7 @@ jobs:
           # 200 from it is about the deployment, not the data.
           case "$RATES_STATUS" in
             200)
-              echo "The deployment is serving. Any empty search result below is"
-              echo "about the data in the dev index, not about reachability."
+              echo "rates/ is serving, so the deployment itself is up."
               ;;
             401|403)
               echo "::error::The dev key was rejected (HTTP $RATES_STATUS)."
@@ -220,6 +228,26 @@ jobs:
               exit 1
               ;;
           esac
+
+          # rates/ being healthy is not the whole story: the endpoints are
+          # backed by different indexes and fail independently.
+          if [ -n "$BROKEN" ]; then
+            echo
+            echo "::error::Endpoint(s) answering 5xx on the dev deployment:$BROKEN"
+            echo
+            echo "A 5xx is the deployment's problem and not this plugin's, and"
+            echo "running the browser suite on top of one produces failures that"
+            echo "describe symptoms instead. \"The real vessel search returned"
+            echo "nothing for 'ever'\" reads as missing data; it is a 500."
+            echo
+            echo "location_search and vessel_search are separate indexes behind"
+            echo "separate entity_search viewsets, so one can be healthy while"
+            echo "the other is not. Check the index backing the failing one."
+            exit 1
+          fi
+
+          echo "All probed endpoints answered 2xx. Any empty result below is"
+          echo "about the data in the dev index, not about reachability."
 
       - uses: actions/setup-node@v4
         with:

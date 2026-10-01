@@ -163,23 +163,50 @@ final class Spotship_WI_Rates_Cache {
 		 * A lock left behind by a crashed request would otherwise wedge the table
 		 * at the backup tier until someone noticed. Anything older than the TTL is
 		 * treated as abandoned and taken over.
+		 *
+		 * THE TAKEOVER IS ONE CONDITIONAL STATEMENT, AND IT HAS TO BE.
+		 *
+		 * This read the row, judged it stale, then delete_option() +
+		 * add_option(). Two requests that both judge the same lock abandoned
+		 * both succeed at that: A deletes and inserts, then B DELETES THE ROW A
+		 * JUST INSERTED and inserts its own. Both believe they hold the lock and
+		 * both call upstream — the exact stampede the lock exists to prevent,
+		 * arriving at the one moment the upstream is already slow enough for a
+		 * request to have been abandoned.
+		 *
+		 * The staleness test now lives in the WHERE clause, so MySQL's row lock
+		 * decides it: of N contenders exactly one changes the row and the rest
+		 * see affected_rows = 0. An UPDATE also never vacates the row, so there
+		 * is no window in which the lock does not exist.
+		 *
+		 * A NEW token, because the one minted above was for the insert that
+		 * failed; two contenders must not end up indistinguishable to
+		 * release_lock().
 		 */
-		$held = (int) strtok( (string) get_option( self::LOCK, '0' ), ':' );
+		global $wpdb;
 
-		if ( $held > 0 && ( $now - $held ) > self::LOCK_TTL ) {
-			delete_option( self::LOCK );
+		$retry = self::mint_token( $now );
 
-			// A NEW token for the takeover: if two requests judge the same lock
-			// abandoned, only the one whose value is actually in the row may
-			// release it, and reusing the value minted above would make the two
-			// indistinguishable.
-			$retry = self::mint_token( $now );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- the atomicity IS the lock; a cached read is the bug being removed. The cache entry is dropped below.
+		$taken = $wpdb->query(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $wpdb->options is a table name, not input.
+				"UPDATE {$wpdb->options} SET option_value = %s
+				 WHERE option_name = %s
+				   AND CAST(SUBSTRING_INDEX(option_value, ':', 1) AS UNSIGNED) > 0
+				   AND CAST(SUBSTRING_INDEX(option_value, ':', 1) AS UNSIGNED) < %d",
+				$retry,
+				self::LOCK,
+				$now - self::LOCK_TTL
+			)
+		);
 
-			if ( add_option( self::LOCK, $retry, '', false ) ) {
-				self::$lock_token = $retry;
+		wp_cache_delete( self::LOCK, 'options' );
 
-				return true;
-			}
+		if ( $taken ) {
+			self::$lock_token = $retry;
+
+			return true;
 		}
 
 		return false;

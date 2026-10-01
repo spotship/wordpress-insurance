@@ -132,14 +132,13 @@ customer who has the zip.
   failure, the origin-binding refusal and the no-JavaScript case — creating no
   records and sending nothing.
 
-  ⚠️ **The dev deployment is currently answering HTTP 500 on all three
-  insurance endpoints**, including `rates/`, which serves a static payload and
-  so cannot be failing over data. The same endpoint answers `401` cleanly
-  without a key, so authentication is reached and something after it fails —
-  most likely the cache DRF's `ScopedRateThrottle` depends on, or unapplied
-  ENG-5586 migrations. This is a backend problem and not fixable here; the
-  workflow now fails at its probe step and says so. Until it is resolved, no
-  real-backend verification is possible at all.
+  ⚠️ **`vessel_search` is answering HTTP 500 on dev.** `rates/` and
+  `location_search` are healthy — the latter returns real Rotterdam hits — so
+  this is one index, not the deployment. An earlier run had all three failing
+  and that had cleared twenty minutes later, so treat any single reading as a
+  snapshot. This is a backend problem and not fixable here; the workflow fails
+  at its probe step and names the endpoint. Until it is resolved the vessel
+  autocomplete cannot be verified against real data.
 
   The two tests that submit a valid payload are tagged `@writes` and excluded
   unless a run asks for them, because the backend fires a referral **email and

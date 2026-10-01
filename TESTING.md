@@ -164,22 +164,24 @@ missing `data-sswi-field` in **both** templates, so a notes error degraded to
 The suite that talks to the live dev deployment had never executed. It has now,
 and the first thing it found was not in this plugin.
 
-**All three insurance endpoints on dev answer HTTP 500.**
+**Dev's insurance endpoints are failing, and the picture moved between two
+runs twenty minutes apart.**
 
 ```
-rates          : HTTP 500, 36477 bytes
-location_search: HTTP 500, 36566 bytes
-vessel_search  : HTTP 500, 36541 bytes
+run 1:  rates 500   location_search 500   vessel_search 500
+run 2:  rates 200   location_search 200 (5 hits)   vessel_search 500
 ```
 
-`rates/` is the one that settles it: it returns a static payload and touches
-neither the search index nor the quote tables, so a 500 from it cannot be about
-data. The same endpoint answers a clean `401` **without** a key, so
-authentication is reached and something after it fails. DRF runs throttles after
-authentication and all three endpoints are `ScopedRateThrottle`-scoped, so a
-cache the throttle cannot reach would produce exactly this; unapplied ENG-5586
-migrations on dev are the other candidate. **Either way it is a backend
-problem, not a plugin one**, and it is not fixable from this repository.
+So the first reading — "the deployment is down" — was true when it was taken
+and wrong by the next run. What is left is narrower and more useful:
+**`vessel_search` answers 500 while `location_search` answers 200 with real
+Rotterdam hits.** They are separate indexes behind separate `entity_search`
+viewsets, so one can be healthy while the other is not.
+
+Either way it is a backend problem, not a plugin one, and not fixable from this
+repository. The transient first reading is worth keeping because it is the
+reason the probe prints rather than concludes: a single observation of a shared
+deployment is a snapshot, and this one aged out in twenty minutes.
 
 Two things changed here as a result, because the first run could not say any of
 that:
@@ -189,10 +191,12 @@ that:
   customer records, and never the key. On a 5xx it extracts only the exception
   title: with `DEBUG` on, a Django error page carries settings and local
   variables, and a public job log is the wrong place for them.
-- It then **fails at the probe** rather than running the suite. Against a
-  deployment that is down, every spec fails describing a symptom — "the real
-  backend returned no locations for rotterdam" — and none names the cause. One
-  accurate failure beats ten misleading ones.
+- It then **fails at the probe** rather than running the suite — on a 5xx from
+  ANY of the three, not just the canary. Against a broken endpoint every spec
+  fails describing a symptom: "the real backend returned no locations for
+  rotterdam", or "the real vessel search returned nothing for 'ever'", which
+  reads as missing data and is a 500. One accurate failure beats ten misleading
+  ones.
 
 ## Proving a test can fail
 

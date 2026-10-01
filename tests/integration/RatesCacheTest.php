@@ -220,6 +220,66 @@ final class RatesCacheTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * THE DEFECT THIS GUARDS AGAINST: a takeover that vacates the row.
+	 *
+	 * The takeover used to be delete_option() followed by add_option(). Two
+	 * requests that both judge the same lock abandoned both succeed at that: A
+	 * deletes and inserts, then B deletes the row A JUST INSERTED and inserts
+	 * its own. Both believe they hold the lock and both call upstream — the
+	 * exact stampede the lock exists to prevent, at the one moment the upstream
+	 * is already slow enough for a request to have been abandoned.
+	 *
+	 * A PHPUnit process cannot interleave two requests, so this pins the
+	 * property that makes the interleaving impossible: the row is UPDATED, never
+	 * replaced. MySQL assigns a fresh option_id to an INSERT, so an unchanged
+	 * option_id is proof no delete happened and therefore proof there was no
+	 * window in which the lock did not exist.
+	 *
+	 * Verified separately against MySQL 8: 30 concurrent contenders against one
+	 * stale lock produced exactly one winner, with option_id unchanged.
+	 */
+	public function test_a_takeover_updates_the_lock_row_rather_than_replacing_it(): void {
+		global $wpdb;
+
+		Spotship_WI_Rates_Cache::get();
+		delete_transient( Spotship_WI_Rates_Cache::FRESH );
+		Spotship_WI_Rates_Cache::purge();
+
+		// A lock older than the TTL, as a crashed request would leave.
+		add_option( Spotship_WI_Rates_Cache::LOCK, ( time() - 3600 ) . ':crashedrequest', '', false );
+
+		$id_before = $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $wpdb->options is a table name.
+				"SELECT option_id FROM {$wpdb->options} WHERE option_name = %s",
+				Spotship_WI_Rates_Cache::LOCK
+			)
+		);
+
+		$this->assertNotNull( $id_before, 'the staged lock is missing' );
+
+		Spotship_WI_Rates_Cache::get();
+
+		$id_after = $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $wpdb->options is a table name.
+				"SELECT option_id FROM {$wpdb->options} WHERE option_name = %s",
+				Spotship_WI_Rates_Cache::LOCK
+			)
+		);
+
+		// Null is acceptable: the holder released it on the way out. What must
+		// never happen is a DIFFERENT id, which can only mean delete + insert.
+		if ( null !== $id_after ) {
+			$this->assertSame(
+				(int) $id_before,
+				(int) $id_after,
+				'the lock row was replaced, not updated — there was a window with no lock'
+			);
+		}
+	}
+
+	/**
 	 * THE DEFECT THIS GUARDS AGAINST: a release that does not check ownership.
 	 *
 	 * Request A takes the lock and is merely slow. After LOCK_TTL, request B

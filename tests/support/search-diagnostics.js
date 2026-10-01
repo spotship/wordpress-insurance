@@ -89,7 +89,17 @@ function lastSearchVerdict( page ) {
 	}
 
 	if ( last.unavailable ) {
-		return 'the proxy reported `unavailable` — THE UPSTREAM FAILED. A backend fault, not an empty index and not a plugin bug';
+		/*
+		 * SAY WHAT THE FLAG MEANS, NOT WHAT IT USUALLY MEANS.
+		 *
+		 * This read "A backend fault, not an empty index and not a plugin bug",
+		 * and printed that during the revoked-key test — where the 401 was the
+		 * test's own doing. handle_search() sets `unavailable` for ANY non-ok
+		 * upstream result, so the flag distinguishes "the call did not succeed"
+		 * from "it succeeded and matched nothing", and nothing finer. Claiming
+		 * more is the same overreach this file exists to correct.
+		 */
+		return 'the proxy reported `unavailable` — the upstream call did NOT succeed. That covers a 5xx, a 401 from a revoked or wrong key, and an unreachable host. What it rules out is an empty index';
 	}
 
 	return `the proxy answered HTTP ${ last.status } with ${ last.count } result(s) — the upstream was reachable and matched nothing`;

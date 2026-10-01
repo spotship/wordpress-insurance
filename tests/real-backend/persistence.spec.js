@@ -85,10 +85,32 @@ function evidence( name, contents ) {
 	fs.writeFileSync( path.join( EVIDENCE, name ), contents );
 }
 
+/**
+ * An absolute API url.
+ *
+ * NEVER `baseURL` PLUS A LEADING-SLASH PATH.
+ *
+ * SPOTSHIP_API_URL ends at `/api`, and Playwright resolves a request path with
+ * `new URL( path, baseURL )`. A path beginning with `/` is root-relative, so
+ * `new URL( '/insurance/x', 'https://host/api' )` is `https://host/insurance/x`
+ * — the `/api` segment is silently discarded. Every direct call here went to a
+ * path that does not exist.
+ *
+ * It cost more than the searches it broke. replay() is the ONLY thing that
+ * evidences persistence, and it was POSTing to the wrong host path, so a
+ * perfectly healthy backend and a perfectly filled form would still have
+ * reported "persistence failed". The failure message blamed the deployment:
+ * "the deployment returned no locations to replay with".
+ *
+ * @param {string} path Path below /api, with its leading slash.
+ */
+function apiUrl( path ) {
+	return `${ API }${ path }`;
+}
+
 /** A client that talks to the API directly, as the customer. */
 async function api() {
 	return playwrightRequest.newContext( {
-		baseURL: API,
 		extraHTTPHeaders: {
 			// `Bearer `, and nothing else. CustomerAccountApiKeyAuthentication
 			// ._extract_key() reads the x-api-key header, or an Authorization
@@ -111,11 +133,13 @@ async function api() {
  * Read from the network rather than the screen: the visible message is
  * deliberately neutral and evidences nothing about what was stored.
  *
- * @param {object} page    Playwright page.
- * @param {string} urlPath Page carrying the form.
- * @param {string} marker  Identifier written into the submission.
+ * @param {object}   page         Playwright page.
+ * @param {string}   urlPath      Page carrying the form.
+ * @param {string}   marker       Identifier written into the submission.
+ * @param {Function} beforeSubmit Optional, awaited after the form is complete
+ *                                and before the click.
  */
-async function submit( page, urlPath, marker ) {
+async function submit( page, urlPath, marker, beforeSubmit = null ) {
 	await page.goto( urlPath );
 	await expect( page.locator( '[data-sswi-root]' ) ).toHaveCount( 1 );
 
@@ -187,6 +211,20 @@ async function submit( page, urlPath, marker ) {
 	// report a persistence it never performed.
 	await page.waitForTimeout( 3500 );
 
+	/*
+	 * A LAST CHANCE TO CHANGE THE WORLD, AFTER THE FORM IS VALID.
+	 *
+	 * The revoked-key test used to swap the credential BEFORE filling the form,
+	 * and the comboboxes are backed by that same key — so every search came
+	 * back empty and the test died in pick() without ever submitting. It cannot
+	 * navigate to the admin to swap it either, because that discards the form.
+	 * The hook runs between "the form is complete" and the click, so the swap
+	 * happens by request rather than by navigation.
+	 */
+	if ( beforeSubmit ) {
+		await beforeSubmit();
+	}
+
 	const [ response ] = await Promise.all( [
 		page.waitForResponse( ( r ) => /quote[-_]request/.test( r.url() ), { timeout: 30000 } ),
 		page.locator( '.sswi-submit' ).click(),
@@ -221,12 +259,25 @@ async function submit( page, urlPath, marker ) {
  */
 async function search( path ) {
 	const client = await api();
-	const response = await client.get( path );
-	const body = await response.json().catch( () => [] );
+	const url = apiUrl( path );
+	const response = await client.get( url );
+	const status = response.status();
+	const body = await response.json().catch( () => null );
 
 	await client.dispose();
 
-	return Array.isArray( body ) ? body : body.results || [];
+	/*
+	 * A NON-2xx IS NOT AN EMPTY RESULT SET, AND MUST NOT READ AS ONE.
+	 *
+	 * This swallowed the status: any failure fell through `.catch( () => [] )`
+	 * and `body.results || []` to an empty array, and the caller then reported
+	 * "the deployment returned no locations to replay with" — naming the data
+	 * as the cause of a 404 that was this file's own url bug. The same sin the
+	 * browser helpers were just fixed for, in the server-side helper.
+	 */
+	expect( status, `GET ${ url } answered HTTP ${ status }` ).toBeLessThan( 300 );
+
+	return Array.isArray( body ) ? body : ( body && body.results ) || [];
 }
 
 /**
@@ -274,7 +325,7 @@ async function replay( product, submissionId, extra = {} ) {
 	const client = await api();
 	const route = 'cargo' === product ? 'cargo_quote_request' : 'quote_request';
 
-	const response = await client.post( `/insurance/${ route }/`, {
+	const response = await client.post( apiUrl( `/insurance/${ route }/` ), {
 		data: Object.assign(
 			{
 				userName: 'CI replay',
@@ -390,12 +441,30 @@ test( 'a bad credential against the real backend degrades to the neutral sentenc
 	 * Driven against the real API so the 401 is genuinely the backend's.
 	 */
 	await login( page );
-	await page.goto( '/wp-admin/?spotship_e2e_key=00000000-0000-4000-8000-000000000000' );
 
 	let answer;
 
 	try {
-		answer = await submit( page, '/insurance/', `revoked-${ Date.now() }` );
+		/*
+		 * Swap the key only once the form is complete. The comboboxes resolve
+		 * through the SAME credential, so revoking it first leaves every search
+		 * empty and the test dies filling the form rather than submitting it —
+		 * which is what happened on the first run that got this far.
+		 *
+		 * `page.request` carries the admin session cookies and performs the
+		 * swap without navigating, so the filled form survives. A navigation
+		 * would discard it.
+		 *
+		 * This proves the stronger thing, too: a VALID submission is refused,
+		 * rather than an incomplete one being rejected for some other reason.
+		 */
+		answer = await submit( page, '/insurance/', `revoked-${ Date.now() }`, async () => {
+			const swap = await page.request.get(
+				'/wp-admin/?spotship_e2e_key=00000000-0000-4000-8000-000000000000'
+			);
+
+			expect( swap.status(), 'the credential swap did not take' ).toBeLessThan( 400 );
+		} );
 	} finally {
 		// Via the mu-plugin's stash, never by re-sending the real key: a live
 		// credential in a query string lands in the access log, in Playwright's

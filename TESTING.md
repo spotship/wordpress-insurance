@@ -290,8 +290,69 @@ test's own fault rather than evidence about the binding.
 
 ### And one that is not ours
 
-The remaining failures are the flap. Nothing in this repository fixes a
+The remaining failures were the flap. Nothing in this repository fixes a
 deployment that answers 500 for two minutes in every three.
+
+## The run that finally got a healthy backend
+
+Run `36828243053`, 2026-10-01, on the third attempt: the probe passed on its
+**first poll**, and because the slow setup now runs ahead of it, the suite
+started **two seconds later**. **8 passed, 6 failed** — and with dev healthy
+throughout, every failure is a defect rather than a symptom.
+
+### The replay was POSTing to a path that does not exist
+
+`SPOTSHIP_API_URL` ends at `/api`, and Playwright resolves a request path with
+`new URL( path, baseURL )`. A path beginning with `/` is root-relative:
+
+```js
+new URL( '/insurance/location_search/', 'https://host/api' )
+// → https://host/insurance/location_search/     ← /api is gone
+```
+
+Every direct-API call went to a path that does not exist. The searches came
+back empty and the test reported *"the deployment returned no locations to
+replay with"* — blaming a deployment that was, at that moment, healthy.
+
+It cost more than the searches. **`replay()` is the only thing that evidences
+persistence**, and it was POSTing to the wrong host path, so a healthy backend
+and a perfectly filled form would still have reported "persistence failed".
+Absolute urls now, via `apiUrl()`.
+
+`search()` also swallowed the status — any failure fell through
+`.catch( () => [] )` to an empty array — so a 404 arrived as "no results". The
+same sin the browser helpers had just been fixed for, in the server-side
+helper. It asserts the status now.
+
+### The revoked-key test revoked the key too early
+
+It swapped the credential, *then* filled the form. The comboboxes resolve
+through that same key, so every search came back empty and the test died in
+`pick()` without ever submitting. It cannot navigate to the admin to swap it
+later either, because that discards the form — so `submit()` now takes a
+`beforeSubmit` hook, and the swap happens by request rather than by navigation.
+
+It proves the stronger thing as a result: a **valid** submission is refused,
+rather than an incomplete one being rejected for some other reason.
+
+### "Wait for an answer" accepted the placeholder
+
+The re-bind fix from the previous round replaced a fixed 2500ms wait with a
+poll for a non-empty result region. `handle submit()` writes
+`i18n.sending` — "Sending your request…" — into that region the instant the
+click lands, so "non-empty" was true immediately and the assertion read the
+placeholder. It reported *"submissions are still refused"* with the received
+string `"sending your request…"`, which is neither. It waits for whatever
+*replaces* that text now, or for an error summary.
+
+### And the diagnostic added last round overclaimed
+
+`lastSearchVerdict()` said `unavailable` meant "A backend fault, not an empty
+index and not a plugin bug" — and printed exactly that during the revoked-key
+test, where the 401 was the test's own doing. `handle_search()` sets the flag
+for ANY non-ok upstream result, so it distinguishes "the call did not succeed"
+from "it succeeded and matched nothing", and nothing finer. Claiming more was
+the same overreach the helper exists to correct, committed while correcting it.
 
 ## The real-backend suite could not have passed
 

@@ -233,26 +233,43 @@ test( 'one click rebinds against the real backend and submission recovers @write
 	await page.locator( '.sswi-submit' ).click();
 
 	/*
-	 * Wait for an ANSWER, not for a duration. The upstream timeout is 8s, so a
-	 * fixed 2500ms read the region before a slow deployment had replied and
-	 * could not tell "refused" from "not finished yet".
+	 * Wait for an ANSWER, not for a duration, and NOT MERELY FOR NON-EMPTY.
+	 *
+	 * A fixed 2500ms read the region before a slow deployment had replied —
+	 * the upstream timeout is 8s — and could not tell "refused" from "not
+	 * finished yet". Polling for non-empty replaced that with a subtler
+	 * version of the same mistake: handle submit() writes i18n.sending
+	 * ("Sending your request…") into the result region the instant the click
+	 * lands, so "non-empty" was true immediately and the assertion read the
+	 * placeholder. It reported "submissions are still refused" with the
+	 * received string "sending your request…", which is neither a refusal nor
+	 * a success.
+	 *
+	 * The answer is whatever REPLACES that text, or an error summary.
 	 */
 	const result = page.locator( '[data-sswi-result]' );
 	const summary = page.locator( '[data-sswi-summary]' );
+	const PENDING = 'sending your request';
 
 	await expect
 		.poll(
-			async () =>
-				(
-					( ( await result.textContent() ) || '' ) +
-					( ( await summary.textContent() ) || '' )
-				).trim().length,
+			async () => {
+				const r = ( ( await result.textContent() ) || '' ).trim().toLowerCase();
+				const s = ( ( await summary.textContent() ) || '' ).trim();
+
+				if ( s.length > 0 ) {
+					return 'summary';
+				}
+
+				return r.length > 0 && ! r.startsWith( PENDING ) ? 'answered' : 'pending';
+			},
 			{
-				timeout: 20000,
-				message: 'the form rendered no answer at all — neither a result nor an error summary',
+				timeout: 30000,
+				message:
+					'the submission never resolved — the result region still shows the pending message and no error summary appeared',
 			}
 		)
-		.toBeGreaterThan( 0 );
+		.not.toEqual( 'pending' );
 
 	const shown = ( await result.textContent() ).toLowerCase();
 

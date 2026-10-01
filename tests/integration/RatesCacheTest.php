@@ -118,7 +118,7 @@ final class RatesCacheTest extends WP_UnitTestCase {
 		$first = Spotship_WI_Rates_Cache::get();
 
 		$this->assertSame( Spotship_WI_Rates_Cache::TIER_FRESH, $first['tier'] );
-		$this->assertSame( '2026-09-11', $first['rates']['updatedAt'] );
+		$this->assertSame( '2026-09-30', $first['rates']['updatedAt'] );
 		$this->assertSame( 1, $this->calls );
 
 		$second = Spotship_WI_Rates_Cache::get();
@@ -136,7 +136,7 @@ final class RatesCacheTest extends WP_UnitTestCase {
 		$serving = Spotship_WI_Rates_Cache::get();
 
 		$this->assertSame( Spotship_WI_Rates_Cache::TIER_BACKUP, $serving['tier'] );
-		$this->assertSame( '2026-09-11', $serving['rates']['updatedAt'] );
+		$this->assertSame( '2026-09-30', $serving['rates']['updatedAt'] );
 	}
 
 	/**
@@ -330,6 +330,6 @@ final class RatesCacheTest extends WP_UnitTestCase {
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( Spotship_WI_Rates_Cache::TIER_FRESH, $body['tier'] );
-		$this->assertSame( '2026-09-11', $body['rates']['updatedAt'] );
+		$this->assertSame( '2026-09-30', $body['rates']['updatedAt'] );
 	}
 }

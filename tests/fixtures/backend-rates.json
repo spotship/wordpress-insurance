@@ -5,9 +5,9 @@
     "flat \u2014 a top-level `columns` list of plain strings and a top-level row list per",
     "product \u2014 a shape the API has never emitted, and the renderer and the whole e2e",
     "rate-table suite were built against it. Deriving it is the control.",
-    "Derived from spotship/backend origin/dev @ 829ddf40"
+    "Derived from spotship/backend origin/dev @ d734731e"
   ],
-  "updatedAt": "2026-09-11",
+  "updatedAt": "2026-09-30",
   "hull": {
     "disclaimers": [
       "These rates are indicative only. They are not an offer or a quote and are subject to underwriting.",
@@ -26,7 +26,7 @@
       },
       {
         "key": "ncbRate",
-        "label": "50% NCB"
+        "label": "NCB Rate"
       },
       {
         "key": "spotshipRate",
@@ -50,16 +50,16 @@
       },
       {
         "name": "GOA",
-        "hmRate": 0.03,
-        "ncbRate": 0.015,
-        "spotshipRate": 0.012,
+        "hmRate": 0.01,
+        "ncbRate": 0.005,
+        "spotshipRate": 0.004,
         "footnote": null
       },
       {
         "name": "GOO",
-        "hmRate": 0.006,
-        "ncbRate": 0.003,
-        "spotshipRate": 0.0024,
+        "hmRate": 0.005,
+        "ncbRate": 0.0025,
+        "spotshipRate": 0.002,
         "footnote": null
       },
       {
@@ -100,22 +100,22 @@
       {
         "name": "Lebanon",
         "hmRate": 0.003,
-        "ncbRate": 0.0015,
-        "spotshipRate": 0.0012,
+        "ncbRate": 0.003,
+        "spotshipRate": 0.0024,
         "footnote": null
       },
       {
         "name": "Russia Black Sea",
         "hmRate": 0.15,
-        "ncbRate": 0.075,
-        "spotshipRate": 0.06,
+        "ncbRate": 0.15,
+        "spotshipRate": 0.12,
         "footnote": 2
       },
       {
         "name": "Ukraine Black Sea",
-        "hmRate": 0.15,
-        "ncbRate": 0.075,
-        "spotshipRate": 0.06,
+        "hmRate": 0.12,
+        "ncbRate": 0.0804,
+        "spotshipRate": 0.06432,
         "footnote": null
       },
       {
@@ -128,8 +128,8 @@
       {
         "name": "Israel",
         "hmRate": 0.003,
-        "ncbRate": 0.0015,
-        "spotshipRate": 0.0012,
+        "ncbRate": 0.003,
+        "spotshipRate": 0.0024,
         "footnote": null
       },
       {

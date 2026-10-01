@@ -117,7 +117,7 @@ $sswi_stale = in_array( $sswi_tier, array( 'backup', 'bundled' ), true );
 				<th scope="col"><span class="sswi-sr"><?php esc_html_e( 'Risk zone', 'spotship-war-insurance' ); ?></span></th>
 				<?php foreach ( $sswi_columns as $sswi_col ) : ?>
 					<?php
-					// The LABEL is what a visitor reads ("50% NCB"); the key is
+					// The LABEL is what a visitor reads ("NCB Rate"); the key is
 					// the field name it is looked up by. Rendering the key put
 					// "ncbRate" in the header of a published rate table.
 					$sswi_label = is_array( $sswi_col ) && isset( $sswi_col['label'] )

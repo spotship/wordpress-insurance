@@ -1,0 +1,168 @@
+name: Rates drift
+
+# THE ALARM FOR A PROBLEM THAT HAS ALREADY HAPPENED ONCE.
+#
+# tests/fixtures/backend-rates.json is a copy of what GET /insurance/rates/
+# returns. It is generated from backend source by bin/derive-backend-rates.sh,
+# which is the control that stops it being hand-written — but generation only
+# helps on the day somebody runs it. Nothing re-runs it, and nothing compares
+# the committed result to the live API, so the fixture is free to rot silently.
+#
+# It did. ENG-6451 and ENG-6452 moved six hull zones on 2026-10-01 (GOA, GOO,
+# Lebanon, Russia Black Sea, Ukraine Black Sea, Israel), renamed the NCB column
+# from "50% NCB" to "NCB Rate" because the discount is not a fixed 50%, and
+# bumped RATES_UPDATED_AT from 2026-09-11 to 2026-09-30. Every plugin test kept
+# passing against the superseded table, because every one of them asserts
+# against the fixture rather than against the backend.
+#
+# WHAT THIS DOES AND DOES NOT PROTECT.
+#
+# It does NOT protect the rates we publish to customers. The plugin renders
+# whatever the live endpoint serves, and includes/data/rates-fallback.php is
+# generated at release time by bin/generate-fallback-rates.sh from that same
+# endpoint. A stale fixture never reached a visitor.
+#
+# What it protects is the evidence. A fixture that no longer matches the API is
+# a test suite asserting a contract that has moved, which is how "15/15 green"
+# stops meaning anything.
+#
+# THE BLAST RADIUS IS TWO REPOS, NOT ONE.
+#
+# The same table is mirrored in spotship/frontend at
+# apps/serica/e2e/mock-backend.mjs, serica's Playwright mock (ENG-5590). That
+# repo holds no API credential, so it cannot run this check itself. When this
+# job fails, BOTH copies need refreshing — see the failure output below.
+#
+# WHY `dev` AND NOT `prod`.
+#
+# rates.py is code: it reaches dev first (merge to dev -> staging), so dev is
+# where drift shows up earliest, and the dev credential is the one this repo
+# already holds for the E2E suite. The consequence is a window where dev has
+# deployed a change that prod has not; that is a true positive for the fixture,
+# which is derived from backend origin/dev, not a false alarm.
+#
+# COST: one request against the `insurance_rates` scope, which
+# config/settings/base.py throttles at 30/hour. Daily is free.
+#
+# TRIGGERS. `schedule` and `workflow_dispatch` are both read from the DEFAULT
+# branch only, so neither can reach this file until it has merged to `dev` —
+# the same trap documented at length in real-backend-e2e.yaml. The tag trigger
+# exists so the job can be proven to work on the pull request that adds it.
+#
+#   git tag rates-drift-$(date +%Y%m%d-%H%M) && git push origin --tags
+
+on:
+  schedule:
+    # 06:00 UTC daily, before the working day in London.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+  push:
+    tags:
+      - 'rates-drift-*'
+
+concurrency:
+  group: rates-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: Fixture matches the live rates endpoint
+    runs-on: ubuntu-latest
+    # Declaring the environment is what makes the secrets resolve; a job naming
+    # no environment sees only repository secrets, and there are none.
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fail loudly rather than skip. A green run that never made the request
+      # is worse than no run at all.
+      - name: Require credentials
+        env:
+          URL: ${{ secrets.SPOTSHIP_API_URL }}
+          KEY: ${{ secrets.SPOTSHIP_API_KEY }}
+        run: |
+          missing=""
+          [ -n "$URL" ] || missing="$missing SPOTSHIP_API_URL"
+          [ -n "$KEY" ] || missing="$missing SPOTSHIP_API_KEY"
+
+          if [ -n "$missing" ]; then
+            echo "::error::Missing secret(s) on the 'dev' environment:$missing"
+            echo "These are ENVIRONMENT secrets on 'dev', not repository secrets:"
+            echo "  gh secret set SPOTSHIP_API_URL --env dev"
+            echo "  gh secret set SPOTSHIP_API_KEY --env dev"
+            exit 1
+          fi
+
+      - name: Fetch the live payload
+        env:
+          URL: ${{ secrets.SPOTSHIP_API_URL }}
+          KEY: ${{ secrets.SPOTSHIP_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          # The trailing slash is load-bearing: Django's APPEND_SLASH answers a
+          # slashless path with a 301 and curl without -L does not follow it.
+          # Same reasoning as bin/generate-fallback-rates.sh.
+          RATES_URL="${URL%/}/insurance/rates/"
+
+          # -f so a 401/429/500 fails the step instead of being diffed as if it
+          # were a rate table.
+          curl -fsS \
+            -H "Authorization: Bearer $KEY" \
+            -H 'Accept: application/json' \
+            "$RATES_URL" > live.json
+
+          if [ ! -s live.json ] || [ "$(cat live.json)" = '{}' ]; then
+            echo "::error::the endpoint returned an empty body"
+            exit 1
+          fi
+
+      - name: Compare against the committed fixture
+        run: |
+          set -euo pipefail
+
+          # `_comment` records the provenance and is ours, not the API's.
+          # -S sorts keys on both sides so key order is never the difference.
+          jq -S 'del(._comment)' tests/fixtures/backend-rates.json > expected.json
+          jq -S '.' live.json > actual.json
+
+          if diff -u expected.json actual.json > drift.diff; then
+            echo "fixture matches the live endpoint ($(jq -r .updatedAt actual.json))"
+            exit 0
+          fi
+
+          echo "::error::tests/fixtures/backend-rates.json no longer matches the live rates endpoint"
+          echo
+          echo "fixture updatedAt: $(jq -r .updatedAt expected.json)"
+          echo "live    updatedAt: $(jq -r .updatedAt actual.json)"
+          echo
+          echo "--- committed fixture                +++ live endpoint"
+          cat drift.diff
+          echo
+          echo "TO FIX — BOTH COPIES, IN BOTH REPOS:"
+          echo
+          echo "1. spotship/wordpress-insurance (this repo)"
+          echo "     BACKEND=~/spotship/otto/backend bash bin/derive-backend-rates.sh"
+          echo "   then update any literal the suites assert against it, which at"
+          echo "   the time of writing is the updatedAt in tests/integration/RatesCacheTest.php."
+          echo
+          echo "2. spotship/frontend — apps/serica/e2e/mock-backend.mjs"
+          echo "   serica's Playwright mock carries the same table and holds no"
+          echo "   credential, so it cannot detect this for itself. Refresh its"
+          echo "   RATES_PAYLOAD, its updatedAt, and the date asserted in"
+          echo "   apps/serica/e2e/insuranceRates.spec.ts."
+          echo
+          echo "If the rates themselves look wrong rather than merely newer, that is"
+          echo "ENG-6383 (reconcile rates.py against the commercial sheet), not this."
+          exit 1
+
+      - name: Upload the diff
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rates-drift
+          path: |
+            drift.diff
+            expected.json
+            actual.json
+          if-no-files-found: ignore

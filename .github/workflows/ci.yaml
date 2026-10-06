@@ -1,0 +1,355 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: PHPCS + PHPStan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+
+      # Tee'd to files and uploaded. An exit code proves a gate ran; the report
+      # is what anyone reviewing the claim afterwards can actually read, and
+      # `pipefail` keeps the tee from swallowing the failure.
+      - name: PHPCS
+        run: |
+          set -o pipefail
+          composer exec -- phpcs --report-full --report-checkstyle=phpcs.xml | tee phpcs.txt
+      - name: PHPStan
+        if: always()
+        run: |
+          set -o pipefail
+          composer exec -- phpstan analyse --memory-limit=1G --error-format=table | tee phpstan.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: static-analysis-reports
+          path: |
+            phpcs.txt
+            phpcs.xml
+            phpstan.txt
+          if-no-files-found: warn
+
+  unit:
+    name: PHPUnit unit (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.2', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: composer exec -- phpunit --testsuite unit --log-junit junit-unit.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phpunit-unit-php${{ matrix.php }}
+          path: junit-unit.xml
+          if-no-files-found: warn
+
+  front-end:
+    # Deliberately its OWN job, not folded into e2e. This suite needs no browser
+    # and no Docker, so it must stay green even on a runner where Playwright
+    # cannot start — which is exactly the situation that made it worth writing.
+    name: Front-end (jsdom)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: jsdom suite
+        run: |
+          set -o pipefail
+          npm run test:js | tee jsdom.txt
+
+      # PROVE THE TESTS STILL DETECT THE DEFECTS THEY DESCRIBE.
+      #
+      # "Verified red before the fix" is a claim about a moment that has passed
+      # and cannot be checked later, and a regression test that quietly stopped
+      # detecting anything is indistinguishable from one that passes. This
+      # reintroduces each shipped defect and fails unless the named tests go
+      # red. It already caught one test of its own suite that did not.
+      - name: Mutation check
+        if: always()
+        run: |
+          set -o pipefail
+          node bin/mutation-check.js | tee mutation-check.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: front-end-reports
+          path: |
+            jsdom.txt
+            mutation-check.txt
+          if-no-files-found: warn
+
+  plugin-check:
+    # The official WP.org scanner. Worth running even though we do not list:
+    # it catches escaping, i18n and header faults that PHPCS does not, and this
+    # artifact is unpacked verbatim onto servers we do not control.
+    name: Plugin Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: composer install --no-interaction --no-progress
+      - run: npm ci
+      - run: npx wp-env start
+      - run: npx wp-env run cli wp plugin install plugin-check --activate
+      - run: npx wp-env run cli wp plugin check "$(basename "$PWD")" --format=table
+
+  version:
+    name: Version header matches constant
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash bin/assert-version.sh
+
+  release-config:
+    # RELEASE AUTOMATION IS ONLY EXERCISED BY RELEASING, UNLESS YOU MAKE IT
+    # OTHERWISE.
+    #
+    # package.json declared a `release` block for a year with semantic-release
+    # neither installed nor invoked, and nothing noticed, because nothing ever
+    # read it. A dry run on every push reads it: it loads the plugin chain,
+    # resolves the branch rules, and computes what the next version would be —
+    # without tagging, committing or publishing anything.
+    #
+    # It also proves bin/set-version.sh is wired in correctly, which is the step
+    # that keeps the tag and the two in-file versions from disagreeing.
+    name: Release config loads
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The dry run resolves the last tag; a shallow clone makes every
+          # release look like the first one.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: semantic-release --dry-run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+
+          # A dry run on a branch semantic-release does not release from exits
+          # non-zero with "this test run was triggered on a branch that is not
+          # configured". That is the expected answer on a PR branch, not a
+          # failure, so the two cases are told apart rather than conflated.
+          if npx semantic-release --dry-run 2>&1 | tee dry-run.log; then
+            echo "release config loaded"
+          elif grep -qi 'not configured\|does not match any of the configured branches' dry-run.log; then
+            echo "not a release branch — the configuration still loaded, which is what this job checks"
+          else
+            echo "::error::semantic-release could not load its configuration."
+            exit 1
+          fi
+
+      - name: bin/set-version.sh writes both places
+        run: |
+          set -euo pipefail
+
+          # The step semantic-release calls in prepare. Exercised here against a
+          # throwaway number so a broken sed is caught on every push rather than
+          # during a release, where it would abort after the version bump had
+          # already been computed.
+          bash bin/set-version.sh 99.98.97
+          EXPECTED_TAG=v99.98.97 bash bin/assert-version.sh
+          git checkout -- spotship-war-insurance.php
+          bash bin/assert-version.sh
+
+  workflows:
+    # A `run:` block is unparsed until its workflow runs, so a manually
+    # dispatched job is unverified code that reports nothing. The real-backend
+    # E2E workflow shipped with an unmatched quote in its evidence step and
+    # every other job here stayed green, because none of them parse that file.
+    name: Workflow shell parses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet pyyaml
+      - run: python3 bin/check-workflow-shell.py
+
+  i18n:
+    # A POT goes stale silently — nothing breaks and the omission only surfaces
+    # when a translator asks why a string is missing. Regenerating in CI and
+    # diffing is what turns that into a failure somebody sees.
+    name: Translation catalogue is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: bash bin/refresh-pot.sh
+      - name: The catalogue must already be up to date
+        run: |
+          if ! git diff --quiet -- languages/; then
+            echo "languages/ is stale — run bin/refresh-pot.sh and commit the result" >&2
+            git --no-pager diff -- languages/
+            exit 1
+          fi
+
+  integration:
+    name: PHPUnit integration (PHP ${{ matrix.php }} / WP ${{ matrix.wp }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The plugin declares "Requires at least: 6.4" and "Requires PHP: 8.1",
+        # and is installed on sites we do not control, so the FULL declared
+        # matrix runs rather than just the corners.
+        #
+        # This omitted 8.2 on the reasoning that testing both ends of both
+        # ranges was enough. The unit job has always run 8.2, so the gap was
+        # invisible unless you compared the two matrices — and 8.2 is a real
+        # supported version that a customer's host may well be on.
+        php: ['8.1', '8.2', '8.3']
+        wp: ['6.4', 'latest']
+    env:
+      WP_ENV_CORE: ${{ matrix.wp == 'latest' && 'WordPress/WordPress' || format('WordPress/WordPress#{0}', matrix.wp) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: npm ci
+      - run: npx wp-env start
+      - run: |
+          npx wp-env run tests-cli \
+            --env-cwd=wp-content/plugins/$(basename "$PWD") \
+            vendor/bin/phpunit -c phpunit-integration.xml.dist --log-junit junit-integration.xml
+
+      # THE SAME PROOF THE JSDOM SUITE GETS, FOR THE PHP TESTS.
+      #
+      # The integration tests had no fail-before-fix evidence: the mutation
+      # harness only drove the jsdom suite, so RenderInstancesTest, RebindTest
+      # and the decoy-parity fixture were all trusted rather than checked.
+      #
+      # One matrix combination, not four. The mutations exercise this plugin's
+      # own logic, which does not vary across the PHP/WP matrix, and each
+      # mutation costs a full suite run.
+      - name: Mutation check (integration)
+        if: matrix.php == '8.3' && matrix.wp == 'latest'
+        run: |
+          set -o pipefail
+          node bin/mutation-check.js --suite=php | tee mutation-check-php.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phpunit-integration-php${{ matrix.php }}-wp${{ matrix.wp }}
+          path: |
+            junit-integration.xml
+            mutation-check-php.txt
+          if-no-files-found: warn
+
+  e2e:
+    # This job is where the accessibility claim is actually earned. Playwright's
+    # runner will not start on the development machine (ENG-6418 — a LOCAL
+    # tooling problem, not a gap in coverage), so CI is the only place these
+    # specs execute. axe runs with no rules disabled.
+    name: Playwright + axe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      # ONE STEP ON PURPOSE. A process backgrounded with `&` is reaped when its
+      # step ends, so starting the stand-in upstream separately left it dead by
+      # the time the browser ran: every search answered "unavailable" and three
+      # specs failed in a way that read like a combobox bug.
+      #
+      # The plugin is pointed at this rather than at a real deployment, so a browser test
+      # never depends on a live service or a real credential.
+      - name: Run the browser suite against the stand-in upstream
+        run: |
+          set -euo pipefail
+
+          node bin/e2e-upstream.js &   # port 8080 — see the note in that file
+          UPSTREAM_PID=$!
+          trap 'kill "$UPSTREAM_PID" 2>/dev/null || true' EXIT
+
+          npx wp-env start
+
+          # `host.docker.internal` is a Docker Desktop convenience and does not
+          # resolve on Linux. The bridge gateway is how a container reaches the
+          # runner, so ask Docker for it rather than assuming 172.17.0.1.
+          GATEWAY=$(docker network inspect bridge \
+            --format '{{ (index .IPAM.Config 0).Gateway }}')
+          echo "bridge gateway: $GATEWAY"
+
+          SPOTSHIP_UPSTREAM="http://${GATEWAY}:8080" bash bin/seed-e2e.sh
+
+          # PROVE REACHABILITY FROM WHERE THE PLUGIN ACTUALLY RUNS, before the
+          # browser starts. wp_safe_remote_get() is the exact call the API
+          # client makes, so this exercises DNS, routing and
+          # wp_http_validate_url() in one go.
+          #
+          # Without it an unreachable upstream surfaces as three combobox specs
+          # failing on a missing aria-activedescendant, which reads like a
+          # front-end bug and is not one.
+          echo "--- can WordPress reach the stand-in upstream?"
+          npx wp-env run cli wp eval '
+            $r = wp_safe_remote_get( rtrim( get_option( "spotship_wi_settings" )["api_base_url"], "/" ) . "/insurance/rates/" );
+            if ( is_wp_error( $r ) ) {
+              fwrite( STDERR, "UNREACHABLE: " . $r->get_error_message() . "\n" );
+              exit( 1 );
+            }
+            echo "reachable, HTTP " . wp_remote_retrieve_response_code( $r ) . "\n";
+          '
+
+          npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 14

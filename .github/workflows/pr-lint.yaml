@@ -1,0 +1,9 @@
+name: PR lint
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  lint:
+    uses: spotship/.github/.github/workflows/pr-lint.yaml@main

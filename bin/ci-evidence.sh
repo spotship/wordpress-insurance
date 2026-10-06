@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+#
+# Collect a CI run's results into a readable evidence file.
+#
+# The pipeline's task directory otherwise holds only planning documents, so a
+# claim like "all gates green" has nothing behind it that a reviewer can check
+# weeks later. This writes the per-job conclusions and the suite totals, with
+# the run URL, so the claim and its evidence travel together.
+#
+# Usage: bin/ci-evidence.sh [run-id] [output-file]
+#
+# With no run id it resolves the newest run for the CURRENT HEAD and refuses to
+# write evidence for anything else. That default is the point: this file was
+# repeatedly left describing an older commit while the branch moved on, which
+# is worse than having no evidence — it reads as proof of a tree that is no
+# longer the one on the branch. Pass a run id explicitly to override, and it
+# will say so in the output.
+
+set -euo pipefail
+
+REPO="spotship/wordpress-insurance"
+HEAD_SHA=$( git rev-parse HEAD )
+
+if [ "$#" -ge 1 ] && [ -n "${1:-}" ]; then
+	RUN="$1"
+else
+	# --workflow, NOT just --commit. A push fires three workflows — CI, Check
+	# base branch and PR lint — and they are created in the same second, so
+	# picking the newest by timestamp is a coin toss between them. Landing on
+	# PR lint would write an evidence file saying "success" with one job and no
+	# suite totals: the exact silent degradation this file exists to prevent.
+	RUN=$( gh run list --repo "$REPO" --workflow ci.yaml --commit "$HEAD_SHA" \
+		--json databaseId,createdAt --jq 'sort_by(.createdAt) | last | .databaseId' )
+
+	if [ -z "$RUN" ] || [ "$RUN" = "null" ]; then
+		echo "ci-evidence: no ci.yaml run found for HEAD ($HEAD_SHA)." >&2
+		echo "ci-evidence: push the branch and let CI start, or pass a run id." >&2
+		exit 1
+	fi
+fi
+
+OUT="${2:-ci-evidence.md}"
+
+meta=$(gh run view "$RUN" --repo "$REPO" --json headSha,conclusion,createdAt,url)
+sha=$(jq -r .headSha <<<"$meta")
+conclusion=$(jq -r .conclusion <<<"$meta")
+created=$(jq -r .createdAt <<<"$meta")
+url=$(jq -r .url <<<"$meta")
+
+# THE GUARD. Evidence for a commit that is not HEAD is a claim about a tree
+# nobody is looking at any more.
+STALE=""
+if [ "$sha" != "$HEAD_SHA" ]; then
+	STALE="yes"
+	echo "ci-evidence: WARNING run $RUN is for $sha, but HEAD is $HEAD_SHA" >&2
+fi
+
+if [ "$conclusion" = "null" ] || [ -z "$conclusion" ]; then
+	echo "ci-evidence: run $RUN has not finished yet — refusing to record a partial result." >&2
+	exit 1
+fi
+
+{
+	echo "# CI evidence"
+	echo
+	echo "| | |"
+	echo "|---|---|"
+	echo "| Run | $url |"
+	echo "| Commit | \`$sha\` |"
+	echo "| Started | $created |"
+	echo "| Result | **$conclusion** |"
+
+	if [ -n "$STALE" ]; then
+		echo "| :warning: | **This run is NOT the current HEAD** (\`$HEAD_SHA\`). Re-run with no arguments. |"
+	fi
+
+	echo
+	echo "Collected by \`bin/ci-evidence.sh\` — re-run it against a newer run id"
+	echo "rather than editing the numbers below by hand."
+	echo
+	echo "## Jobs"
+	echo
+	echo "| Result | Job |"
+	echo "|---|---|"
+
+	gh run view "$RUN" --repo "$REPO" --json jobs \
+		--jq '.jobs[] | "| \(.conclusion) | \(.name) |"'
+
+	echo
+	echo "## Suite totals"
+	echo
+
+	for job in "Playwright + axe" "Front-end (jsdom)" "PHPUnit integration (PHP 8.3 / WP latest)"; do
+		# gh's own --jq takes no --arg, so pipe to jq for the parameterised query.
+		id=$(gh run view "$RUN" --repo "$REPO" --json jobs \
+			| jq -r --arg n "$job" '.jobs[] | select(.name==$n) | .databaseId')
+
+		[ -n "$id" ] || continue
+
+		echo "### $job"
+		echo
+		echo '```'
+		# gh redirects this to *.blob.core.windows.net. If that host is
+		# unreachable — a sandbox or an egress allow-list — the fetch fails
+		# and the section below reads "(no totals found in log)" with no
+		# error, which loses exactly the numbers this file carries. Allow the
+		# host rather than trusting an empty section.
+		gh api "repos/$REPO/actions/jobs/$id/logs" 2>/dev/null \
+			| grep -oE '[0-9]+ (passed|failed|skipped)( \([0-9.]+[ms]+\))?|all [0-9]+ (js |php )?mutation(\(s\)|s) detected|# (tests|pass|fail) [0-9]+' \
+			| sort -u || echo '(no totals found in log)'
+		echo '```'
+		echo
+	done
+
+	# THE REAL-BACKEND SUITE IS A SEPARATE WORKFLOW, AND ITS ABSENCE IS THE
+	# THING WORTH RECORDING.
+	#
+	# ci.yaml never touches a real deployment, so a green CI run says nothing
+	# about persistence, attribution or consent provenance. Leaving that out of
+	# the evidence lets "all gates green" read as more than it is — which is the
+	# exact failure this file exists to prevent, one workflow over.
+	echo "## Real backend"
+	echo
+
+	rb=$( gh run list --repo "$REPO" --workflow real-backend-e2e.yaml --commit "$HEAD_SHA" \
+		--json databaseId,conclusion,url,displayTitle,event,headBranch \
+		--jq 'sort_by(.databaseId) | last' 2>/dev/null || echo '' )
+
+	if [ -z "$rb" ] || [ "$rb" = "null" ]; then
+		echo "No real-backend run for this commit."
+		echo
+		echo "Persistence, attribution and consent provenance are therefore"
+		echo "evidenced only against the stand-in upstream. See README's known gaps."
+	else
+		echo "| | |"
+		echo "|---|---|"
+		echo "| Run | $( jq -r .url <<<"$rb" ) |"
+		echo "| Trigger | $( jq -r .event <<<"$rb" ) — $( jq -r .displayTitle <<<"$rb" ) |"
+		echo "| Result | **$( jq -r .conclusion <<<"$rb" )** |"
+		echo
+
+		# WHICH HALF RAN IS READ FROM THE TAG, NOT FROM THE EVENT TYPE.
+		#
+		# This said "a push event means read-only", which was true when
+		# `real-backend-2*` was the only tag pattern. `real-backend-writes-*`
+		# is also a push and DOES run the @writes pair, so the rule wrote
+		# "persistence is NOT covered here" onto exactly the runs that cover
+		# it. A file whose whole purpose is to keep a claim and its evidence
+		# together had started describing the wrong scope — the silent
+		# degradation it exists to prevent, in itself.
+		ref=$( jq -r .headBranch <<<"$rb" )
+
+		case "$( jq -r .event <<<"$rb" )/$ref" in
+			push/real-backend-writes-*)
+				echo "**Scope: includes \`@writes\`.** The tag \`$ref\` runs the two tests that"
+				echo "store a quote row and fire a referral email and Slack post, so"
+				echo "persistence, attribution and consent provenance ARE in scope —"
+				echo "but only if the run got past the health probe. A failure at the"
+				echo "probe means the browser never started and nothing was sent."
+				;;
+			push/*)
+				echo "**Scope: read-only.** A \`$ref\` tag excludes the two \`@writes\` tests that"
+				echo "store a quote row and fire a referral email and Slack post, so"
+				echo "persistence, attribution and consent provenance are NOT covered here."
+				echo "Only a \`real-backend-writes-*\` tag or \`writes=true\` covers those."
+				;;
+			*)
+				echo "Scope: a \`workflow_dispatch\` run. It covers the \`@writes\` tests only if"
+				echo "it was dispatched with \`writes=true\`; check the run's inputs."
+				;;
+		esac
+	fi
+} > "$OUT"
+
+echo "wrote $OUT"

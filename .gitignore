@@ -1,0 +1,22 @@
+# Ship pipeline artifacts — local only
+.ship/
+
+# Dependencies
+vendor/
+node_modules/
+
+# Build output
+dist/
+*.zip
+
+# Local env
+.env
+.DS_Store
+
+# Written by bin/mutation-check.js --suite=php; a transient report, never committed.
+mutation-junit.xml
+mutation-check-php.txt
+
+# PHPUnit writes these next to the config it was given; local runs only.
+.phpunit.result.cache
+.phpunit-integration.result.cache

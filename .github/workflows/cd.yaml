@@ -132,6 +132,42 @@ jobs:
 
       - run: npm ci
 
+      # THE RULESET HAS TO COME DOWN, AND ONLY THIS REPO NEEDS IT TO.
+      #
+      # package.json's release plugins include @semantic-release/git, which
+      # COMMITS spotship-war-insurance.php with the new version and pushes it
+      # straight to the branch being released. backend and the rest do not —
+      # their plugin list is commit-analyzer, release-notes-generator and
+      # github, so they only ever create a tag and a release, and a branch
+      # ruleset never sees them.
+      #
+      # We push. The dev and main rulesets both carry `non_fast_forward` and a
+      # pull_request rule requiring a review, and the only bypass actor is
+      # OrganizationAdmin in `pull_request` mode — which does NOT cover a direct
+      # push, no matter whose token it is. So RELEASE_PAT alone is not enough;
+      # enforcement has to be lifted for the push and put back afterwards. This
+      # is the same disable/restore the shared finish-release does for its
+      # back-merge, and the same shape as the back-merge job below.
+      #
+      # The ruleset is named after the branch — `dev` and `main` — which is what
+      # makes the lookup by $GITHUB_REF_NAME work for both release paths.
+      - name: Lift branch protection for the version commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          RULESET_ID=$(gh api "repos/$GITHUB_REPOSITORY/rulesets" \
+            --jq ".[] | select(.name == \"$GITHUB_REF_NAME\") | .id")
+          if [ -n "$RULESET_ID" ]; then
+            echo "RULESET_ID=$RULESET_ID" >> "$GITHUB_ENV"
+            gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" \
+              | jq '.enforcement = "disabled"' \
+              | gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" -X PUT --input -
+            echo "Disabled ruleset $RULESET_ID for $GITHUB_REF_NAME"
+          else
+            echo "No ruleset named '$GITHUB_REF_NAME', nothing to disable"
+          fi
+
       - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -139,6 +175,19 @@ jobs:
           SPOTSHIP_API_URL: ${{ secrets.SPOTSHIP_API_URL }}
           SPOTSHIP_API_KEY: ${{ secrets.SPOTSHIP_API_KEY }}
         run: npx semantic-release
+
+      # always(), because the branch must not be left unprotected by a release
+      # that failed halfway — which is exactly when it is most likely to happen.
+      - name: Restore branch protection
+        if: ${{ always() && env.RULESET_ID != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" \
+            | jq '.enforcement = "active"' \
+            | gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" -X PUT --input -
+          echo "Re-enabled ruleset $RULESET_ID"
 
   # Port of finish-release's clickup-release. main only: a dev prerelease is not
   # the thing that moves a ticket to appraisal.
@@ -177,11 +226,17 @@ jobs:
           for TICKET in $TICKETS; do
             echo "Updating $TICKET to 'appraisal'"
             BODY="${RUNNER_TEMP}/clickup_body"
+            # `|| CODE=000` is load-bearing under `set -e`: a transport-level
+            # curl failure (DNS, TLS, connection refused) exits nonzero, and
+            # without this the step dies HERE, before the warning branch below
+            # can run — turning the deliberately non-fatal reporting into a red
+            # release that has already shipped. A synthetic non-200 keeps the
+            # failure on the reporting path where it belongs.
             CODE=$(curl -sS -o "$BODY" -w '%{http_code}' -X PUT \
               "https://api.clickup.com/api/v2/task/${TICKET}?custom_task_ids=true&team_id=${CLICKUP_TEAM_ID}" \
               -H "Authorization: ${CLICKUP_API_TOKEN}" \
               -H "Content-Type: application/json" \
-              -d '{"status": "appraisal"}')
+              -d '{"status": "appraisal"}') || CODE="000"
             if [ "$CODE" = "200" ]; then
               echo " - OK"
             else

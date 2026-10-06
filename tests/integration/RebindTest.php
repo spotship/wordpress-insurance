@@ -117,16 +117,90 @@ final class RebindTest extends WP_UnitTestCase {
 		/*
 		 * A re-bind must not re-validate everything it did not touch.
 		 *
-		 * sanitize() requires https on the base url — correctly, it carries a
-		 * bearer credential. But a clone's database can hold a value that was
-		 * written before that rule, and routing a re-bind through the full
-		 * sanitizer BLANKS it. The install ends up bound, unconfigured, and
-		 * answering 502 to every visitor, with the admin screen reporting that
-		 * the re-bind succeeded. A recovery action that destroys the
-		 * configuration it is recovering is worse than the original fault.
+		 * register_setting()'s sanitize_callback filters EVERY update_option()
+		 * on this option, so without the short-circuit in sanitize() a re-bind
+		 * would run the whole stored option back through validation and discard
+		 * anything that would not pass today. A recovery action that destroys
+		 * the configuration it is recovering is worse than the original fault.
 		 *
-		 * Written straight to the option, before the filter exists, because
-		 * that is the only way the state arises: a database from elsewhere.
+		 * Seeded with the filter detached, like set_up() and like the plaintext
+		 * case below, so the fixture is the stored option verbatim rather than
+		 * whatever sanitize() would have made of it on the way in.
+		 */
+		unregister_setting( 'spotship_wi', Spotship_WI_Settings::OPTION );
+
+		update_option(
+			Spotship_WI_Settings::OPTION,
+			array(
+				'api_base_url'       => 'https://api.example.test',
+				'api_key'            => '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+				'bound_site_url'     => self::CLONE_URL,
+				'privacy_notice_url' => 'https://example.test/privacy',
+				'support_email'      => 'insurance@example.test',
+			)
+		);
+
+		register_setting(
+			'spotship_wi',
+			Spotship_WI_Settings::OPTION,
+			array(
+				'type'              => 'array',
+				'sanitize_callback' => array( 'Spotship_WI_Settings', 'sanitize' ),
+				'default'           => array(),
+			)
+		);
+
+		Spotship_WI_Settings::bind_to_current();
+
+		$this->assertSame(
+			Spotship_WI_Settings::current_site_url(),
+			Spotship_WI_Settings::bound_site_url(),
+			'the re-bind must still take effect'
+		);
+		$this->assertSame(
+			'https://api.example.test',
+			(string) Spotship_WI_Settings::get( 'api_base_url', '' ),
+			'the re-bind disturbed a base url it had no business touching'
+		);
+		$this->assertSame(
+			'3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+			(string) Spotship_WI_Settings::api_key(),
+			'the re-bind dropped the credential'
+		);
+		$this->assertSame(
+			'https://example.test/privacy',
+			(string) Spotship_WI_Settings::get( 'privacy_notice_url', '' ),
+			'the re-bind dropped the privacy notice url'
+		);
+		$this->assertSame(
+			'insurance@example.test',
+			(string) Spotship_WI_Settings::get( 'support_email', '' ),
+			'the re-bind dropped the support address'
+		);
+		$this->assertTrue(
+			Spotship_WI_Settings::is_configured(),
+			'an install that was configured before a re-bind must be configured after it'
+		);
+	}
+
+	public function test_rebinding_refuses_to_carry_a_plaintext_base_url(): void {
+		/*
+		 * THE ONE THING A RE-BIND DOES NOT CARRY THROUGH.
+		 *
+		 * api_base_url holds a bearer credential on every request. sanitize()
+		 * enforces https on it for that reason — but the re-bind branch above
+		 * deliberately skips sanitize(), so without an explicit guard a stored
+		 * `http://` value would survive, is_configured() would stay true,
+		 * submissions would be enabled, and Spotship_WI_Api_Client would put a
+		 * customer's API key on the wire in clear with nothing on the admin
+		 * screen saying so.
+		 *
+		 * Written straight to the option, before the filter exists, because that
+		 * is the only way the state arises: a database from elsewhere.
+		 *
+		 * The install coming back UNCONFIGURED is the deliberate cost. It hides
+		 * the table and declines to submit until an administrator supplies an
+		 * https base — which is the safe failure, not the convenient one.
 		 */
 		unregister_setting( 'spotship_wi', Spotship_WI_Settings::OPTION );
 
@@ -159,13 +233,33 @@ final class RebindTest extends WP_UnitTestCase {
 			'the re-bind must still take effect'
 		);
 		$this->assertSame(
-			'http://legacy.example.test',
+			'',
 			(string) Spotship_WI_Settings::get( 'api_base_url', '' ),
-			'the re-bind silently blanked the base url and left the install unconfigured'
+			'a plaintext base url survived the re-bind and would carry the bearer key in clear'
 		);
-		$this->assertTrue(
+		$this->assertFalse(
 			Spotship_WI_Settings::is_configured(),
-			'an install that was configured before a re-bind must be configured after it'
+			'an install whose base url was refused must not report itself configured'
+		);
+
+		/*
+		 * Still not a return to re-validating the whole option: only the base
+		 * url is refused, and everything beside it survives untouched.
+		 */
+		$this->assertSame(
+			'3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+			(string) Spotship_WI_Settings::api_key(),
+			'refusing the base url must not also drop the credential'
+		);
+		$this->assertSame(
+			'https://example.test/privacy',
+			(string) Spotship_WI_Settings::get( 'privacy_notice_url', '' ),
+			'refusing the base url must not also drop the privacy notice url'
+		);
+		$this->assertSame(
+			'insurance@example.test',
+			(string) Spotship_WI_Settings::get( 'support_email', '' ),
+			'refusing the base url must not also drop the support address'
 		);
 	}
 

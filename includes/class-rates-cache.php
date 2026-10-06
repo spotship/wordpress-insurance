@@ -240,15 +240,34 @@ final class Spotship_WI_Rates_Cache {
 	 *
 	 * Comparing the stored value against our own token makes the release a no-op
 	 * once we have been taken over.
+	 *
+	 * AND THE COMPARISON IS THE DELETE, for exactly the reason the takeover in
+	 * acquire_lock() is a single statement. A get_option() followed by a
+	 * delete_option() is a read-then-write race in its own right: A reads the
+	 * row and sees its own token; before it deletes, the lock ages past the TTL
+	 * and B takes it over; A's delete then removes B's row anyway. The ownership
+	 * test has to live in the WHERE clause so MySQL's row lock decides it.
 	 */
 	private static function release_lock(): void {
 		if ( null === self::$lock_token ) {
 			return;
 		}
 
-		if ( (string) get_option( self::LOCK, '' ) === self::$lock_token ) {
-			delete_option( self::LOCK );
-		}
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- the atomicity IS the lock; a cached read is the bug being removed. The cache entry is dropped below.
+		$wpdb->query(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $wpdb->options is a table name, not input.
+				"DELETE FROM {$wpdb->options}
+				 WHERE option_name = %s
+				   AND option_value = %s",
+				self::LOCK,
+				self::$lock_token
+			)
+		);
+
+		wp_cache_delete( self::LOCK, 'options' );
 
 		self::$lock_token = null;
 	}

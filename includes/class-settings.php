@@ -152,20 +152,46 @@ final class Spotship_WI_Settings {
 		 * cloned site.
 		 *
 		 * Second, and worse: re-validating the WHOLE option during a re-bind
-		 * silently discards anything that would not pass validation today. A
-		 * stored api_base_url that is not https is blanked, which leaves the
-		 * install bound, unconfigured, and answering 502 to every visitor — the
-		 * re-bind having apparently succeeded. A recovery action that can
-		 * destroy the configuration it is recovering is worse than the fault.
+		 * silently discards anything that would not pass validation today,
+		 * leaving the install bound, unconfigured, and answering 502 to every
+		 * visitor — the re-bind having apparently succeeded. A recovery action
+		 * that can destroy the configuration it is recovering is worse than the
+		 * fault.
 		 *
 		 * So: take the stored settings as they are and move the binding. The
 		 * ordering is what hid the first bug — the filter is registered on
 		 * admin_init at priority 10, so anything writing this option earlier
 		 * persists correctly and makes the write look sound.
+		 *
+		 * THE BASE URL IS THE ONE EXCEPTION, AND IT IS NOT A TIDINESS ONE.
+		 *
+		 * Preserving an unsafe base url verbatim was the whole point of the
+		 * paragraph above, and it was wrong. api_base_url carries a bearer
+		 * credential on every request: a stored `http://` value that survives a
+		 * re-bind leaves is_configured() true, submissions enabled, and
+		 * Spotship_WI_Api_Client putting a customer's API key on the wire in
+		 * clear. The sanitizer's https-only rule below exists precisely to stop
+		 * that, and a path that skips the sanitizer must not become the way
+		 * around it.
+		 *
+		 * Blanking it costs availability: the install comes back unconfigured
+		 * and the administrator has to supply an https base before submissions
+		 * resume. That is the right trade. An unconfigured install hides the
+		 * table and declines to submit; a configured one with a plaintext base
+		 * leaks the credential of every visitor who uses it, and nothing on the
+		 * screen would say so.
+		 *
+		 * Everything else is still carried through untouched — the api_key, the
+		 * privacy notice, the support address — so this is not a return to
+		 * re-validating the whole option.
 		 */
 		if ( self::$rebinding ) {
 			$rebound                   = self::all();
 			$rebound['bound_site_url'] = self::current_site_url();
+
+			if ( ! str_starts_with( (string) ( $rebound['api_base_url'] ?? '' ), 'https://' ) ) {
+				$rebound['api_base_url'] = '';
+			}
 
 			return $rebound;
 		}

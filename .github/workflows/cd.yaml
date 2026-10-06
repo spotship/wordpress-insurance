@@ -1,0 +1,363 @@
+name: "Continuous Deployment"
+
+# THE WHOLE RELEASE PIPELINE, IN ONE FILE, THE SAME SHAPE AS backend.
+#
+#   push to dev   -> open/update the release PR, then prerelease vX.Y.Z-dev.N
+#   push to main  -> release vX.Y.Z, move the tickets, back-merge into dev
+#
+# Every other repo in the org gets this by calling two reusable workflows from
+# spotship/.github: start-release and finish-release. This repo calls the first
+# and reimplements the second, and the reason is specific rather than a
+# preference.
+#
+# WHY finish-release IS REIMPLEMENTED HERE.
+#
+# Its `release-tag` job sets up Node and pnpm, declares no `environment`, and
+# installs no PHP. That is enough for every other repo, because their release is
+# just `npx semantic-release`. Ours is not. package.json's prepareCmd is:
+#
+#   bash bin/set-version.sh ${nextRelease.version}
+#     && bash bin/generate-fallback-rates.sh
+#     && bash bin/build-dist.sh
+#
+# which needs PHP 8.1 for the `php -r` shaping in generate-fallback-rates.sh,
+# composer for build-dist.sh, and `environment: prod` so SPOTSHIP_API_URL and
+# SPOTSHIP_API_KEY resolve — they are ENVIRONMENT secrets, and a job naming no
+# environment sees only repository and organisation secrets, of which there are
+# none. Calling the shared workflow would fail at the rate fetch every time.
+#
+# The alternative was adding `php_version` and `environment` inputs to the
+# shared workflow, which sits in front of six repos. This file keeps the blast
+# radius at one. If a second PHP repo ever appears, promote it.
+#
+# The three jobs below `release` are ports of finish-release's own, kept close
+# enough to diff against it: clickup-release, back-merge and notify-result. Its
+# fourth job IS our `release`.
+
+on:
+  push:
+    branches: ["main", "dev"]
+  workflow_dispatch:
+
+concurrency:
+  # NOT cancel-in-progress. A cancelled release is the bad case: semantic-release
+  # can have created the tag and pushed the version commit before the cancel
+  # lands, and it never retries a version it believes is released.
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Opens or updates the single `release: vX.Y.Z` PR from dev into main, and on
+  # main pushes posts the Slack thread the result is reported into. Runs
+  # `semantic-release --dry-run`, and `prepare` DOES NOT RUN under --dry-run —
+  # which matters more here than elsewhere, because our prepareCmd authenticates
+  # against the live prod rates endpoint. If the dry run executed prepare it
+  # would spend a request from the 30/hour insurance_rates budget on every push
+  # and fail anyway, since that job names no environment.
+  #
+  # pnpm_version is pinned because empty makes pnpm/action-setup read
+  # `packageManager` from package.json, which this repo does not declare.
+  start-release:
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: spotship/.github/.github/workflows/start-release.yaml@main
+    with:
+      project_name: wordpress-insurance
+      dev_branch: dev
+      node_version: "22"
+      pnpm_version: "9"
+    secrets: inherit
+
+  # finish-release's `release-tag`, with the two things it cannot give us.
+  #
+  # WHY THE ZIP IS BUILT BEFORE THE RELEASE IS PUBLISHED, IN THIS ONE JOB.
+  #
+  # The zip IS the product: customers install it, and the update checker fetches
+  # it from the release assets. A release published without its asset breaks
+  # auto-update for every install, and it is NOT self-healing — a later run sees
+  # that version as already released and never retries it, so recovery is
+  # manual.
+  #
+  # So the build runs inside semantic-release's `prepare` step, via the exec
+  # plugin in package.json, and @semantic-release/github attaches dist/*.zip as
+  # part of creating the release. A failed rate fetch or a failed zip aborts
+  # BEFORE the version commit, the tag and the release exist, and the next run
+  # retries cleanly from an unchanged repository.
+  release:
+    name: Version, build and publish
+    needs: [start-release]
+    if: ${{ always() && !cancelled() && needs.start-release.result == 'success' }}
+    runs-on: ubuntu-latest
+    # DECLARING THE ENVIRONMENT IS WHAT MAKES THE SECRETS RESOLVE.
+    #
+    # `prod`, not `production`: the org names its deployments dev and prod
+    # throughout. prod rather than dev even for a `dev` prerelease, because the
+    # bundled table must be what a customer's own install will actually receive;
+    # dev runs ahead of prod and a release should not bundle rates that are not
+    # live yet.
+    environment: prod
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    concurrency:
+      # Tighter than the workflow group above: main and dev must not release at
+      # the same moment, or both compute "the next version" from the same tag.
+      group: semantic-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # semantic-release reads the whole history to find the last tag and
+          # the commits since it. A shallow clone makes it believe every release
+          # is the first one.
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # generate-fallback-rates.sh shapes the fetched JSON with `php -r`, and
+      # build-dist.sh runs composer. Both are invoked from `prepare` below.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      - run: npm ci
+
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Consumed by bin/generate-fallback-rates.sh inside `prepare`.
+          SPOTSHIP_API_URL: ${{ secrets.SPOTSHIP_API_URL }}
+          SPOTSHIP_API_KEY: ${{ secrets.SPOTSHIP_API_KEY }}
+        run: npx semantic-release
+
+  # Port of finish-release's clickup-release. main only: a dev prerelease is not
+  # the thing that moves a ticket to appraisal.
+  clickup-release:
+    name: "clickup-release"
+    needs: [start-release, release]
+    if: >-
+      always() &&
+      !cancelled() &&
+      needs.release.result == 'success' &&
+      github.ref_name != 'dev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Extract ticket IDs and update ClickUp
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLICKUP_API_TOKEN: ${{ secrets.CLICKUP_API_TOKEN }}
+          CLICKUP_TEAM_ID: ${{ vars.CLICKUP_TEAM_ID }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+
+          CHANGELOG=$(gh pr list --repo "$GITHUB_REPOSITORY" --state merged \
+            --base main --head dev --limit 1 --json body --jq '.[0].body // empty')
+
+          TICKETS=$(echo "$CHANGELOG $COMMIT_MSG" | grep -oE 'ENG-[0-9]+' | sort -u || true)
+          if [ -z "$TICKETS" ]; then
+            echo "No ticket IDs found in release"
+            exit 0
+          fi
+
+          echo "Found tickets: $TICKETS"
+          for TICKET in $TICKETS; do
+            echo "Updating $TICKET to 'appraisal'"
+            BODY="${RUNNER_TEMP}/clickup_body"
+            CODE=$(curl -sS -o "$BODY" -w '%{http_code}' -X PUT \
+              "https://api.clickup.com/api/v2/task/${TICKET}?custom_task_ids=true&team_id=${CLICKUP_TEAM_ID}" \
+              -H "Authorization: ${CLICKUP_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d '{"status": "appraisal"}')
+            if [ "$CODE" = "200" ]; then
+              echo " - OK"
+            else
+              # Deliberately not fatal. The release has already happened; a
+              # ticket that would not move is a reporting problem, not a reason
+              # to redden a successful release.
+              echo "::warning::$TICKET did not move (HTTP $CODE): $(cat "$BODY")"
+            fi
+          done
+
+  # Port of finish-release's back-merge. Without this, every release leaves dev
+  # behind main by the version commit semantic-release just pushed, and the next
+  # release PR carries a phantom diff.
+  back-merge:
+    name: "back-merge"
+    needs: [release]
+    if: >-
+      always() &&
+      !cancelled() &&
+      needs.release.result == 'success' &&
+      github.ref_name != 'dev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: dev
+
+      # The dev ruleset forbids non-fast-forward pushes and requires a reviewed
+      # pull request, and OrganizationAdmin bypass is `pull_request` mode, which
+      # does not cover a direct push. So the ruleset comes down for the merge and
+      # goes back up in the `always()` step below. RELEASE_PAT, not GITHUB_TOKEN:
+      # ruleset administration is not in the default token's scope.
+      - name: Disable branch protection on dev
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          RULESET_ID=$(gh api "repos/$GITHUB_REPOSITORY/rulesets" --jq '.[] | select(.name == "dev") | .id')
+          if [ -n "$RULESET_ID" ]; then
+            echo "RULESET_ID=$RULESET_ID" >> "$GITHUB_ENV"
+            gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" \
+              | jq '.enforcement = "disabled"' \
+              | gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" -X PUT --input -
+            echo "Disabled ruleset $RULESET_ID"
+          else
+            echo "No ruleset named 'dev' found, nothing to disable"
+          fi
+
+      - name: Merge main into dev
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          if git merge origin/main --no-edit -m "chore: back-merge main into dev"; then
+            git push origin dev
+          else
+            echo "::warning::Merge conflict detected, opening a PR instead"
+            BRANCH="chore/back-merge-$(date +%Y%m%d%H%M%S)"
+            git merge --abort
+            git checkout -b "$BRANCH" origin/main
+            git push origin "$BRANCH"
+            gh pr create \
+              --base dev \
+              --head "$BRANCH" \
+              --title "chore: back-merge main into dev" \
+              --body "Automatic back-merge failed due to merge conflicts. Please resolve manually."
+          fi
+
+      - name: Re-enable branch protection on dev
+        if: ${{ always() && env.RULESET_ID != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" \
+            | jq '.enforcement = "active"' \
+            | gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" -X PUT --input -
+          echo "Re-enabled ruleset $RULESET_ID"
+
+  # Port of finish-release's notify-result. Threads the outcome under the
+  # "release starting" message start-release posted on the main push, and
+  # broadcasts it back to #releases.
+  #
+  # The changelog is the body of the merged dev -> main release PR, which
+  # start-release wrote from the commit subjects. It is reshaped for Slack the
+  # same way the shared workflow does it, because a release post that reads
+  # worse than every other repo's is a regression nobody will report.
+  notify-result:
+    name: "notify-result"
+    needs: [start-release, release, clickup-release]
+    if: ${{ always() && needs.start-release.outputs.thread_ts != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Setup Node.js
+        if: ${{ needs.release.result == 'success' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build success payload
+        if: ${{ needs.release.result == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLICKUP_API_TOKEN: ${{ secrets.CLICKUP_API_TOKEN }}
+          CLICKUP_TEAM_ID: ${{ vars.CLICKUP_TEAM_ID }}
+          THREAD_TS: ${{ needs.start-release.outputs.thread_ts }}
+          VERSION: ${{ needs.start-release.outputs.version }}
+          SLACK_CHANNEL: ${{ vars.SLACK_CHANNEL }}
+        run: |
+          set -euo pipefail
+
+          CHANGELOG=$(gh pr list --repo "$GITHUB_REPOSITORY" --state merged \
+            --base main --head dev --limit 1 --json body --jq '.[0].body // empty')
+
+          # Drop the trailing rule and the generated version heading, then
+          # demote the remaining headings to bold — Slack has no headings.
+          CHANGELOG=$(echo "$CHANGELOG" | sed '/^---$/,$d' | sed '/^# \[/d' | sed -E 's/^#{1,6} (.*)/**\1**/')
+
+          # GitHub markdown -> Slack mrkdwn.
+          npm install --no-save md-to-slack >/dev/null 2>&1
+          CHANGELOG=$(MARKDOWN="$CHANGELOG" node -e "const{markdownToSlack}=require('md-to-slack');console.log(markdownToSlack(process.env.MARKDOWN))")
+          CHANGELOG=$(echo "$CHANGELOG" | sed 's/^\* /• /; s/^- /• /' | sed '/^$/N;/^\n$/d')
+
+          # ENG-XXXX -> ClickUp links. Custom task IDs need custom_task_ids=true
+          # and the team id; without both the lookup 404s and the id is left as
+          # plain text, which is the intended fallback.
+          for TICKET in $(echo "$CHANGELOG" | grep -oE 'ENG-[0-9]+' | sort -u); do
+            URL=$(curl -sf "https://api.clickup.com/api/v2/task/${TICKET}?custom_task_ids=true&team_id=${CLICKUP_TEAM_ID}" \
+              -H "Authorization: ${CLICKUP_API_TOKEN}" | jq -r '.url // empty' || true)
+            if [ -n "$URL" ]; then
+              CHANGELOG=$(echo "$CHANGELOG" | sed "s#${TICKET}#<${URL}|${TICKET}>#g")
+            fi
+          done
+
+          # #NNNN refs, which squash-merge subjects carry, -> PR links.
+          for PR_NUM in $(echo "$CHANGELOG" | grep -oE '#[0-9]+' | tr -d '#' | sort -u); do
+            PR_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/pull/${PR_NUM}"
+            CHANGELOG=$(echo "$CHANGELOG" | perl -pe 's~\#'"${PR_NUM}"'(?=([^\d]|$))~<'"${PR_URL}"'|\#'"${PR_NUM}"'>~g')
+          done
+
+          TEXT=":white_check_mark: *Release complete: wordpress-insurance v${VERSION:-unknown}*
+
+          ${CHANGELOG}"
+
+          jq -n \
+            --arg channel "$SLACK_CHANNEL" \
+            --arg thread_ts "$THREAD_TS" \
+            --arg text "$TEXT" \
+            '{channel: $channel, thread_ts: $thread_ts, reply_broadcast: true, text: $text}' > payload.json
+
+      - name: Notify release complete
+        if: ${{ needs.release.result == 'success' }}
+        uses: slackapi/slack-github-action@v2
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload-file-path: payload.json
+
+      - name: Notify release failed
+        if: ${{ needs.release.result != 'success' }}
+        uses: slackapi/slack-github-action@v2
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ vars.SLACK_CHANNEL }}
+            thread_ts: "${{ needs.start-release.outputs.thread_ts }}"
+            reply_broadcast: true
+            text: ":x: *Release failed: wordpress-insurance*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"

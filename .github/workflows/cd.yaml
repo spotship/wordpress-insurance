@@ -30,9 +30,10 @@ name: "Continuous Deployment"
 # shared workflow, which sits in front of six repos. This file keeps the blast
 # radius at one. If a second PHP repo ever appears, promote it.
 #
-# The three jobs below `release` are ports of finish-release's own, kept close
-# enough to diff against it: clickup-release, back-merge and notify-result. Its
-# fourth job IS our `release`.
+# The rest of this file is finish-release's four jobs, ported. Its release-tag
+# IS our `release`; clickup-release and notify-result are jobs here too; and its
+# back-merge is a set of steps at the end of `release` rather than a job of its
+# own, for the concurrency reason set out where those steps are.
 
 on:
   push:

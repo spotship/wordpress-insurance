@@ -439,9 +439,9 @@ test( 'the rate table renders the disclaimers the endpoint serves', () => {
 	/*
 	 * These are not decoration. They state the figures are indicative only, not
 	 * an offer or a quote, and subject to underwriting; they name Spot Ship's
-	 * introducer role and the insurance partner; and they scope the audience to
-	 * commercial shipping businesses. The table is published on a third party's
-	 * public website, so omitting them is a compliance failure.
+	 * introducer role; and they scope the audience to commercial shipping
+	 * businesses. The table is published on a third party's public website, so
+	 * omitting them is a compliance failure.
 	 *
 	 * Serving them from the endpoint is also what makes deferring partner
 	 * sign-off tolerable — a wording change becomes a backend deploy rather than

@@ -189,6 +189,83 @@ jobs:
             | gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" -X PUT --input -
           echo "Re-enabled ruleset $RULESET_ID"
 
+      # THE BACK-MERGE IS STEPS IN THIS JOB, NOT A JOB OF ITS OWN.
+      #
+      # It was a separate job, serialised against `release` by a shared
+      # concurrency group. That is wrong, and quietly so: a concurrency group
+      # holds AT MOST ONE PENDING ENTRY, and queueing a new one CANCELS the
+      # pending one — `cancel-in-progress: false` only protects the entry that
+      # is already running. Two jobs from different runs contending for one
+      # group therefore do not queue up behind each other; the later arrival
+      # silently discards the earlier. A back-merge dropped that way leaves dev
+      # permanently behind main with nothing red to show for it.
+      #
+      # Folding it in removes the second entry entirely. One job takes the lock,
+      # releases, and back-merges before giving it up, so the ordering is the
+      # job's own step order rather than a scheduler's.
+      #
+      # Guarded on main: a dev prerelease has nothing to merge back.
+      - name: Lift dev branch protection for the back-merge
+        if: ${{ github.ref_name == 'main' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          DEV_RULESET_ID=$(gh api "repos/$GITHUB_REPOSITORY/rulesets" \
+            --jq '.[] | select(.name == "dev") | .id')
+          if [ -n "$DEV_RULESET_ID" ]; then
+            echo "DEV_RULESET_ID=$DEV_RULESET_ID" >> "$GITHUB_ENV"
+            gh api "repos/$GITHUB_REPOSITORY/rulesets/$DEV_RULESET_ID" \
+              | jq '.enforcement = "disabled"' \
+              | gh api "repos/$GITHUB_REPOSITORY/rulesets/$DEV_RULESET_ID" -X PUT --input -
+            echo "Disabled ruleset $DEV_RULESET_ID"
+          else
+            echo "No ruleset named 'dev', nothing to disable"
+          fi
+
+      # Without this, dev stays behind main by the version commit
+      # semantic-release just pushed, and the next release PR carries a
+      # phantom diff.
+      - name: Back-merge main into dev
+        if: ${{ github.ref_name == 'main' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # main moved during this job — semantic-release pushed the version
+          # commit — so refetch rather than merging the ref we checked out.
+          git fetch origin main dev
+          git checkout -B dev origin/dev
+
+          if git merge origin/main --no-edit -m "chore: back-merge main into dev"; then
+            git push origin dev
+          else
+            echo "::warning::Merge conflict detected, opening a PR instead"
+            BRANCH="chore/back-merge-$(date +%Y%m%d%H%M%S)"
+            git merge --abort
+            git checkout -b "$BRANCH" origin/main
+            git push origin "$BRANCH"
+            gh pr create \
+              --base dev \
+              --head "$BRANCH" \
+              --title "chore: back-merge main into dev" \
+              --body "Automatic back-merge failed due to merge conflicts. Please resolve manually."
+          fi
+
+      - name: Restore dev branch protection
+        if: ${{ always() && env.DEV_RULESET_ID != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/rulesets/$DEV_RULESET_ID" \
+            | jq '.enforcement = "active"' \
+            | gh api "repos/$GITHUB_REPOSITORY/rulesets/$DEV_RULESET_ID" -X PUT --input -
+          echo "Re-enabled ruleset $DEV_RULESET_ID"
+
   # Port of finish-release's clickup-release. main only: a dev prerelease is not
   # the thing that moves a ticket to appraisal.
   clickup-release:
@@ -246,99 +323,6 @@ jobs:
               echo "::warning::$TICKET did not move (HTTP $CODE): $(cat "$BODY")"
             fi
           done
-
-  # Port of finish-release's back-merge. Without this, every release leaves dev
-  # behind main by the version commit semantic-release just pushed, and the next
-  # release PR carries a phantom diff.
-  back-merge:
-    name: "back-merge"
-    needs: [release]
-    if: >-
-      always() &&
-      !cancelled() &&
-      needs.release.result == 'success' &&
-      github.ref_name != 'dev'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    concurrency:
-      # THE SAME GROUP AS `release`, AND IT HAS TO BE.
-      #
-      # This job writes to dev and toggles the dev ruleset. So does `release`
-      # when the push being released IS dev. They sit in different workflow
-      # runs — the workflow group is per-ref, so a main run and a dev run both
-      # proceed — and `needs` only orders jobs inside one run. Without this,
-      # the moment a main release frees the semantic-release lock, this
-      # back-merge can interleave with a queued dev prerelease: both disable
-      # the dev ruleset, one re-enables it while the other is still pushing,
-      # and that push is rejected — or they race on dev from stale checkouts.
-      #
-      # Sharing the group serialises every release-time writer to a branch.
-      # It cannot deadlock against `release` in this same run, because `needs`
-      # already guarantees that job has finished and released the lock.
-      group: semantic-release
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: dev
-
-      # The dev ruleset forbids non-fast-forward pushes and requires a reviewed
-      # pull request, and OrganizationAdmin bypass is `pull_request` mode, which
-      # does not cover a direct push. So the ruleset comes down for the merge and
-      # goes back up in the `always()` step below. RELEASE_PAT, not GITHUB_TOKEN:
-      # ruleset administration is not in the default token's scope.
-      - name: Disable branch protection on dev
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
-        run: |
-          set -euo pipefail
-          RULESET_ID=$(gh api "repos/$GITHUB_REPOSITORY/rulesets" --jq '.[] | select(.name == "dev") | .id')
-          if [ -n "$RULESET_ID" ]; then
-            echo "RULESET_ID=$RULESET_ID" >> "$GITHUB_ENV"
-            gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" \
-              | jq '.enforcement = "disabled"' \
-              | gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" -X PUT --input -
-            echo "Disabled ruleset $RULESET_ID"
-          else
-            echo "No ruleset named 'dev' found, nothing to disable"
-          fi
-
-      - name: Merge main into dev
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          if git merge origin/main --no-edit -m "chore: back-merge main into dev"; then
-            git push origin dev
-          else
-            echo "::warning::Merge conflict detected, opening a PR instead"
-            BRANCH="chore/back-merge-$(date +%Y%m%d%H%M%S)"
-            git merge --abort
-            git checkout -b "$BRANCH" origin/main
-            git push origin "$BRANCH"
-            gh pr create \
-              --base dev \
-              --head "$BRANCH" \
-              --title "chore: back-merge main into dev" \
-              --body "Automatic back-merge failed due to merge conflicts. Please resolve manually."
-          fi
-
-      - name: Re-enable branch protection on dev
-        if: ${{ always() && env.RULESET_ID != '' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
-        run: |
-          set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" \
-            | jq '.enforcement = "active"' \
-            | gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" -X PUT --input -
-          echo "Re-enabled ruleset $RULESET_ID"
 
   # Port of finish-release's notify-result. Threads the outcome under the
   # "release starting" message start-release posted on the main push, and

@@ -5,13 +5,13 @@
     "flat \u2014 a top-level `columns` list of plain strings and a top-level row list per",
     "product \u2014 a shape the API has never emitted, and the renderer and the whole e2e",
     "rate-table suite were built against it. Deriving it is the control.",
-    "Derived from spotship/backend origin/dev @ d734731e"
+    "Derived from spotship/backend origin/dev @ ad37797e"
   ],
   "updatedAt": "2026-09-30",
   "hull": {
     "disclaimers": [
       "These rates are indicative only. They are not an offer or a quote and are subject to underwriting.",
-      "Spot Ship acts solely as an introducer to Vanguard and does not underwrite insurance.",
+      "Spot Ship acts solely as an introducer and does not underwrite insurance.",
       "This service is intended for commercial shipping businesses and is not available to consumers.",
       "*Spot Ship discounted rates are only available when requesting quotes through this portal."
     ],
@@ -144,7 +144,7 @@
   "cargo": {
     "disclaimers": [
       "These rates are indicative only. They are not an offer or a quote and are subject to underwriting.",
-      "Spot Ship acts solely as an introducer to Vanguard and does not underwrite insurance.",
+      "Spot Ship acts solely as an introducer and does not underwrite insurance.",
       "This service is intended for commercial shipping businesses and is not available to consumers."
     ],
     "footnotes": [],

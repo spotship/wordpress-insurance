@@ -160,10 +160,10 @@ $sswi_stale = in_array( $sswi_tier, array( 'backup', 'bundled' ), true );
 	 *
 	 * They are not decoration. They state that the figures are indicative only,
 	 * not an offer or a quote, and subject to underwriting; they name Spot Ship's
-	 * introducer role and the insurance partner; and they scope the audience to
-	 * commercial shipping businesses rather than consumers. This table is
-	 * published on a third party's public website, so omitting them is a
-	 * compliance failure, not a missing flourish.
+	 * introducer role; and they scope the audience to commercial shipping
+	 * businesses rather than consumers. This table is published on a third
+	 * party's public website, so omitting them is a compliance failure, not a
+	 * missing flourish.
 	 *
 	 * Serving them from the rates endpoint rather than baking them into the
 	 * plugin is also what makes deferring partner sign-off tolerable: if the

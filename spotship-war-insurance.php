@@ -3,7 +3,7 @@
  * Plugin Name:       Spot Ship War Insurance
  * Plugin URI:        https://github.com/spotship/wordpress-insurance
  * Description:       War hull and war cargo insurance quote capture, proxied server-side to Spot Ship. The API credential never reaches the browser.
- * Version:           0.1.0
+ * Version:           1.0.0-dev.1
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            Spot Ship
@@ -26,7 +26,7 @@ defined( 'ABSPATH' ) || exit;
  * outbound request reports the constant. If they drift, the fleet reports one
  * version while updating against another, and stale-version alerting lies.
  */
-define( 'SPOTSHIP_WI_VERSION', '0.1.0' );
+define( 'SPOTSHIP_WI_VERSION', '1.0.0-dev.1' );
 define( 'SPOTSHIP_WI_FILE', __FILE__ );
 define( 'SPOTSHIP_WI_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SPOTSHIP_WI_URL', plugin_dir_url( __FILE__ ) );

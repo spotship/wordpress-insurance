@@ -1,0 +1,140 @@
+<?xml version="1.0"?>
+<ruleset name="Spot Ship War Insurance">
+	<description>WordPress Coding Standards + PHP 8.1 compatibility.</description>
+
+	<file>.</file>
+
+	<exclude-pattern>/vendor/*</exclude-pattern>
+	<exclude-pattern>/node_modules/*</exclude-pattern>
+	<exclude-pattern>/dist/*</exclude-pattern>
+	<exclude-pattern>/.ship/*</exclude-pattern>
+
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+	<arg value="ps"/>
+	<arg name="parallel" value="8"/>
+
+	<rule ref="WordPress">
+		<!--
+		  DELIBERATE, NOT AN OVERSIGHT. See .ship/TICKET.md §2 and the design doc.
+
+		  This plugin does not use WP nonces on its public proxy routes. For a
+		  logged-out visitor a nonce adds no CSRF value, and under a Cloudflare
+		  "cache everything" rule a nonce baked into cached HTML goes stale and
+		  EVERY submit 403s. The replacement is a deterministic HMAC over a
+		  timestamp and form id (`_sswi_ts` / `_sswi_sig`), which survives caching,
+		  plus an origin/referer check, a visually-hidden honeypot and per-IP
+		  transient limits.
+
+		  Without this commented exclusion a future maintainer sees a security
+		  warning on every handler, adds a nonce, and reintroduces the bug.
+		  Do not remove it without reading §2 first.
+		-->
+		<exclude name="WordPress.Security.NonceVerification"/>
+
+		<!-- Short array syntax is fine; the long-array sniff is noise here. -->
+		<exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
+
+		<!--
+		  File naming is defined by THIS plugin's autoloader, which strips the
+		  `Spotship_WI_` prefix: Spotship_WI_Rest_Proxy -> class-rest-proxy.php.
+		  See the spl_autoload_register() docblock in spotship-war-insurance.php.
+
+		  The sniff wants class-spotship-wi-rest-proxy.php. Renaming to satisfy
+		  it would put the prefix in every path twice over for no reader benefit,
+		  and the mapping is mechanical and documented in one place. The sniff's
+		  purpose — that a reader can find the file from the class name — is met.
+		-->
+		<exclude name="WordPress.Files.FileName.InvalidClassFileName"/>
+	</rule>
+
+	<!--
+	  Kept ON deliberately: these two mechanically enforce the escaping and
+	  sanitisation rules in §7/§8, so those controls stop depending on reviewer
+	  diligence. WordPress.Security.EscapeOutput and ValidatedSanitizedInput are
+	  the reason the ruleset is worth running at all.
+	-->
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<!--
+			  <element> nodes, not a comma-separated string. The string form was
+			  deprecated in PHPCS 3.3 and is removed in 4.0, and it emits a
+			  DEPRECATED banner on every run that trains people to ignore output.
+			-->
+			<property name="text_domain" type="array">
+				<element value="spotship-war-insurance"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="spotship_wi"/>
+				<element value="SPOTSHIP_WI"/>
+				<element value="Spotship_WI"/>
+				<!--
+				  `sswi` is this plugin's SHORT prefix and is not an abbreviation
+				  invented for the linter: it already namespaces the CSS classes
+				  (.sswi-field), the DOM hooks (data-sswi-*), the form fields
+				  (sswi_website, _sswi_ts) and the template locals. The sniff
+				  exists to stop UNprefixed globals, and these are prefixed —
+				  just with the four-letter form rather than the ten-letter one.
+				-->
+				<element value="sswi"/>
+			</property>
+		</properties>
+	</rule>
+
+	<!--
+	  TESTS DOCUMENT THEMSELVES BY NAME.
+
+	  Every test method here is named as a sentence —
+	  `test_a_401_hides_the_table_and_skips_the_whole_fallback_chain` — and the
+	  ones guarding a specific defect already carry a docblock explaining it.
+	  Requiring a @return docblock on top of that name adds no information and
+	  buries the ones that DO say something.
+
+	  Narrow on purpose: this relaxes commenting only, and only under tests/.
+	  Everything else — escaping, sanitisation, prefixing, PHP compatibility —
+	  still applies to the test suite.
+	-->
+	<rule ref="Squiz.Commenting.FunctionComment">
+		<exclude-pattern>/tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Generic.Commenting.DocComment">
+		<exclude-pattern>/tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.VariableComment">
+		<exclude-pattern>/tests/*</exclude-pattern>
+	</rule>
+
+	<!--
+	  The unit bootstrap DEFINES WordPress's own constants — ABSPATH,
+	  HOUR_IN_SECONDS and friends — because the unit suite deliberately never
+	  loads WordPress. The sniff reads them as unprefixed plugin globals, which
+	  is exactly backwards: they are WP core's names, and prefixing them would
+	  defeat the point of standing in for core.
+	-->
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound">
+		<exclude-pattern>/tests/bootstrap-unit.php</exclude-pattern>
+	</rule>
+
+	<!--
+	  PHPCS and PHPStan disagree here and PHPStan wins.
+
+	  WP_REST_Request is generic, so at level 6 PHPStan wants
+	  `WP_REST_Request<array<string, mixed>>` in the @param. Squiz cannot parse a
+	  generic annotation and reports the declared `WP_REST_Request` hint as a
+	  mismatch. Dropping the generic to satisfy Squiz would lose real type
+	  information; this sub-rule is the one that has to give.
+	-->
+	<rule ref="Squiz.Commenting.FunctionComment.IncorrectTypeHint">
+		<severity>0</severity>
+	</rule>
+
+	<config name="minimum_wp_version" value="6.4"/>
+	<config name="testVersion" value="8.1-"/>
+	<rule ref="PHPCompatibilityWP"/>
+</ruleset>

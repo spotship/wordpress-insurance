@@ -1,0 +1,89 @@
+version: '3'
+
+vars:
+  # This repo has NO host PHP requirement — the org runs Python everywhere else.
+  # Both of these resolve to a container when no host binary exists, so a fresh
+  # machine needs only Docker.
+  PHP:
+    sh: command -v php >/dev/null 2>&1 && echo "php" || echo 'docker run --rm -v "$PWD":/app -w /app php:8.1-cli php'
+  COMPOSER:
+    sh: command -v composer >/dev/null 2>&1 && echo "composer" || echo 'docker run --rm -v "$PWD":/app -w /app composer:2'
+  # wp-env mounts `"plugins": ["."]` at wp-content/plugins/<basename of the
+  # checkout>, NOT at the plugin's own slug. Inside the container this repo is
+  # `wordpress-insurance`, while a released zip installs as
+  # `spotship-war-insurance`. Hardcoding either breaks for somebody: the first
+  # for a differently-named clone, the second for everybody.
+  PLUGIN_SLUG:
+    sh: basename "$PWD"
+
+tasks:
+  init:
+    desc: "install composer + node deps and pre-commit hooks"
+    cmds:
+      - "{{.COMPOSER}} install --no-interaction"
+      - npm install
+      - pre-commit install
+
+  bootstrap:
+    desc: "alias of init (matches backend/elcano/mavis)"
+    cmds: [{ task: init }]
+
+  lint:
+    desc: "run PHPCS (WPCS + PHPCompatibilityWP)"
+    cmds: ["{{.PHP}} vendor/bin/phpcs {{.CLI_ARGS}}"]
+
+  lint-fix:
+    desc: "run PHPCBF"
+    cmds: ["{{.PHP}} vendor/bin/phpcbf {{.CLI_ARGS}}"]
+
+  stan:
+    desc: "run PHPStan level 6"
+    # --memory-limit=1G because PHPStan's parallel workers exhaust PHP's default
+    # 128M and die from inside a worker. That surfaces as "Child process error
+    # (exit code 255)", which reads like a code fault rather than an OOM.
+    cmds: ["{{.PHP}} vendor/bin/phpstan analyse --memory-limit=1G {{.CLI_ARGS}}"]
+
+  test:
+    desc: "lint + stan + PHP unit tests + front-end unit tests"
+    cmds:
+      [
+        { task: lint },
+        { task: stan },
+        { task: 'test:unit' },
+        { task: 'test:js' },
+        { task: 'test:mutation' },
+      ]
+
+  test:unit:
+    desc: "PHPUnit unit suite (no WordPress bootstrap)"
+    cmds: ["{{.PHP}} vendor/bin/phpunit --testsuite unit {{.CLI_ARGS}}"]
+
+  test:js:
+    desc: "front-end unit tests (jsdom, no browser, no Docker)"
+    # Deliberately NOT Playwright. This runs assets/js/war-insurance.js against a
+    # DOM shaped like the templates, so the state logic — what is submitted, what
+    # is regenerated, what is invalidated — is covered on a machine where the
+    # browser runner will not start (ENG-6418). It does not replace the e2e
+    # suite: layout, focus order and assistive technology still need a browser.
+    cmds: ["npm run test:js"]
+
+  test:mutation:
+    desc: "prove the regression tests still detect the defects they describe"
+    # Reintroduces each shipped defect and fails unless the named tests go red.
+    # A test that has quietly stopped detecting anything looks exactly like a
+    # test that passes, and "verified red before the fix" is a claim about a
+    # moment that has passed. This checks it on every run instead.
+    cmds: ["npm run test:mutation"]
+
+  test:integration:
+    desc: "PHPUnit integration suite inside wp-env (needs Docker)"
+    cmds:
+      - npx wp-env run tests-cli --env-cwd=wp-content/plugins/{{.PLUGIN_SLUG}} vendor/bin/phpunit -c phpunit-integration.xml.dist
+
+  test:e2e:
+    desc: "Playwright happy paths against wp-env (needs Docker)"
+    cmds: [npx playwright test tests/e2e/forms.spec.js tests/e2e/ready-state.spec.js --project=desktop]
+
+  test:a11y:
+    desc: "axe-core against wp-env (needs Docker)"
+    cmds: [npx playwright test tests/e2e/accessibility.spec.js --project=desktop]

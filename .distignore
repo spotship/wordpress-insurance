@@ -1,0 +1,41 @@
+# Everything that must NOT reach a customer's server.
+# The zip is unpacked verbatim into wp-content/plugins.
+
+.git
+.github
+.gitignore
+.gitattributes
+.editorconfig
+.distignore
+.pre-commit-config.yaml
+.wp-env.json
+.ship
+.idea
+.DS_Store
+
+tests
+bin
+node_modules
+package.json
+package-lock.json
+phpcs.xml.dist
+phpstan.neon.dist
+phpunit.xml.dist
+phpunit-integration.xml.dist
+# Glob, not the one filename: playwright.staging.config.js was added later
+# and shipped, because the blocklist named a file rather than a shape.
+playwright*.config.js
+Taskfile.yml
+composer.json
+composer.lock
+
+# Repository furniture and INTERNAL DOCUMENTATION. A staging dry-run showed all
+# of this reaching the zip: CLAUDE.md and TESTING.md describe the architecture,
+# the security invariants and the known gaps, and .claude/ is local agent
+# configuration. None of it belongs on a customer's server.
+.claude
+.coderabbit.yml
+renovate.json
+README.md
+CLAUDE.md
+TESTING.md

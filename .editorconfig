@@ -1,0 +1,29 @@
+# http://editorconfig.org
+#
+# Authored for this repo, NOT copied. `backend/.editorconfig` is the only one in
+# the workspace and it is Python-shaped (spaces), which fights WPCS on every save.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# WordPress Coding Standards use TABS for php, js AND css — not just php.
+# Nearly all plugin source is therefore tab-indented.
+[*.{php,js,css}]
+indent_style = tab
+indent_size = 4
+
+# YAML forbids tabs; json/xml conventionally spaces.
+[*.{json,yml,yaml,xml,dist,neon}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+# readme.txt is the WP.org format and is whitespace-sensitive.
+[readme.txt]
+trim_trailing_whitespace = false

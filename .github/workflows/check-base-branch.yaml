@@ -1,0 +1,9 @@
+name: Check base branch
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  check:
+    uses: spotship/.github/.github/workflows/check-base-branch.yaml@main

@@ -262,6 +262,23 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    concurrency:
+      # THE SAME GROUP AS `release`, AND IT HAS TO BE.
+      #
+      # This job writes to dev and toggles the dev ruleset. So does `release`
+      # when the push being released IS dev. They sit in different workflow
+      # runs — the workflow group is per-ref, so a main run and a dev run both
+      # proceed — and `needs` only orders jobs inside one run. Without this,
+      # the moment a main release frees the semantic-release lock, this
+      # back-merge can interleave with a queued dev prerelease: both disable
+      # the dev ruleset, one re-enables it while the other is still pushing,
+      # and that push is rejected — or they race on dev from stale checkouts.
+      #
+      # Sharing the group serialises every release-time writer to a branch.
+      # It cannot deadlock against `release` in this same run, because `needs`
+      # already guarantees that job has finished and released the lock.
+      group: semantic-release
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:

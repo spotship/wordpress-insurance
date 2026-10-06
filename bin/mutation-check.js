@@ -290,8 +290,8 @@ const MUTATIONS = [
 		suite: 'php',
 		what: 'the fetch lock is released without checking who holds it',
 		file: 'includes/class-rates-cache.php',
-		from: "if ( (string) get_option( self::LOCK, '' ) === self::$lock_token ) {\n\t\t\tdelete_option( self::LOCK );\n\t\t}",
-		to: 'delete_option( self::LOCK );',
+		from: "\"DELETE FROM {$wpdb->options}\n\t\t\t\t WHERE option_name = %s\n\t\t\t\t   AND option_value = %s\",\n\t\t\t\tself::LOCK,\n\t\t\t\tself::$lock_token",
+		to: "\"DELETE FROM {$wpdb->options}\n\t\t\t\t WHERE option_name = %s\",\n\t\t\t\tself::LOCK",
 		// A slow request deleting the lock of the request that took over from it
 		// lets a third fetch start while the second is still running.
 		mustFail: [ 'test_a_slow_request_does_not_release_the_lock_it_lost' ],

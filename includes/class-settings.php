@@ -129,6 +129,81 @@ final class Spotship_WI_Settings {
 	}
 
 	/**
+	 * May a bearer credential be sent to this base url?
+	 *
+	 * THE RULE IS "NEVER IN CLEAR ACROSS A ROUTABLE NETWORK", NOT "ALWAYS HTTPS".
+	 *
+	 * api_base_url carries the key on every request, so https is required for
+	 * anything a packet could traverse the internet to reach. Loopback and the
+	 * private ranges are carved out: a request to 127.0.0.1 or to a Docker
+	 * bridge gateway never leaves the host or the local segment, and forbidding
+	 * them buys no secrecy while making local development and the browser suite
+	 * impossible — the e2e stand-in upstream is plain http on the bridge
+	 * gateway, and an absolute rule silently disarmed the one-click re-bind
+	 * recovery path it tests.
+	 *
+	 * This is the same line browsers draw for secure contexts and RFC 8252 for
+	 * loopback redirect URIs.
+	 *
+	 * ONE HELPER, TWO CALLERS, DELIBERATELY. sanitize() applies it to every
+	 * submitted value and the re-bind branch applies it to the stored one. They
+	 * were allowed to disagree once and the disagreement WAS the vulnerability:
+	 * the re-bind skips sanitize(), so an unsafe base that the settings screen
+	 * would never have accepted survived anyway.
+	 *
+	 * @param string $url Base url to judge.
+	 */
+	public static function base_url_is_safe( string $url ): bool {
+		if ( str_starts_with( $url, 'https://' ) ) {
+			return true;
+		}
+
+		if ( ! str_starts_with( $url, 'http://' ) ) {
+			return false;
+		}
+
+		$parts = wp_parse_url( $url );
+		$host  = is_array( $parts ) ? (string) ( $parts['host'] ?? '' ) : '';
+
+		return '' !== $host && self::host_is_non_public( $host );
+	}
+
+	/**
+	 * Is this host unreachable from outside the machine or the local segment?
+	 *
+	 * A NAME IS ASSUMED ROUTABLE. `localhost` and the reserved `.localhost`
+	 * suffix are the only names treated as local: anything else could resolve
+	 * anywhere, and resolving it here would make the answer depend on whatever
+	 * DNS said at the moment somebody saved the settings.
+	 *
+	 * @param string $host Host portion of a url.
+	 */
+	private static function host_is_non_public( string $host ): bool {
+		// An IPv6 literal arrives bracketed from a url; inet parsing wants it bare.
+		$host = strtolower( trim( $host, '[]' ) );
+
+		if ( 'localhost' === $host || str_ends_with( $host, '.localhost' ) ) {
+			return true;
+		}
+
+		if ( false === filter_var( $host, FILTER_VALIDATE_IP ) ) {
+			return false;
+		}
+
+		/*
+		 * The flags REJECT private and reserved addresses, so a rejection here is
+		 * the carve-out matching. Reserved covers loopback (127.0.0.0/8, ::1) and
+		 * link-local; private covers 10/8, 172.16/12, 192.168/16 and fc00::/7 —
+		 * which is what a Docker bridge gateway is.
+		 */
+		return false === filter_var(
+			$host,
+			FILTER_VALIDATE_IP,
+			FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+		);
+	}
+
+	/**
 	 * Sanitise submitted settings.
 	 *
 	 * The single trust boundary between the settings screen and stored config.
@@ -170,16 +245,21 @@ final class Spotship_WI_Settings {
 		 * credential on every request: a stored `http://` value that survives a
 		 * re-bind leaves is_configured() true, submissions enabled, and
 		 * Spotship_WI_Api_Client putting a customer's API key on the wire in
-		 * clear. The sanitizer's https-only rule below exists precisely to stop
-		 * that, and a path that skips the sanitizer must not become the way
-		 * around it.
+		 * clear. The rule below exists precisely to stop that, and a path that
+		 * skips the sanitizer must not become the way around it — so the stored
+		 * value is judged by the SAME base_url_is_safe() the sanitizer applies
+		 * to a submitted one.
 		 *
 		 * Blanking it costs availability: the install comes back unconfigured
-		 * and the administrator has to supply an https base before submissions
+		 * and the administrator has to supply a safe base before submissions
 		 * resume. That is the right trade. An unconfigured install hides the
 		 * table and declines to submit; a configured one with a plaintext base
 		 * leaks the credential of every visitor who uses it, and nothing on the
 		 * screen would say so.
+		 *
+		 * A loopback or private-range http base is NOT unsafe and survives — see
+		 * base_url_is_safe(). That is what keeps local development and the
+		 * browser suite's stand-in upstream working.
 		 *
 		 * Everything else is still carried through untouched — the api_key, the
 		 * privacy notice, the support address — so this is not a return to
@@ -189,7 +269,7 @@ final class Spotship_WI_Settings {
 			$rebound                   = self::all();
 			$rebound['bound_site_url'] = self::current_site_url();
 
-			if ( ! str_starts_with( (string) ( $rebound['api_base_url'] ?? '' ), 'https://' ) ) {
+			if ( ! self::base_url_is_safe( (string) ( $rebound['api_base_url'] ?? '' ) ) ) {
 				$rebound['api_base_url'] = '';
 			}
 
@@ -201,12 +281,18 @@ final class Spotship_WI_Settings {
 		$clean    = self::defaults();
 
 		/*
-		 * https only, and never downgraded to http by a typo. This carries a
-		 * bearer credential on every request; a plaintext base URL would put a
-		 * customer's API key on the wire.
+		 * Never downgraded to http by a typo. This carries a bearer credential on
+		 * every request, so base_url_is_safe() requires https for any host a
+		 * packet could cross the internet to reach; see the carve-out it
+		 * documents for loopback and the private ranges.
+		 *
+		 * Both schemes are allowed THROUGH esc_url_raw and judged afterwards,
+		 * rather than filtered here, so that one helper owns the rule. Allowing
+		 * only https at this line would put half the decision in esc_url_raw and
+		 * half in the helper, which is how the two paths came to disagree before.
 		 */
-		$base                  = isset( $input['api_base_url'] ) ? esc_url_raw( trim( (string) $input['api_base_url'] ), array( 'https' ) ) : '';
-		$clean['api_base_url'] = str_starts_with( $base, 'https://' ) ? untrailingslashit( $base ) : '';
+		$base                  = isset( $input['api_base_url'] ) ? esc_url_raw( trim( (string) $input['api_base_url'] ), array( 'https', 'http' ) ) : '';
+		$clean['api_base_url'] = self::base_url_is_safe( $base ) ? untrailingslashit( $base ) : '';
 
 		/*
 		 * The key is never echoed back into the form, so an empty submission

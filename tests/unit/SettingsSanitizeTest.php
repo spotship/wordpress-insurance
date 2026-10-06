@@ -86,6 +86,66 @@ final class SettingsSanitizeTest extends TestCase {
 		$this->assertSame( '', $clean['api_base_url'] );
 	}
 
+	/**
+	 * A NAME IS ASSUMED ROUTABLE, including one that merely looks internal.
+	 *
+	 * Resolving it to decide would make the answer depend on whatever DNS said
+	 * at the moment somebody saved the settings, and an attacker who controls a
+	 * resolver could then talk the sanitizer into accepting plaintext.
+	 *
+	 * @dataProvider plaintext_hosts_that_must_be_rejected
+	 */
+	public function test_a_plaintext_base_url_on_a_routable_host_is_rejected( string $url ): void {
+		$clean = Spotship_WI_Settings::sanitize( array( 'api_base_url' => $url ) );
+
+		$this->assertSame( '', $clean['api_base_url'], $url . ' was accepted over plaintext' );
+	}
+
+	/**
+	 * @return array<string, array{string}>
+	 */
+	public function plaintext_hosts_that_must_be_rejected(): array {
+		return array(
+			'a public name'            => array( 'http://api.example.test' ),
+			'an internal-looking name' => array( 'http://api.internal' ),
+			'a public address'         => array( 'http://93.184.216.34' ),
+			// 127.0.0.1 written to look private by a host that is not.
+			'a near-miss address'      => array( 'http://126.255.255.255' ),
+			'no scheme at all'         => array( 'api.example.test' ),
+		);
+	}
+
+	/**
+	 * THE CARVE-OUT, AND WHY IT IS NOT A HOLE.
+	 *
+	 * A request to loopback or to a private-range address never leaves the host
+	 * or the local segment, so requiring https there buys no secrecy. Forbidding
+	 * it does cost something real: local development, and the browser suite,
+	 * whose stand-in upstream is plain http on the Docker bridge gateway.
+	 *
+	 * @dataProvider plaintext_hosts_that_must_be_allowed
+	 */
+	public function test_a_plaintext_base_url_on_a_non_public_host_is_kept( string $url ): void {
+		$clean = Spotship_WI_Settings::sanitize( array( 'api_base_url' => $url ) );
+
+		$this->assertSame( $url, $clean['api_base_url'], $url . ' was rejected but is not routable' );
+	}
+
+	/**
+	 * @return array<string, array{string}>
+	 */
+	public function plaintext_hosts_that_must_be_allowed(): array {
+		return array(
+			'localhost'               => array( 'http://localhost:8080' ),
+			'the .localhost suffix'   => array( 'http://wp.localhost:8080' ),
+			'loopback'                => array( 'http://127.0.0.1:8080' ),
+			// What `docker network inspect bridge` actually returns in CI.
+			'a docker bridge gateway' => array( 'http://172.17.0.1:8080' ),
+			'a private 10/8 address'  => array( 'http://10.1.2.3:8080' ),
+			'a private 192.168 host'  => array( 'http://192.168.1.10:8080' ),
+		);
+	}
+
 	public function test_an_https_base_url_is_kept_without_a_trailing_slash(): void {
 		$clean = Spotship_WI_Settings::sanitize( array( 'api_base_url' => 'https://api.example.test/' ) );
 

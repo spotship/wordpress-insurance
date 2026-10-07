@@ -36,11 +36,14 @@ fi
 #
 # EXPECTED_TAG EXISTS BECAUSE THE TAG CHECK MUST SURVIVE BEING CALLED.
 #
-# release.yaml is now also reachable through `workflow_call`, from the
-# semantic-release job that creates the tag in the first place. In that context
-# GITHUB_REF_TYPE is not `tag` — it is the caller's ref — so the check above
-# would silently skip, and skipping is the one outcome it exists to prevent.
-# The caller passes the tag it just made instead.
+# The real release never meets this script on a tag ref. semantic-release runs
+# prepare on a BRANCH, so GITHUB_REF_TYPE is `branch` and the check above would
+# silently skip — and skipping is the one outcome it exists to prevent. A
+# caller that knows the tag out of band passes it here instead, which is what
+# prod-preflight.yaml does to rehearse the check rather than skip it, what
+# ci.yaml does to prove the mismatch branch still fails, and what
+# reattach-release-asset.yaml does so the check does not depend on having been
+# reached from a tag ref.
 expected="${EXPECTED_TAG:-}"
 
 if [ -z "$expected" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then

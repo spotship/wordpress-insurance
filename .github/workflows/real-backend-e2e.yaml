@@ -101,7 +101,8 @@ jobs:
     # DECLARING THE ENVIRONMENT IS WHAT MAKES THE SECRETS RESOLVE.
     #
     # SPOTSHIP_API_URL/KEY are environment secrets: the same two names hold the
-    # dev values here and the prod values in release.yaml. One name per value,
+    # dev values here and the prod values in cd.yaml's release job. One name per
+    # value,
     # the environment says which deployment - rather than a DEV_/PROD_ prefix
     # pair that has to be kept in step by hand. A job that does not name an
     # environment sees only repository and organisation secrets, so removing

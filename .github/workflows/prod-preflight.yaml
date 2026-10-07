@@ -35,7 +35,7 @@ name: Prod release preflight
 # creates the release, so a build that fails after the tag exists leaves a
 # published version with no asset — which breaks auto-update for every install
 # and is NOT self-healing, because the next run sees that version as already
-# released and never retries it. See the long note in semantic-release.yaml.
+# released and never retries it. See the long note in cd.yaml.
 #
 # WHAT IT DOES NOT DO.
 #
@@ -139,8 +139,7 @@ jobs:
       # not yet on the default branch.
       #
       # So the rehearsal tells it which tag to expect, using the EXPECTED_TAG
-      # input assert-version.sh provides for exactly this reason (release.yaml
-      # passes it too, from the semantic-release job that made the tag). The
+      # input assert-version.sh provides for exactly this reason. The
       # check then RUNS AND PASSES rather than being skipped — strictly more
       # coverage than the real `prepare`, which meets it on a branch ref and
       # skips it.

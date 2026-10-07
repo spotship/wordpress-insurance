@@ -80,11 +80,21 @@ jobs:
 
       # THE TAG, NOT A BRANCH. The release is a specific tree, and the branch
       # tip moved on the moment anything else merged. Building the branch would
-      # attach a zip that is not the released version — the precise silent
-      # mismatch bin/assert-version.sh exists to catch.
+      # attach a zip that is not the released version.
+      #
+      # FULLY QUALIFIED, BECAUSE AN UNQUALIFIED REF IS AMBIGUOUS AND RESOLVES
+      # THE WRONG WAY. actions/checkout tries `origin/<ref>` as a BRANCH first
+      # and only falls back to a tag — so a branch sharing a release tag's name
+      # would be built instead of the release. `refs/tags/` removes the choice.
+      #
+      # assert-version.sh below does not cover this: it compares version
+      # STRINGS, so a branch carrying the same version header passes it while
+      # containing different code. The ref is the only place this can be fixed.
+      #
+      # The input is therefore a bare tag — `v1.2.3`, not `refs/tags/v1.2.3`.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: refs/tags/${{ inputs.tag }}
 
       - uses: shivammathur/setup-php@v2
         with:

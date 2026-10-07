@@ -157,8 +157,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
           set -euo pipefail
+
+          # THE REF IS DATA, NOT jq SOURCE.
+          #
+          # Interpolating $GITHUB_REF_NAME into the jq PROGRAM let the branch
+          # name rewrite the selector. `workflow_dispatch` above takes any ref,
+          # and a double quote is legal in a git branch name, so a crafted
+          # branch could make this select a DIFFERENT ruleset — naming `main`
+          # from a run on another branch and disabling production's protection.
+          # --arg binds it as a string instead, where no content can escape.
+          #
+          # Also why this guards on an exact single id below: a selector that
+          # matched two rulesets would otherwise produce two ids and a
+          # malformed request.
           RULESET_ID=$(gh api "repos/$GITHUB_REPOSITORY/rulesets" \
-            --jq ".[] | select(.name == \"$GITHUB_REF_NAME\") | .id")
+            | jq -r --arg name "$GITHUB_REF_NAME" \
+              '[.[] | select(.name == $name) | .id] | if length == 1 then .[0] else "" end')
           if [ -n "$RULESET_ID" ]; then
             echo "RULESET_ID=$RULESET_ID" >> "$GITHUB_ENV"
             gh api "repos/$GITHUB_REPOSITORY/rulesets/$RULESET_ID" \

@@ -99,10 +99,24 @@ is in [`TESTING.md`](TESTING.md).
 
 ## Releasing
 
-Tag → build zip → GitHub Release. `bin/build-dist.sh` stages the build in a
-temporary directory and never mutates the working checkout, and it checks the
-finished artifact against an **allow-list** of what may ship — a blocklist
-fails open, and the zip is unpacked verbatim onto a customer's server.
+Merge to `dev` or `main`. `cd.yaml` runs semantic-release, which derives the
+version from the conventional commits, writes it into the plugin header,
+generates the rate table, builds the zip, and publishes the GitHub Release with
+that zip attached. The build happens *before* the tag and the release exist, so
+a failed build aborts with nothing published.
+
+There is no manual release and no slash command, and pushing a version tag by
+hand does nothing — nothing is triggered by `v*`.
+
+`bin/build-dist.sh` stages the build in a temporary directory and never mutates
+the working checkout, and it checks the finished artifact against an
+**allow-list** of what may ship — a blocklist fails open, and the zip is
+unpacked verbatim onto a customer's server.
+
+If a release is ever published *without* its zip, `reattach-release-asset.yaml`
+rebuilds it from the tag and attaches it. semantic-release cannot: it treats an
+already-published version as complete, so a rerun exits "no relevant changes"
+and the asset stays missing.
 
 The bundled fallback rate table is generated at release time from the live
 endpoint. The repository ships it **empty** on purpose: these are commercially

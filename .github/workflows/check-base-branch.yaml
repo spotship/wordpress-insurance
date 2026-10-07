@@ -1,8 +1,24 @@
 name: Check base branch
 
+# OPENED ONLY, AND THE OTHER THREE WERE ACTIVELY HARMFUL.
+#
+# The shared workflow has no condition on the base branch: whenever a PR title
+# does not start with release/hotfix it runs `gh pr edit --base dev` and posts a
+# warning, even when the base is ALREADY dev. On a correctly-targeted PR that is
+# a no-op edit narrating itself — "targeting `dev` but has been automatically
+# redirected to `dev`".
+#
+# Subscribing to `edited` and `synchronize` therefore reposted that same warning
+# on every push and every description edit. One PR here collected ten identical
+# copies of it. backend and frontend subscribe to `opened` alone, which is why
+# they see exactly one and nobody has minded.
+#
+# A PR that is retargeted after opening is the case `opened` misses. That is
+# worth losing: the base is chosen at creation almost every time, and the check
+# is a nudge rather than a gate — it rewrites the base rather than failing.
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    types: [opened]
 
 jobs:
   check:

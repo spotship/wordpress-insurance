@@ -80,8 +80,8 @@ jobs:
   # The zip IS the product: customers install it, and the update checker fetches
   # it from the release assets. A release published without its asset breaks
   # auto-update for every install, and it is NOT self-healing — a later run sees
-  # that version as already released and never retries it, so recovery is
-  # manual.
+  # that version as already released and never retries it. Recovery is
+  # reattach-release-asset.yaml, dispatched by hand with the tag.
   #
   # So the build runs inside semantic-release's `prepare` step, via the exec
   # plugin in package.json, and @semantic-release/github attaches dist/*.zip as

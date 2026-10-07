@@ -1,0 +1,132 @@
+name: Reattach release asset
+
+# THE REPAIR TOOL FOR THE ONE FAILURE cd.yaml CANNOT UNDO. NOT A RELEASE PATH.
+#
+# Releases are made one way: merge to `dev` or `main` and cd.yaml runs
+# semantic-release. There is no manual release, no slash command, and nothing
+# here mints a version. This workflow exists for a single narrow state:
+#
+#   a release and its tag EXIST, but dist/*.zip is not attached to them.
+#
+# That state breaks auto-update for every install — plugin-update-checker reads
+# the version header out of the asset, and no asset means no upgrade is ever
+# offered — and cd.yaml cannot fix it, because semantic-release treats an
+# already-published version as complete. analyzeCommits finds nothing new, the
+# run exits "no relevant changes", and the missing zip stays missing forever.
+# See the long note on the `release` job in cd.yaml.
+#
+# The window is narrow but real. The build runs in `prepare`, BEFORE the tag and
+# the release exist, so a failed rate fetch or a failed zip aborts cleanly with
+# nothing published. What is left is the gap between creating the release and
+# uploading its asset: a network fault or a GitHub incident during that upload
+# leaves the release standing and the asset absent.
+#
+# WHY THIS IS NOT THE `release.yaml` IT REPLACES.
+#
+# The file this supersedes also carried `on: push: tags: ['v*']` and attached
+# via action-gh-release, which CREATES a release when the tag has none. Pushing
+# a tag by hand was therefore a second way to cut a release, which is exactly
+# what this repo is not supposed to have. Both are gone. `gh release upload`
+# fails when the release does not exist, so this can only ever repair a release
+# that semantic-release already made.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag whose zip is missing, e.g. v1.2.3.'
+        required: true
+        type: string
+
+concurrency:
+  group: reattach-release-asset-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  reattach:
+    name: Rebuild the zip for an existing release and attach it
+    runs-on: ubuntu-latest
+    # DECLARING THE ENVIRONMENT IS WHAT MAKES THE SECRETS RESOLVE.
+    #
+    # SPOTSHIP_API_URL/KEY are environment secrets, not repository secrets, and
+    # prod holds the figures a customer's install will actually receive. Same
+    # reasoning as the release job in cd.yaml and the prod-preflight job.
+    environment: prod
+    steps:
+      # REFUSE TO RUN UNLESS THE RELEASE ALREADY EXISTS.
+      #
+      # This is the guard that keeps this a repair tool. Without it a typo'd or
+      # invented tag would be a way to publish something, which is the whole
+      # thing we are avoiding. Checked before the build so the failure is
+      # instant and unambiguous rather than three minutes in.
+      - name: Require an existing release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::No release tagged '$TAG' exists in $GITHUB_REPOSITORY."
+            echo "This workflow repairs a release that is already published; it"
+            echo "does not create one. Releases come from merging to dev or main."
+            exit 1
+          fi
+
+          echo "Found release $TAG — rebuilding its asset."
+
+      # THE TAG, NOT A BRANCH. The release is a specific tree, and the branch
+      # tip moved on the moment anything else merged. Building the branch would
+      # attach a zip that is not the released version — the precise silent
+      # mismatch bin/assert-version.sh exists to catch.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      # The header and the constant must agree with each other AND with the tag
+      # being rebuilt, or this reattaches a correctly-named zip containing the
+      # wrong version. A tag ref sets GITHUB_REF_TYPE itself, but passing
+      # EXPECTED_TAG explicitly keeps the check independent of how it was
+      # reached.
+      - name: Assert the checked-out version matches the tag
+        env:
+          EXPECTED_TAG: ${{ inputs.tag }}
+        run: bash bin/assert-version.sh
+
+      - name: Generate the bundled fallback rate table
+        # The repository ships an EMPTY table on purpose — these are
+        # commercially approved figures and a placeholder would be invented
+        # numbers on a customer's public site. A failure here is fatal rather
+        # than degraded: a silently empty table removes the offline fallback
+        # without anyone noticing.
+        env:
+          SPOTSHIP_API_URL: ${{ secrets.SPOTSHIP_API_URL }}
+          SPOTSHIP_API_KEY: ${{ secrets.SPOTSHIP_API_KEY }}
+        run: bash bin/generate-fallback-rates.sh
+
+      # Enforces the ship-list allow-list and the credential scan, and fails on
+      # either. The same script the release itself runs, so there is one build
+      # chain rather than two that drift.
+      - run: bash bin/build-dist.sh
+
+      # --clobber so a retry is idempotent, and so a truncated upload from the
+      # original failure is replaced rather than refused as a duplicate.
+      - name: Attach the zip to the existing release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          zip=$(ls dist/*.zip)
+          gh release upload "$TAG" "$zip" --repo "$GITHUB_REPOSITORY" --clobber
+
+          echo "Attached $(basename "$zip") ($(wc -c < "$zip") bytes) to $TAG"

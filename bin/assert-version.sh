@@ -40,8 +40,10 @@ fi
 # prepare on a BRANCH, so GITHUB_REF_TYPE is `branch` and the check above would
 # silently skip — and skipping is the one outcome it exists to prevent. A
 # caller that knows the tag out of band passes it here instead, which is what
-# prod-preflight.yaml does to rehearse the check rather than skip it, and what
-# ci.yaml does to prove the mismatch branch still fails.
+# prod-preflight.yaml does to rehearse the check rather than skip it, what
+# ci.yaml does to prove the mismatch branch still fails, and what
+# reattach-release-asset.yaml does so the check does not depend on having been
+# reached from a tag ref.
 expected="${EXPECTED_TAG:-}"
 
 if [ -z "$expected" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then

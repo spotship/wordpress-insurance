@@ -1,0 +1,258 @@
+/**
+ * Scoped under .spotship-wi so nothing here can reach a customer's theme.
+ *
+ * --spotship-wi-accent is confined to NON-TEXT surfaces: borders and focus
+ * rings. A customer will set it to their brand colour, and if it were allowed
+ * to colour text — or to sit BEHIND text — we would have handed them a way to
+ * destroy contrast on a form we claim meets WCAG AA.
+ *
+ * "Behind text" is the half this comment used to get wrong. It listed the
+ * submit button's background as a non-text surface, and .sswi-submit paints
+ * white on it. With the default accent that is 5.1:1 and passes; with a pale
+ * brand colour it is nearer 1.2:1, and no axe run would ever show it, because
+ * axe only ever sees the default. The button's background is therefore a
+ * literal colour, not the token.
+ *
+ * There is no CSS-only way to guarantee readable text over an arbitrary
+ * author-supplied colour — color-mix() by a fixed amount does not do it, and
+ * contrast-color() is not deployable on sites we do not control. So the
+ * invariant is structural: the token never lands behind text.
+ * tests/js/contract.test.js enforces it.
+ */
+.spotship-wi {
+	--spotship-wi-accent: #0b5fff;
+	--spotship-wi-error: #a4262c;
+	--spotship-wi-border: #6b7280;
+	--spotship-wi-text: inherit;
+
+	color: var( --spotship-wi-text );
+}
+
+/* Visually hidden, still announced. */
+.spotship-wi .sswi-sr,
+.spotship-wi .sswi-hp {
+	position: absolute !important;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect( 0 0 0 0 );
+	white-space: nowrap;
+	border: 0;
+}
+
+.spotship-wi .sswi-field {
+	margin-block-end: 1rem;
+}
+
+.spotship-wi label {
+	display: block;
+	margin-block-end: 0.25rem;
+	font-weight: 600;
+}
+
+.spotship-wi input,
+.spotship-wi select,
+.spotship-wi textarea {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 32rem;
+	padding: 0.5rem;
+	border: 1px solid var( --spotship-wi-border );
+	border-radius: 4px;
+	font: inherit;
+}
+
+.spotship-wi input:focus-visible,
+.spotship-wi select:focus-visible,
+.spotship-wi textarea:focus-visible,
+.spotship-wi button:focus-visible,
+.spotship-wi .sswi-rates-scroll:focus-visible,
+.spotship-wi [role="option"]:focus-visible {
+	outline: 3px solid var( --spotship-wi-accent );
+	outline-offset: 2px;
+}
+
+.spotship-wi input[disabled],
+.spotship-wi select[disabled],
+.spotship-wi textarea[disabled],
+.spotship-wi button[disabled] {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.spotship-wi input[aria-invalid="true"] {
+	border-color: var( --spotship-wi-error );
+	border-width: 2px;
+}
+
+/*
+ * Errors are never colour alone: the glyph and the words carry the meaning, and
+ * the colour is reinforcement. Removing the ::before here would make this
+ * colour-only and fail SC 1.4.1.
+ */
+.spotship-wi .sswi-error {
+	margin-block-start: 0.25rem;
+	color: var( --spotship-wi-error );
+	font-weight: 600;
+}
+
+.spotship-wi .sswi-error::before {
+	content: "\26A0\FE0E  ";
+}
+
+.spotship-wi .sswi-summary {
+	padding: 0.75rem;
+	border: 2px solid var( --spotship-wi-error );
+	border-radius: 4px;
+	margin-block-end: 1rem;
+	font-weight: 700;
+}
+
+.spotship-wi .sswi-listbox {
+	position: relative;
+	z-index: 10;
+	max-width: 32rem;
+	max-height: 14rem;
+	overflow-y: auto;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	border: 1px solid var( --spotship-wi-border );
+	border-radius: 4px;
+	background: Canvas;
+}
+
+.spotship-wi [role="option"] {
+	padding: 0.5rem;
+	cursor: pointer;
+}
+
+.spotship-wi [role="option"][aria-selected="true"] {
+	outline: 2px solid var( --spotship-wi-accent );
+	outline-offset: -2px;
+	font-weight: 700;
+}
+
+.spotship-wi .sswi-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin: 0 0 0.5rem;
+	padding: 0;
+	list-style: none;
+}
+
+.spotship-wi .sswi-chips li {
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+	padding: 0.25rem 0.5rem;
+	border: 1px solid var( --spotship-wi-border );
+	border-radius: 999px;
+}
+
+.spotship-wi .sswi-submit {
+	padding: 0.6rem 1.2rem;
+	/*
+	 * LITERAL, not var( --spotship-wi-accent ): white text sits on this, so it
+	 * is a text-contrast surface and the customisable token must not reach it.
+	 * #0b5fff is the accent's own default, so the rendered button is unchanged
+	 * — 5.1:1 against #fff, which passes AA for normal text.
+	 *
+	 * The border matches rather than carrying the accent, so a customer whose
+	 * brand colour differs does not get a mismatched ring around a blue fill.
+	 * Their colour still reads on the control through the focus ring.
+	 */
+	border: 2px solid #0b5fff;
+	border-radius: 4px;
+	background: #0b5fff;
+	color: #fff;
+	font: inherit;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.spotship-wi .sswi-rates {
+	margin-block-end: 1.5rem;
+}
+
+/*
+ * Only the table scrolls, and the container is focusable so a keyboard-only
+ * visitor can reach the columns past the fold at 320px. See the note in
+ * templates/partials/rates-table.php.
+ */
+.spotship-wi .sswi-rates-scroll {
+	overflow-x: auto;
+}
+
+.spotship-wi .sswi-rates-updated {
+	font-weight: 700;
+}
+
+.spotship-wi table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.spotship-wi caption {
+	text-align: start;
+	font-weight: 700;
+	margin-block-end: 0.5rem;
+}
+
+.spotship-wi th,
+.spotship-wi td {
+	padding: 0.4rem 0.6rem;
+	border: 1px solid var( --spotship-wi-border );
+	text-align: start;
+}
+
+/* Reflow at 320px without horizontal scrolling of the form itself. */
+@media ( max-width: 30rem ) {
+	.spotship-wi input,
+	.spotship-wi select,
+	.spotship-wi textarea {
+		max-width: 100%;
+	}
+}
+
+@media ( prefers-reduced-motion: reduce ) {
+	.spotship-wi * {
+		transition: none !important;
+		animation: none !important;
+	}
+}
+
+/*
+ * The stale-rates warning. Conveyed by words and a glyph, not colour: a visitor
+ * deciding whether to act on a cached war-risk figure must be able to read the
+ * warning without perceiving the border colour.
+ */
+.spotship-wi .sswi-rates-stale {
+	padding: 0.6rem 0.75rem;
+	border: 2px solid var( --spotship-wi-error );
+	border-radius: 4px;
+	margin-block-end: 0.75rem;
+}
+
+.spotship-wi .sswi-rates-stale::before {
+	content: "\26A0\FE0E  ";
+}
+
+/*
+ * Disclaimers. Deliberately not small print: these state that the figures are
+ * indicative only and name the introducer relationship, on a page published on
+ * a third party's website. Styling them as a footnote would undercut the reason
+ * they are served at all.
+ */
+.spotship-wi .sswi-disclaimers {
+	margin-block-start: 0.75rem;
+	padding-inline-start: 0.75rem;
+	border-inline-start: 3px solid var( --spotship-wi-border );
+}
+
+.spotship-wi .sswi-disclaimers p {
+	margin-block: 0.4rem;
+}

@@ -1,0 +1,10 @@
+name: ClickUp
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, ready_for_review]
+
+jobs:
+  clickup:
+    uses: spotship/.github/.github/workflows/clickup.yaml@main
+    secrets: inherit

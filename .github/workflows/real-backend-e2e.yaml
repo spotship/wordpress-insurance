@@ -1,0 +1,413 @@
+name: Real backend E2E
+
+# DELIBERATE ONLY, and never on a pull request.
+#
+# This is the only suite that talks to the real API. It needs a live credential
+# and it writes real records, so it must not be reachable from a fork, a
+# pull_request event, or an ordinary push.
+#
+# TWO TRIGGERS, BECAUSE workflow_dispatch ALONE CANNOT REACH A NEW WORKFLOW.
+#
+# GitHub only offers `workflow_dispatch` for workflow files that exist on the
+# DEFAULT branch. This file has never been on `dev`, so dispatching it answers
+# `HTTP 404: workflow not found` and the suite was unrunnable until the very
+# pull request that introduces it had merged — a suite that cannot run until
+# after the review it is meant to inform.
+#
+# A `push` event reads the workflow from the ref that was pushed, so a tag
+# reaches it on any branch. `real-backend-*` is not an ordinary push: creating
+# and pushing that tag is an explicit act by someone with write access, it
+# cannot come from a fork, and it names the run in the tag itself. The
+# no-automatic-trigger property is intact — there is still no path from a code
+# push or a pull request to this job.
+#
+#   git tag real-backend-$(date +%Y%m%d-%H%M) && git push origin --tags
+#
+# THE WRITING TESTS ARE OPT-IN, AND THAT IS NOT TIMIDITY.
+#
+# Two tests submit a valid payload from a correctly-bound site, so two create
+# real QuoteRequest rows — and the backend fires a referral EMAIL and a SLACK
+# post for every row it stores. notifications.py posts to
+# INSURANCE_REFERRAL_WEBHOOK_URL, which its own docblock says is the same
+# Workflow Builder workflow the serica referral views use. A test submission can
+# therefore arrive in front of whoever reads that channel looking exactly like a
+# real insurance enquiry, and the row cannot be un-sent.
+#
+# Everything else in the suite is read-only against the real deployment: real
+# autocomplete, real rate data, axe on the real table, a real 401 from real
+# authentication, a real DNS failure, the origin-binding refusal, and the
+# no-JavaScript case. Those need no permission from anyone, so they are the
+# default and the writing pair is held behind `writes`.
+#
+# A `real-backend-2*` tag is read-only. `real-backend-writes-*` includes the
+# writing pair, as does workflow_dispatch with writes=true.
+#
+# THE WRITING HALF RUNS ABOUT ONCE AN HOUR, AND THAT IS A HARD LIMIT.
+#
+# backend/insurance/views.py puts both submit endpoints behind
+# ScopedRateThrottle with scope `insurance_quote`, which config/settings/base.py
+# sets to 20/hour. A writing run spends about FIFTEEN of that budget: four
+# submissions, four replays, the re-bind, the invalid-email row, and five more
+# for the throttle test, which must reach the plugin's own limit of 5 before
+# the 6th is refused locally. So TWO writing runs inside one hour exhaust it
+# and the second starts refused. The read-only half still costs about six.
+#
+# This is not theoretical. A run at 07:36 on 2026-10-01 went 14/15; a run at
+# 07:46 came back 8/15 with every writing test answering 429, reported by three
+# different assertions as three different confident and wrong causes. See
+# tests/support/quote-budget.js, which now names it instead.
+#
+# Re-tagging after a failure is therefore NOT free. If the writing half failed
+# on anything other than the probe, check the clock before tagging again.
+#
+# The referral destinations were confirmed on 2026-10-01: dev's
+# INSURANCE_REFERRAL_WEBHOOK_URL is NOT prod's (the two differ), and
+# INSURANCE_REFERRAL_EMAIL_RECEIVER on dev is tech@spot-ship.com — an internal
+# engineering inbox. So a writing run notifies Spot Ship engineers, not whoever
+# handles real customer referrals. That was the question worth answering before
+# ever running it.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why this run is being made (recorded in the evidence)'
+        required: true
+        default: 'Verify ENG-5587 against the real backend'
+      writes:
+        description: 'Also run the two tests that create real quote rows (fires referral email + Slack)'
+        type: boolean
+        required: false
+        default: false
+  push:
+    tags:
+      # Read-only.
+      - 'real-backend-2*'
+      # Includes the @writes tests. A separate, deliberately uglier prefix,
+      # because `workflow_dispatch` with writes=true is unavailable until this
+      # file reaches the default branch and the writing half should not be one
+      # typo away from an ordinary run.
+      - 'real-backend-writes-*'
+
+concurrency:
+  # Never two at once: concurrent runs would interleave submissions and make
+  # the resulting records ambiguous about which run produced them.
+  group: real-backend-e2e
+  cancel-in-progress: false
+
+jobs:
+  real-backend:
+    name: Real backend
+    runs-on: ubuntu-latest
+    # DECLARING THE ENVIRONMENT IS WHAT MAKES THE SECRETS RESOLVE.
+    #
+    # SPOTSHIP_API_URL/KEY are environment secrets: the same two names hold the
+    # dev values here and the prod values in cd.yaml's release job. One name per
+    # value,
+    # the environment says which deployment - rather than a DEV_/PROD_ prefix
+    # pair that has to be kept in step by hand. A job that does not name an
+    # environment sees only repository and organisation secrets, so removing
+    # this line makes both empty and the guard below fails the run.
+    #
+    # `dev`, not `staging`: the org names its deployments dev and prod
+    # throughout - backend-dev.spot-ship-app.com, flower-dev, entity-search-dev,
+    # dev.spotship.internal. This file said `staging`, which named no real
+    # environment.
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      # FAIL LOUDLY RATHER THAN SKIP. A job that silently passes because its
+      # secrets are absent is worse than no job: it reports green for a suite
+      # that never ran, which is the exact failure this whole ticket has been
+      # about.
+      - name: Require credentials
+        env:
+          URL: ${{ secrets.SPOTSHIP_API_URL }}
+          KEY: ${{ secrets.SPOTSHIP_API_KEY }}
+        run: |
+          missing=""
+          [ -n "$URL" ] || missing="$missing SPOTSHIP_API_URL"
+          [ -n "$KEY" ] || missing="$missing SPOTSHIP_API_KEY"
+
+          if [ -n "$missing" ]; then
+            echo "::error::Missing secret(s) on the 'dev' environment:$missing"
+            echo "This suite verifies persistence, attribution and consent provenance"
+            echo "against the real backend. It cannot be faked, and it must not pass"
+            echo "without running."
+            echo
+            echo "These are ENVIRONMENT secrets on 'dev', not repository secrets:"
+            echo "  gh secret set SPOTSHIP_API_URL --env dev"
+            echo "    https://backend-dev.spot-ship-app.com/api"
+            echo "  gh secret set SPOTSHIP_API_KEY --env dev"
+            echo "    a Customer.api_key uuid, minted in the dev Django admin"
+            echo
+            echo "SPOTSHIP_API_URL is the BASE, ending at /api - the same value the"
+            echo "plugin stores in api_base_url. The endpoint paths are appended by"
+            echo "the code, not baked into the secret. Confirm a candidate with:"
+            echo "  curl -s -o /dev/null -w '%{http_code}' \\"
+            echo "    https://backend-dev.spot-ship-app.com/api/insurance/rates/"
+            echo "401 means the endpoint is there and wants a key; 404 means the"
+            echo "base is wrong."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      # EVERYTHING SLOW HAPPENS BEFORE THE PROBE, NOT AFTER IT.
+      #
+      # `wp-env start` pulls and boots containers and takes over two minutes on
+      # a cold runner. It needs nothing from the dev deployment, so there is no
+      # reason for it to sit between the health check and the suite — see the
+      # probe's own comment for what it cost when it did.
+      - name: Bring up WordPress
+        env:
+          SPOTSHIP_UPSTREAM: ${{ secrets.SPOTSHIP_API_URL }}
+          SPOTSHIP_API_KEY: ${{ secrets.SPOTSHIP_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          npx wp-env start
+          bash bin/seed-e2e.sh
+
+      # WHAT DOES THE DEPLOYMENT ACTUALLY ANSWER? ASK IMMEDIATELY BEFORE THE
+      # BROWSER DOES — NOT FOUR MINUTES EARLIER.
+      #
+      # The first real run failed with "the real backend returned no locations
+      # for rotterdam", and that message cannot tell you WHY: an empty search
+      # index, a 403 on a key without search entitlement, and a 503 from
+      # OpenSearch all look identical from inside a combobox. The artifact that
+      # would have said is only reachable by downloading it.
+      #
+      # So the facts go in the JOB LOG. This is the same move ci.yaml makes for
+      # the stand-in upstream, where three specs once failed on a missing
+      # aria-activedescendant that was really an unreachable host.
+      #
+      # THE POSITION OF THIS STEP IS THE WHOLE POINT, AND IT WAS WRONG.
+      #
+      # It used to run before setup-node, npm ci, playwright install and
+      # `wp-env start`. On 2026-10-01 it found its healthy window at 06:15:46
+      # and the first test did not start until 06:19:21 — three and a half
+      # minutes later, while the attempt table immediately above it showed a
+      # flap cycle of about two minutes. Seven tests then failed with empty
+      # comboboxes. The gate had proved a window EXISTED, which is not the
+      # question; the question is whether one exists when the browser starts.
+      # Nothing here runs between this step and the suite.
+      #
+      # The key is passed as a header from the environment and never echoed;
+      # only the status and the result COUNT are printed.
+      - name: What does the dev backend answer?
+        env:
+          URL: ${{ secrets.SPOTSHIP_API_URL }}
+          KEY: ${{ secrets.SPOTSHIP_API_KEY }}
+        run: |
+          set -uo pipefail
+
+          # WAIT FOR A HEALTHY WINDOW RATHER THAN SAMPLING ONCE.
+          #
+          # Three probes over thirty minutes gave all-500, then all-200 with
+          # five real Rotterdam hits, then all-500 again. The dev deployment is
+          # FLAPPING, not down — and a single sample of a flapping service turns
+          # a whole suite into a coin toss, which is how two confident and
+          # contradictory conclusions got written into this repository's docs
+          # before anyone noticed the pattern.
+          #
+          # So poll for a window in which all three answer 2xx, and only then
+          # start the browser. Bounded: if no window appears, the run fails with
+          # the attempt table, which IS the evidence of flapping.
+          #
+          # TEN ATTEMPTS WAS TOO IMPATIENT FOR WHAT WE NOW KNOW.
+          #
+          # Four writing runs on 2026-10-01 measured the deployment properly.
+          # One found its window on attempt 7 of 10; one found it on attempt 1;
+          # two exhausted all ten. When a window does open it stays open for at
+          # least three minutes — run 36828243053 drove fifteen specs against
+          # real data without a single search failing — so the problem is
+          # purely how long we are willing to wait for one to start.
+          #
+          # Thirty attempts is ten minutes of polling on a runner that is
+          # already paid for, against a suite that cannot be verified any other
+          # way. A run that fails here costs ten minutes; a run that gives up
+          # too early costs another full cycle of push, tag and wait.
+          ATTEMPTS=30
+          GAP=20
+
+          probe_one() {
+            local path="$1"
+            curl -sS --max-time 20 -o /tmp/probe-body -w '%{http_code}' \
+              -H "Authorization: Bearer ${KEY}" \
+              -H 'Accept: application/json' \
+              "${URL%/}/${path}" 2>/dev/null || echo "000"
+          }
+
+          describe() {
+            # A count and a size, never the payload: these are commercial
+            # figures and customer records, and a job log is public to everyone
+            # with repository access.
+            local status="$1"
+
+            printf '%s objects, %s bytes' \
+              "$( grep -o '"id"' /tmp/probe-body 2>/dev/null | wc -l | tr -d ' ' )" \
+              "$( wc -c < /tmp/probe-body 2>/dev/null | tr -d ' ' )"
+
+            if [ "$status" -ge 500 ] 2>/dev/null; then
+              local title marker
+              title=$( tr -d '\n' < /tmp/probe-body | sed -n 's/.*<title>\(.*\)<\/title>.*/\1/p' | head -c 160 )
+
+              if [ -n "$title" ]; then
+                printf ' — %s' "$title"
+              else
+                # Which kind of 500 decides where to look: Django raised, or
+                # Django never answered.
+                marker="unrecognised body"
+                grep -qi 'Traceback' /tmp/probe-body          && marker="Django debug traceback (DEBUG on)"
+                grep -qi 'Server Error (500)' /tmp/probe-body && marker="Django 500 page (DEBUG off)"
+                grep -qi 'nginx' /tmp/probe-body              && marker="nginx page — did not reach Django"
+                grep -qi '502 Bad Gateway' /tmp/probe-body    && marker="502 from a proxy — Django did not answer"
+                printf ' — %s' "$marker"
+              fi
+            fi
+          }
+
+          HEALTHY=""
+
+          for attempt in $( seq 1 "$ATTEMPTS" ); do
+            R=$( probe_one "insurance/rates/" );                                  R_D=$( describe "$R" )
+            L=$( probe_one "insurance/location_search/?query=rotterdam" );         L_D=$( describe "$L" )
+            V=$( probe_one "insurance/vessel_search/?query=ever" );                V_D=$( describe "$V" )
+
+            echo "attempt $attempt/$ATTEMPTS  rates=$R  location_search=$L  vessel_search=$V"
+            echo "    rates           $R_D"
+            echo "    location_search $L_D"
+            echo "    vessel_search   $V_D"
+
+            case "$R$L$V" in
+              200200200) HEALTHY="yes"; break ;;
+            esac
+
+            case "$R" in
+              401|403)
+                echo "::error::The dev key was rejected (HTTP $R). Retrying will not help."
+                echo "SPOTSHIP_API_KEY on the 'dev' environment is wrong, revoked, or"
+                echo "belongs to a Customer that is no longer active."
+                exit 1
+                ;;
+            esac
+
+            [ "$attempt" -lt "$ATTEMPTS" ] && sleep "$GAP"
+          done
+
+          if [ -z "$HEALTHY" ]; then
+            echo
+            echo "::error::No window in which all three endpoints answered 2xx, over $ATTEMPTS attempts."
+            echo
+            echo "The attempt table above IS the finding: a deployment that"
+            echo "answers 200 sometimes and 500 the rest of the time is a backend"
+            echo "fault, not a plugin one, and nothing in this repository can fix"
+            echo "it. Running the browser suite on top of it would produce"
+            echo "failures describing symptoms — \"the real backend returned no"
+            echo "locations for rotterdam\" — and none naming the cause."
+            echo
+            echo "location_search and vessel_search sit behind separate"
+            echo "entity_search viewsets and separate indexes, and rates/ serves"
+            echo "a static payload and touches neither. A 500 from rates/ is"
+            echo "therefore about the deployment, not the data — note it answers"
+            echo "401 cleanly WITHOUT a key, so authentication is reached and"
+            echo "what follows it is what fails."
+            exit 1
+          fi
+
+          echo
+          echo "All three endpoints answered 2xx. Any empty result below is about"
+          echo "the data in the dev index, not about reachability."
+
+      - name: Run against the real backend
+        env:
+          # The specs read SPOTSHIP_API_URL/KEY. Setting them here rather than
+          # re-exporting them inline keeps the credential out of the shell's
+          # argument list.
+          #
+          # Seeded against the REAL endpoint, so no stand-in is involved and no
+          # mu-plugin host allowance is needed: the dev deployment is a public
+          # host.
+          SPOTSHIP_API_URL: ${{ secrets.SPOTSHIP_API_URL }}
+          SPOTSHIP_API_KEY: ${{ secrets.SPOTSHIP_API_KEY }}
+          REASON: ${{ inputs.reason || format('pushed tag {0}', github.ref_name) }}
+          WRITES: ${{ inputs.writes || startsWith(github.ref_name, 'real-backend-writes-') }}
+        run: |
+          set -euo pipefail
+
+          # Read-only unless explicitly asked for: @writes marks the two tests
+          # that store a row and trigger a referral email and Slack post.
+          if [ "${WRITES:-false}" = "true" ]; then
+            echo "including the writing tests — real rows and real referrals will be created"
+            npx playwright test --config=playwright.real-backend.config.js
+          else
+            echo "read-only run — skipping @writes"
+            npx playwright test --config=playwright.real-backend.config.js --grep-invert @writes
+          fi
+
+      - name: Record what was run
+        if: always()
+        env:
+          REASON: ${{ inputs.reason || format('pushed tag {0}', github.ref_name) }}
+        run: |
+          mkdir -p real-backend-evidence
+          {
+            echo "# Real backend E2E evidence"
+            echo
+            echo "- Reason: ${REASON}"
+            echo "- Commit: ${GITHUB_SHA}"
+            echo "- Run:    ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- When:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            echo "## What this run does and does not prove"
+            echo
+            echo "PROVES: both products submit through the shortcode AND through"
+            echo "Elementor; the row persists; and the stored row carries source,"
+            echo "originSiteUrl, consentText, consentGivenAt and dataConsent."
+            echo "Persistence is read back server-side by replaying the submissionId,"
+            echo "which the API answers with the ORIGINAL row. A 201 there would mean"
+            echo "the first submission never persisted."
+            echo
+            echo "ALSO PROVES, against the real deployment rather than a stand-in:"
+            echo "  - autocomplete resolves real vessels and locations, and the id"
+            echo "    committed is the id of the option displayed"
+            echo "  - axe is clean on the REAL rate table (15 hull zones and 6 cargo,"
+            echo "    not the stand-in's single row) on both products"
+            echo "  - an unreachable backend refuses rather than reporting sent, and"
+            echo "    blocks submission rather than showing an empty search"
+            echo "  - a site bound elsewhere cannot submit, and the one-click re-bind"
+            echo "    restores submission — not merely the notice"
+            echo "  - with JavaScript blocked the form is inert and says why, while"
+            echo "    still serving the real rate table"
+            echo
+            echo "DOES NOT PROVE: that the referral email or the Slack message fired."
+            echo "backend/insurance/notifications.py dispatches both fire-and-forget"
+            echo "and records no flag, so nothing in the API can be asked. Confirming"
+            echo "them needs the dev mailbox and the Slack channel. Check both by"
+            echo "hand for the markers in the receipts above, and note that a REPLAY"
+            echo "deliberately does not re-send either."
+            echo
+            echo "Both were confirmed by hand on 2026-10-01, against the ten rows"
+            echo "stored by runs 36830368299 and 36840956899: the referral email"
+            echo "reached tech@spot-ship.com and the Slack post reached dev's own"
+            echo "workflow. That is a reading of ONE day's dispatches, not a"
+            echo "guarantee for later ones - this section still says DOES NOT PROVE"
+            echo "because no run can prove it for itself."
+          } > real-backend-evidence/RUN.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-backend-evidence
+          path: |
+            real-backend-evidence/
+            real-backend-report/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 30

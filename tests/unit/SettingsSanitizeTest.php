@@ -1,0 +1,233 @@
+<?php
+/**
+ * The settings sanitiser — the single trust boundary between the admin screen
+ * and stored configuration.
+ *
+ * @package Spotship_WI
+ */
+
+declare( strict_types = 1 );
+
+use Brain\Monkey;
+use Brain\Monkey\Functions;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * @covers Spotship_WI_Settings::sanitize
+ */
+final class SettingsSanitizeTest extends TestCase {
+
+	/** @var array<string, mixed> */
+	private array $stored = array();
+
+	protected function setUp(): void {
+		parent::setUp();
+		Monkey\setUp();
+
+		$this->stored = array();
+
+		Functions\when( 'get_option' )->alias(
+			function ( $name, $fallback = array() ) {
+				return array() === $this->stored ? $fallback : $this->stored;
+			}
+		);
+		Functions\when( 'update_option' )->alias(
+			function ( $name, $value ) {
+				$this->stored = $value;
+
+				return true;
+			}
+		);
+		Functions\when( 'home_url' )->justReturn( 'https://example.test' );
+		Functions\when( 'untrailingslashit' )->alias( fn( $s ) => rtrim( (string) $s, '/' ) );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- this mock IS wp_parse_url; it cannot call itself.
+		Functions\when( 'wp_parse_url' )->alias( fn( $u ) => parse_url( $u ) );
+		Functions\when( 'add_settings_error' )->justReturn( null );
+		Functions\when( 'sanitize_email' )->alias( fn( $e ) => trim( (string) $e ) );
+		Functions\when( 'is_email' )->alias( fn( $e ) => (bool) filter_var( $e, FILTER_VALIDATE_EMAIL ) );
+		Functions\when( 'esc_url_raw' )->alias(
+			function ( $url, $protocols = null ) {
+				$url = trim( (string) $url );
+
+				if ( is_array( $protocols ) ) {
+					/*
+					 * The ?? has to guard the ARRAY ACCESS, not the cast. Written as
+					 * `(string) wp_parse_url( $url )['scheme'] ?? ''` the subscript is
+					 * evaluated first and throws "Undefined array key" the moment a URL
+					 * has no scheme — which is exactly the unconfigured-install case
+					 * this file tests. CI caught it; it was the only one of 38 to fail.
+					 */
+					$sswi_parts = wp_parse_url( $url );
+					$scheme     = strtolower( (string) ( is_array( $sswi_parts ) ? $sswi_parts['scheme'] ?? '' : '' ) );
+
+					if ( ! in_array( $scheme, $protocols, true ) ) {
+						return '';
+					}
+				}
+
+				return $url;
+			}
+		);
+		Functions\when( '__' )->returnArg( 1 );
+	}
+
+	protected function tearDown(): void {
+		Monkey\tearDown();
+		parent::tearDown();
+	}
+
+	/**
+	 * This URL carries a bearer credential on every request. A typo'd http://
+	 * base would put a customer's API key on the wire in plaintext.
+	 */
+	public function test_a_plaintext_base_url_is_rejected_outright(): void {
+		$clean = Spotship_WI_Settings::sanitize( array( 'api_base_url' => 'http://api.example.test' ) );
+
+		$this->assertSame( '', $clean['api_base_url'] );
+	}
+
+	/**
+	 * A NAME IS ASSUMED ROUTABLE, including one that merely looks internal.
+	 *
+	 * Resolving it to decide would make the answer depend on whatever DNS said
+	 * at the moment somebody saved the settings, and an attacker who controls a
+	 * resolver could then talk the sanitizer into accepting plaintext.
+	 *
+	 * @dataProvider plaintext_hosts_that_must_be_rejected
+	 */
+	public function test_a_plaintext_base_url_on_a_routable_host_is_rejected( string $url ): void {
+		$clean = Spotship_WI_Settings::sanitize( array( 'api_base_url' => $url ) );
+
+		$this->assertSame( '', $clean['api_base_url'], $url . ' was accepted over plaintext' );
+	}
+
+	/**
+	 * @return array<string, array{string}>
+	 */
+	public function plaintext_hosts_that_must_be_rejected(): array {
+		return array(
+			'a public name'            => array( 'http://api.example.test' ),
+			'an internal-looking name' => array( 'http://api.internal' ),
+			'a public address'         => array( 'http://93.184.216.34' ),
+			// 127.0.0.1 written to look private by a host that is not.
+			'a near-miss address'      => array( 'http://126.255.255.255' ),
+			'no scheme at all'         => array( 'api.example.test' ),
+		);
+	}
+
+	/**
+	 * THE CARVE-OUT, AND WHY IT IS NOT A HOLE.
+	 *
+	 * A request to loopback or to a private-range address never leaves the host
+	 * or the local segment, so requiring https there buys no secrecy. Forbidding
+	 * it does cost something real: local development, and the browser suite,
+	 * whose stand-in upstream is plain http on the Docker bridge gateway.
+	 *
+	 * @dataProvider plaintext_hosts_that_must_be_allowed
+	 */
+	public function test_a_plaintext_base_url_on_a_non_public_host_is_kept( string $url ): void {
+		$clean = Spotship_WI_Settings::sanitize( array( 'api_base_url' => $url ) );
+
+		$this->assertSame( $url, $clean['api_base_url'], $url . ' was rejected but is not routable' );
+	}
+
+	/**
+	 * @return array<string, array{string}>
+	 */
+	public function plaintext_hosts_that_must_be_allowed(): array {
+		return array(
+			'localhost'               => array( 'http://localhost:8080' ),
+			'the .localhost suffix'   => array( 'http://wp.localhost:8080' ),
+			'loopback'                => array( 'http://127.0.0.1:8080' ),
+			// What `docker network inspect bridge` actually returns in CI.
+			'a docker bridge gateway' => array( 'http://172.17.0.1:8080' ),
+			'a private 10/8 address'  => array( 'http://10.1.2.3:8080' ),
+			'a private 192.168 host'  => array( 'http://192.168.1.10:8080' ),
+		);
+	}
+
+	public function test_an_https_base_url_is_kept_without_a_trailing_slash(): void {
+		$clean = Spotship_WI_Settings::sanitize( array( 'api_base_url' => 'https://api.example.test/' ) );
+
+		$this->assertSame( 'https://api.example.test', $clean['api_base_url'] );
+	}
+
+	/**
+	 * The key field is never echoed back, so a blank submission is the NORMAL
+	 * state of a masked field. Treating it as a clear wipes the credential on
+	 * every unrelated save.
+	 */
+	public function test_an_empty_key_submission_means_unchanged_not_cleared(): void {
+		$this->stored = array( 'api_key' => '3f2504e0-4f89-41d3-9a0c-0305e82c3301' );
+
+		$clean = Spotship_WI_Settings::sanitize( array( 'api_key' => '' ) );
+
+		$this->assertSame( '3f2504e0-4f89-41d3-9a0c-0305e82c3301', $clean['api_key'] );
+	}
+
+	public function test_a_malformed_key_keeps_the_previous_one(): void {
+		$this->stored = array( 'api_key' => '3f2504e0-4f89-41d3-9a0c-0305e82c3301' );
+
+		$clean = Spotship_WI_Settings::sanitize( array( 'api_key' => 'paste-accident' ) );
+
+		$this->assertSame( '3f2504e0-4f89-41d3-9a0c-0305e82c3301', $clean['api_key'] );
+	}
+
+	public function test_the_cache_ttl_is_clamped_at_both_ends(): void {
+		$this->assertSame( Spotship_WI_Settings::TTL_MIN, Spotship_WI_Settings::sanitize( array( 'rates_cache_ttl' => 1 ) )['rates_cache_ttl'] );
+		$this->assertSame( Spotship_WI_Settings::TTL_MAX, Spotship_WI_Settings::sanitize( array( 'rates_cache_ttl' => 99999999 ) )['rates_cache_ttl'] );
+		$this->assertSame( 600, Spotship_WI_Settings::sanitize( array( 'rates_cache_ttl' => 600 ) )['rates_cache_ttl'] );
+	}
+
+	/**
+	 * Binding an install that cannot reach the API produces a site that PASSES
+	 * the binding check and then fails at the transport layer — a 502 for the
+	 * visitor, and a locally-decidable refusal below the anti-bot gates.
+	 */
+	public function test_an_unconfigured_install_is_not_bound(): void {
+		$clean = Spotship_WI_Settings::sanitize(
+			array(
+				'api_base_url' => '',
+				'api_key'      => '',
+			)
+		);
+
+		$this->assertSame( '', $clean['bound_site_url'] );
+	}
+
+	public function test_a_configured_install_binds_to_the_current_site(): void {
+		$clean = Spotship_WI_Settings::sanitize(
+			array(
+				'api_base_url' => 'https://api.example.test',
+				'api_key'      => '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+			)
+		);
+
+		$this->assertSame( 'example.test', $clean['bound_site_url'] );
+	}
+
+	/**
+	 * A clone that saves settings must not thereby adopt itself. Re-binding is
+	 * an explicit, separate action.
+	 */
+	public function test_an_existing_binding_is_never_silently_repointed(): void {
+		$this->stored = array(
+			'api_key'        => '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+			'bound_site_url' => 'original.test',
+		);
+
+		$clean = Spotship_WI_Settings::sanitize(
+			array(
+				'api_base_url' => 'https://api.example.test',
+				'api_key'      => '',
+			)
+		);
+
+		$this->assertSame( 'original.test', $clean['bound_site_url'] );
+	}
+
+	public function test_an_invalid_support_email_is_dropped_rather_than_stored(): void {
+		$this->assertSame( '', Spotship_WI_Settings::sanitize( array( 'support_email' => 'not an email' ) )['support_email'] );
+		$this->assertSame( 'a@b.test', Spotship_WI_Settings::sanitize( array( 'support_email' => 'a@b.test' ) )['support_email'] );
+	}
+}

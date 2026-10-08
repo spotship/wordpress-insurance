@@ -1,0 +1,65 @@
+{
+  "name": "spotship-wordpress-insurance",
+  "version": "0.0.0-development",
+  "private": true,
+  "description": "Tooling only. This repo ships PHP; package.json exists for semantic-release, wp-env and the jsdom suite \u2014 same as every other repo in the org.",
+  "scripts": {
+    "test:js": "node --test tests/js/*.test.js",
+    "env:start": "wp-env start",
+    "env:stop": "wp-env stop",
+    "test:mutation": "node bin/mutation-check.js",
+    "release": "semantic-release",
+    "release:dry": "semantic-release --dry-run"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
+    "@playwright/test": "^1.47.0",
+    "@semantic-release/commit-analyzer": "^13.0.0",
+    "@semantic-release/exec": "^7.0.0",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^11.0.0",
+    "@semantic-release/release-notes-generator": "^14.0.0",
+    "@wordpress/env": "^10.7.0",
+    "jsdom": "^25.0.0",
+    "semantic-release": "^24.2.0"
+  },
+  "release": {
+    "branches": [
+      "main",
+      {
+        "name": "dev",
+        "prerelease": true
+      }
+    ],
+    "plugins": [
+      "@semantic-release/commit-analyzer",
+      "@semantic-release/release-notes-generator",
+      [
+        "@semantic-release/exec",
+        {
+          "prepareCmd": "bash bin/set-version.sh ${nextRelease.version} && bash bin/generate-fallback-rates.sh && bash bin/build-dist.sh"
+        }
+      ],
+      [
+        "@semantic-release/git",
+        {
+          "assets": [
+            "spotship-war-insurance.php"
+          ],
+          "message": "release: v${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+        }
+      ],
+      [
+        "@semantic-release/github",
+        {
+          "assets": [
+            {
+              "path": "dist/*.zip",
+              "label": "Plugin zip"
+            }
+          ]
+        }
+      ]
+    ]
+  }
+}

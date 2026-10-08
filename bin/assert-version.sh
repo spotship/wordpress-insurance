@@ -10,6 +10,7 @@
 set -euo pipefail
 
 FILE=spotship-war-insurance.php
+README=readme.txt
 
 header=$( sed -n 's/^ \* Version:[[:space:]]*\(.*\)$/\1/p' "$FILE" | head -1 | tr -d '[:space:]' )
 constant=$( sed -n "s/^define( 'SPOTSHIP_WI_VERSION', '\(.*\)' );$/\1/p" "$FILE" | head -1 )
@@ -21,6 +22,29 @@ fi
 
 if [ "$header" != "$constant" ]; then
 	echo "assert-version: MISMATCH — header '$header' vs SPOTSHIP_WI_VERSION '$constant'" >&2
+	exit 1
+fi
+
+# readme.txt IS SHIPPED, SO IT COUNTS.
+#
+# `Stable tag` is the third place a version appears, and for a long time it was
+# the only one nothing checked: it sat at 0.1.0 through the 1.0.0 release, so
+# every customer unpacking the zip got a readme disagreeing with the plugin
+# beside it. bin/set-version.sh now rewrites it; this is what stops it being
+# edited back out of step by hand.
+#
+# Absent or unreadable is a failure, not a skip. The whole reason this check
+# exists is that nobody noticed its absence for a whole release.
+stable=$( sed -n 's/^Stable tag:[[:space:]]*\(.*\)$/\1/p' "$README" | head -1 | tr -d '[:space:]' )
+
+if [ -z "$stable" ]; then
+	echo "assert-version: no 'Stable tag:' line found in $README" >&2
+	exit 1
+fi
+
+if [ "$stable" != "$header" ]; then
+	echo "assert-version: MISMATCH — $README 'Stable tag: $stable' vs plugin version '$header'" >&2
+	echo "assert-version: bin/set-version.sh writes this; do not edit it by hand." >&2
 	exit 1
 fi
 

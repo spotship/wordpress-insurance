@@ -19,6 +19,7 @@ set -euo pipefail
 
 VERSION="${1:-}"
 FILE=spotship-war-insurance.php
+README=readme.txt
 
 if [ -z "$VERSION" ]; then
 	echo "set-version: a version is required (e.g. bin/set-version.sh 1.2.3)" >&2
@@ -38,6 +39,11 @@ if [ ! -f "$FILE" ]; then
 	exit 1
 fi
 
+if [ ! -f "$README" ]; then
+	echo "set-version: $README not found — run from the repository root" >&2
+	exit 1
+fi
+
 # Beside the target rather than in $TMPDIR: `mv` across filesystems is not
 # atomic, and a half-written plugin header is a file that does not parse.
 tmp="${FILE}.set-version.tmp"
@@ -49,6 +55,26 @@ sed \
 	"$FILE" > "$tmp"
 
 mv "$tmp" "$FILE"
+trap - EXIT
+
+# THE THIRD PLACE A VERSION APPEARS.
+#
+# readme.txt carries `Stable tag:`, and nothing used to write it — so it sat at
+# 0.1.0 while the plugin shipped 1.0.0, and the zip customers unpack contained a
+# readme contradicting the plugin beside it. It is rewritten here rather than
+# merely asserted, because a number a human has to remember to bump is a number
+# that drifts.
+#
+# It tracks the plugin version exactly, prereleases included. On wordpress.org
+# `Stable tag` means something more specific, but this plugin is licensed
+# Proprietary and cannot be listed there, so the only useful property is that it
+# never disagrees with the plugin beside it.
+rtmp="${README}.set-version.tmp"
+trap 'rm -f "$rtmp"' EXIT
+
+sed -e "s/^Stable tag:\([[:space:]]*\).*$/Stable tag:\1${VERSION}/" "$README" > "$rtmp"
+
+mv "$rtmp" "$README"
 trap - EXIT
 
 # Read it back rather than trusting the sed. A pattern that matches nothing

@@ -2,9 +2,9 @@
 Contributors: spotship
 Tags: insurance, shipping, maritime, quotes
 Requires at least: 6.4
-Tested up to: 6.7
+Tested up to: 6.8
 Requires PHP: 8.1
-Stable tag: 0.1.0
+Stable tag: 1.0.0
 License: Proprietary
 
 War hull and war cargo insurance quote capture for Spot Ship customers. The API
@@ -94,6 +94,16 @@ submitted enquiry does not use it — those reach the Spot Ship insurance desk
 directly and are answered from there.
 
 == Changelog ==
+
+= 1.0.0 =
+* First production release.
+* War hull and war cargo quote forms, as shortcodes and as blocks.
+* Indicative rate table served from Spot Ship, with a bundled fallback used when
+  the endpoint cannot be reached.
+* Submissions proxied server-side; the API credential never reaches the browser.
+* Binds to the site URL it was configured on, so a cloned staging copy cannot
+  submit.
+* Settings screen with a connection test and copyable diagnostics.
 
 = 0.1.0 =
 * Initial release.

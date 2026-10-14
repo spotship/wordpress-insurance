@@ -18,13 +18,25 @@
  * appearing as they type. text-field.php keeps its own hint mechanism, because
  * a plain text input announces nothing comparable.
  *
- * THE MINIMUM IS STILL ANNOUNCED, through that live region. Deleting the
- * paragraph on the "the live region covers it" reasoning was not quite true:
- * the live region is written when a search returns, and a term shorter than the
- * minimum never searches. The script now writes the minimum into it on exactly
- * those keystrokes, so the statement is made when it is relevant instead of
- * sitting on the page permanently. See minCharsMessage() in
+ * THE MINIMUM IS STILL STATED, TWICE, BECAUSE THE TWO MOMENTS ARE DIFFERENT.
+ *
+ * Deleting the paragraph on the "the live region covers it" reasoning was not
+ * true: the live region is written when a search returns, and a term shorter
+ * than the minimum never searches. The script now writes the minimum into it on
+ * exactly those keystrokes — see minCharsMessage() in
  * assets/js/war-insurance.js.
+ *
+ * That still leaves the user who focuses the field and types nothing. A live
+ * region only speaks when it changes, and `input` is what changes it, so
+ * arriving at the control said nothing at all about a threshold — and neither
+ * did anything in the accessibility tree, once the hint left
+ * `aria-describedby`. The same silence the deletion was meant to fix, moved one
+ * keystroke earlier.
+ *
+ * So the threshold is back in `aria-describedby`, where a screen reader reads
+ * it on focus and on every re-read of the control, but VISUALLY HIDDEN. What
+ * was redundant about the old paragraph was "then choose from the list" sitting
+ * permanently on screen, not the statement that a minimum exists.
  *
  * REQUIRED IS `aria-required`, NOT THE NATIVE `required` text-field.php uses.
  * The control that gets submitted is the hidden input below, written only when
@@ -56,6 +68,7 @@ $sswi_id   = $sswi_uid . '-' . $sswi_combo_name;
 $sswi_list = $sswi_id . '-list';
 $sswi_err  = $sswi_id . '-error';
 $sswi_live = $sswi_id . '-live';
+$sswi_hint = $sswi_id . '-hint';
 ?>
 <div class="sswi-field sswi-combo" data-sswi-combo="<?php echo esc_attr( $sswi_combo_kind ); ?>" data-sswi-field="<?php echo esc_attr( $sswi_combo_name ); ?>">
 	<label for="<?php echo esc_attr( $sswi_id ); ?>">
@@ -76,10 +89,12 @@ $sswi_live = $sswi_id . '-live';
 		<?php if ( ! empty( $sswi_combo_required ) ) : ?>
 			aria-required="true"
 		<?php endif; ?>
-		aria-describedby="<?php echo esc_attr( $sswi_err ); ?>"
+		aria-describedby="<?php echo esc_attr( $sswi_hint . ' ' . $sswi_err ); ?>"
 		autocomplete="off"
 		disabled
 	>
+
+	<p class="sswi-sr" id="<?php echo esc_attr( $sswi_hint ); ?>"><?php echo esc_html( Spotship_WI_Renderer::min_chars_hint() ); ?></p>
 
 	<ul class="sswi-listbox" id="<?php echo esc_attr( $sswi_list ); ?>" role="listbox" hidden></ul>
 

@@ -172,6 +172,40 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: 'the minimum sentence is substituted before the script ever sees it',
+		file: 'includes/class-renderer.php',
+		from: "'minChars'     => self::min_chars_template(),",
+		to: "'minChars'     => sprintf( self::min_chars_template(), self::MIN_QUERY_LENGTH ),",
+		// The shipped state: the browser received a finished sentence, so
+		// minCharsMessage()'s `.replace( '%d', … )` never replaced anything.
+		// Both behaviour tests stayed green, because the harness supplies a
+		// template the server was not sending.
+		mustFail: [ 'the minimum-characters sentence is published with its %d intact' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the combobox stops stating the minimum on focus',
+		file: 'templates/partials/combobox.php',
+		from: "esc_attr( $sswi_hint . ' ' . $sswi_err )",
+		to: 'esc_attr( $sswi_err )',
+		// The shipped state: the threshold left the accessibility tree, so a
+		// user who focused the field and typed nothing was told nothing. The
+		// live region only speaks on `input`.
+		mustFail: [ 'every combobox states the minimum through aria-describedby' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the destinations combobox stops stating the minimum on focus',
+		file: 'templates/cargo.php',
+		from: "esc_attr( $sswi_dest_hint . ' ' . $sswi_dest_err )",
+		to: 'esc_attr( $sswi_dest_err )',
+		mustFail: [ 'every combobox states the minimum through aria-describedby' ],
+	},
+
+	{
+		suite: 'js',
 		what: 'a test helper takes a name PHPUnit already owns',
 		file: 'tests/integration/RateLimiterTest.php',
 		from: 'private function window_count(): int {',

@@ -805,3 +805,77 @@ test( 'no tracked file reaches the customer zip without a decision', () => {
 			'Add it to .distignore, or to ALLOWED in bin/build-dist.sh if it genuinely ships'
 	);
 } );
+
+test( 'the minimum-characters sentence is published with its %d intact', () => {
+	/*
+	 * It was published pre-substituted — `sprintf( __( … ), MIN_QUERY_LENGTH )`
+	 * — so the browser got a finished sentence and minCharsMessage()'s
+	 * `.replace( '%d', … )` was dead code. The two behaviour tests covering it
+	 * passed only because tests/js/harness.js supplies a template with a `%d`
+	 * in it, which is a shape the server never actually sent: the path that
+	 * ran in production had no test, and the path under test never ran.
+	 *
+	 * It also made the number a render-time constant while the script reads
+	 * `minQueryLength` from the config, so a cached page could announce one
+	 * number and enforce another.
+	 *
+	 * A source assertion because no runtime test can see it: both values render
+	 * the same string today, and they diverge only once something changes.
+	 */
+	const entry = RENDERER.match( /'minChars'\s*=>\s*([^\n]*)/ );
+
+	assert.ok( entry, "config() publishes no 'minChars' entry" );
+	assert.ok(
+		! /sprintf/.test( entry[ 1 ] ),
+		`'minChars' is substituted before it is published, so the script cannot substitute it: ${ entry[ 1 ].trim() }`
+	);
+	const template = RENDERER.match(
+		/function min_chars_template\(\)[^{]*\{\s*(?:\/\*[^*]*\*\/\s*)?return __\( '([^']*)'/
+	);
+
+	assert.ok( template, 'min_chars_template() does not return a single gettext string' );
+	assert.match(
+		template[ 1 ],
+		/%d/,
+		'the published sentence has no %d for the script to replace'
+	);
+} );
+
+test( 'every combobox states the minimum through aria-describedby', () => {
+	/*
+	 * THE LIVE REGION IS NOT A SUBSTITUTE FOR A DESCRIPTION.
+	 *
+	 * The static hint was dropped from `aria-describedby` on the reasoning that
+	 * the threshold is announced through `role="status"` instead. That region
+	 * is written from the `input` handler, so it says nothing to someone who
+	 * focuses the control and waits, and nothing on a re-read through a virtual
+	 * buffer or braille display — the same silence the change set out to fix,
+	 * one keystroke earlier.
+	 *
+	 * Both comboboxes are checked: templates/cargo.php writes the destinations
+	 * one inline rather than through the partial, which is how it came to be
+	 * the only one missing the live-region announcement in the first place.
+	 */
+	[
+		[ 'templates/partials/combobox.php', '$sswi_hint' ],
+		[ 'templates/cargo.php', '$sswi_dest_hint' ],
+	].forEach( ( [ file, variable ] ) => {
+		const src = read( file );
+		const described = [ ...src.matchAll( /aria-describedby="([^"]*)"/g ) ].filter(
+			( m ) => m[ 1 ].includes( variable.replace( 'hint', '' ) )
+		);
+
+		assert.ok(
+			src.includes( `id="<?php echo esc_attr( ${ variable } ); ?>"` ),
+			`${ file } renders no element with the ${ variable } id to describe the combobox`
+		);
+		assert.ok(
+			described.some( ( m ) => m[ 1 ].includes( variable ) ),
+			`${ file }: the combobox aria-describedby omits ${ variable }, so the threshold is never read on focus`
+		);
+		assert.ok(
+			src.includes( 'Spotship_WI_Renderer::min_chars_hint()' ),
+			`${ file }: the hint text is not the shared one, so it can state a different number`
+		);
+	} );
+} );

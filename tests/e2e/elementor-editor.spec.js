@@ -102,16 +102,54 @@ for ( const widget of WIDGETS ) {
 		 */
 		await expect( preview.locator( '[data-sswi-root]' ) ).toHaveCount( 1, { timeout: 120000 } );
 
-		await page.evaluate( ( type ) => {
-			window.$e.run( 'document/elements/create', {
-				container: window.elementor.getPreviewContainer(),
-				model: { elType: 'widget', widgetType: type },
-			} );
+		/*
+		 * CREATED INSIDE THE COLUMN, NOT THE DOCUMENT.
+		 *
+		 * bin/seed-e2e.sh stores a classic `section > column > widget` document,
+		 * and on one of those a widget may only be created inside a COLUMN.
+		 * Passing elementor.getPreviewContainer() -- the document container --
+		 * does nothing at all: no exception, no console error, no element. The
+		 * first version of this spec did exactly that and failed sixty seconds
+		 * later on a bare count, which said only that the number was 1.
+		 *
+		 * `c1` is the column id the seed writes. getContainer() resolves it
+		 * through the document component's findContainerById().
+		 */
+		const created = await page.evaluate( ( type ) => {
+			const column = window.elementor.getContainer( 'c1' );
+
+			if ( ! column ) {
+				return 'the column c1 seeded by bin/seed-e2e.sh is not in this document';
+			}
+
+			try {
+				window.$e.run( 'document/elements/create', {
+					container: column,
+					model: { elType: 'widget', widgetType: type },
+				} );
+			} catch ( error ) {
+				return `document/elements/create threw: ${ error && error.message ? error.message : String( error ) }`;
+			}
+
+			return 'ok';
 		}, widget.type );
 
-		// Two roots means the command resolved the widget type and Elementor
-		// injected its markup. A type that did not resolve draws a
-		// missing-widget placeholder instead, with no error anywhere.
+		expect( created ).toBe( 'ok' );
+
+		/*
+		 * TWO ASSERTIONS, SO A FAILURE SAYS WHICH HALF BROKE.
+		 *
+		 * Elementor writes data-widget_type on the wrapper from the widget's
+		 * get_name(). If that reaches two and the root count does not, the
+		 * element WAS created and our own render produced nothing -- a plugin
+		 * defect. If the wrapper count stays at one, the command never created
+		 * it, which is this spec's problem rather than the plugin's. A single
+		 * count on [data-sswi-root] cannot tell those apart.
+		 */
+		await expect( preview.locator( `[data-widget_type^="${ widget.type }."]` ) ).toHaveCount( 2, {
+			timeout: 60000,
+		} );
+
 		await expect( preview.locator( '[data-sswi-root]' ) ).toHaveCount( 2, { timeout: 60000 } );
 
 		const injected = preview.locator( '[data-sswi-root]' ).last();

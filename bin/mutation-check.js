@@ -227,6 +227,45 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: 'the changelog prune goes back to matching this release\'s base only',
+		file: 'bin/set-version.sh',
+		from: 'return index( v, "-" ) > 0 && v != ver',
+		to:
+			'return index( v, "-" ) > 0 && v != ver && ' +
+			'substr( v, 1, index( v, "-" ) ) == substr( ver "-", 1, index( ver "-", "-" ) )',
+		// The shipped state: `= 1.0.1-dev.1 =` was in readme.txt on `dev` and
+		// the next release was a minor, so nothing matched it and it would have
+		// gone to a customer — one orphaned internal build per minor, forever.
+		mustFail: [ 'a prerelease of an EARLIER base is pruned, not carried forever' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'an existing section switches the changelog prune off again',
+		file: 'bin/set-version.sh',
+		from: '\t\tdrop = internal( $0 )',
+		to: '\t\tdrop = ( have != "1" && internal( $0 ) )',
+		// The shipped state: `have` gated the prune as well as the insert, so a
+		// hand-written entry kept every -dev.N stacked underneath it.
+		mustFail: [
+			'a prerelease is pruned even when the section for this release already exists',
+		],
+	},
+
+	{
+		suite: 'js',
+		what: 'the changelog prune is let loose outside == Changelog ==',
+		file: 'bin/set-version.sh',
+		from: '\tinlog && /^= .* =$/ {',
+		to: '\t/^= .* =$/ {',
+		// `= … =` is legal prose in a WordPress readme's Description, FAQ and
+		// Upgrade Notice. Unbounded, the prune eats it while every version
+		// check stays green.
+		mustFail: [ 'a `= X =` heading outside the changelog is out of reach' ],
+	},
+
+	{
+		suite: 'js',
 		what: 'a test helper takes a name PHPUnit already owns',
 		file: 'tests/integration/RateLimiterTest.php',
 		from: 'private function window_count(): int {',
@@ -449,11 +488,22 @@ function phpunitCommand() {
  * @returns {Set<string>} names reported as `not ok`.
  */
 function failingJs() {
-	const result = spawnSync(
-		process.execPath,
-		[ '--test', 'tests/js/contract.test.js', 'tests/js/front-end.test.js' ],
-		{ cwd: ROOT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }
-	);
+	// THE WHOLE SUITE, NOT A LIST TO KEEP IN STEP. Naming the files here meant
+	// tests/js/release-assets.test.js was never mutation-checked at all — it was
+	// added without this line being touched, which is the same drift the ship
+	// lists and the assets list are each guarded against elsewhere. This is what
+	// package.json's `test:js` and CI run.
+	const files = fs
+		.readdirSync( path.join( ROOT, 'tests', 'js' ) )
+		.filter( ( name ) => name.endsWith( '.test.js' ) )
+		.sort()
+		.map( ( name ) => path.join( 'tests', 'js', name ) );
+
+	const result = spawnSync( process.execPath, [ '--test', ...files ], {
+		cwd: ROOT,
+		encoding: 'utf8',
+		maxBuffer: 32 * 1024 * 1024,
+	} );
 
 	const out = ( result.stdout || '' ) + ( result.stderr || '' );
 

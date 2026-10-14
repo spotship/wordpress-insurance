@@ -285,25 +285,43 @@ export SSWI_CHANGELOG_BODY
 # bumped, no entry under it — and tripled the number of places the atomic-rename
 # reasoning had to hold.
 #
-# A PRERELEASE SUPERSEDES ITS PREDECESSORS RATHER THAN STACKING ON THEM.
+# NO INTERNAL BUILD SECTION SURVIVES EXCEPT THE ONE BEING WRITTEN.
 #
 # `dev` is a prerelease branch, so every push to it runs a real release:
 # 1.1.0-dev.1, -dev.2, -dev.3, each one landing here and each one committed back
 # by @semantic-release/git. Appending would put one section per internal build
 # into the readme a customer unpacks — the same bullets three and four times
 # over under numbers that mean nothing outside this repo — and nothing would
-# ever remove them. So a section whose version shares this one's base is
-# replaced by this one: -dev.2 supersedes -dev.1, and 1.1.0 supersedes every
-# 1.1.0-dev.N. Released versions are never touched.
+# ever remove them.
+#
+# THE TEST IS "IS IT A PRERELEASE", NOT "DOES IT SHARE THIS VERSION'S BASE".
+#
+# Anchoring on the base left two holes, and the first of them was live on `dev`:
+#
+#   * A prerelease of an EARLIER base was invisible. `= 1.0.1-dev.1 =` sat in
+#     readme.txt while the next release was a minor bump, so `base` was 1.1.0
+#     and nothing matched it — one orphaned internal build per minor, kept
+#     forever.
+#   * A section that already existed turned the scan off entirely, because the
+#     same `have` flag gated both the insert and the drop. Hand-writing the
+#     entry — which the comment above this one invites, and which is how the
+#     1.0.0 entry was written — left every -dev.N stacked underneath it.
+#
+# The changelog is newest-first and set-version.sh only ever moves forward, so
+# every prerelease section below the insertion point is one this release
+# supersedes. Dropping all of them needs no version comparison and states the
+# invariant directly: a `-dev.N` heading never reaches a customer. Released
+# versions are never touched, and `ver` itself is kept so re-running the same
+# prerelease is still idempotent.
 rewrite_in_place "$README" awk \
 	-v ver="$VERSION" \
-	-v base="${VERSION%%-*}" \
 	-v tested="$TESTED" \
 	-v have="$HAVE_SECTION" '
-	function superseded( line,    v ) {
-		# "= X =" -> X. Shares this version base and is a prerelease of it.
+	function internal( line,    v ) {
+		# "= X =" -> X. A semver prerelease carries a `-` suffix; a release
+		# does not. The section this run is writing is not its own predecessor.
 		v = substr( line, 3, length( line ) - 4 )
-		return substr( v, 1, length( base ) + 1 ) == base "-"
+		return index( v, "-" ) > 0 && v != ver
 	}
 
 	!st && /^Stable tag:[ \t]*[^ \t]/ {
@@ -321,7 +339,7 @@ rewrite_in_place "$README" awk \
 	}
 
 	/^== / {
-		# Any other section heading ends the changelog, so the supersede scan
+		# Any other section heading ends the changelog, so the prune scan
 		# below cannot run off the end of it.
 		inlog = ( $0 == "== Changelog ==" )
 		drop = 0
@@ -340,8 +358,11 @@ rewrite_in_place "$README" awk \
 		next
 	}
 
+	# NOT GATED ON `have`. That flag says whether this run writes a heading; it
+	# says nothing about whether the internal builds below it should go, and
+	# conflating the two is what let a hand-written entry keep all of them.
 	inlog && /^= .* =$/ {
-		drop = ( have != "1" && superseded( $0 ) )
+		drop = internal( $0 )
 	}
 
 	{ if ( ! drop ) print }

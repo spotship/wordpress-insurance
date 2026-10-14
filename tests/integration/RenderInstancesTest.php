@@ -72,6 +72,38 @@ final class RenderInstancesTest extends WP_UnitTestCase {
 		);
 	}
 
+	/**
+	 * THE NAMESPACE MUST NOT BE DERIVED FROM RENDER ORDER.
+	 *
+	 * The sibling tests above prove two forms in ONE process differ, and a
+	 * counter satisfies that perfectly — which is why it survived here for so
+	 * long. The shape it does not survive is Elementor's editor, which renders
+	 * each widget in its own `render_widget` AJAX request: a per-request static
+	 * restarts at zero every time, so every widget came out as `sswi-1` and two
+	 * on a page collided on every id.
+	 *
+	 * A test cannot easily span two PHP processes, so assert the property that
+	 * would make it safe if it could: the prefix is not a position. `sswi-1`
+	 * followed by `sswi-2` is the signature of a counter, and nothing else this
+	 * renderer could legitimately produce looks like that.
+	 */
+	public function test_the_id_namespace_is_not_derived_from_render_order(): void {
+		$first  = Spotship_WI_Renderer::render( 'hull' );
+		$second = Spotship_WI_Renderer::render( 'hull' );
+
+		foreach ( array( $first, $second ) as $index => $html ) {
+			$this->assertSame(
+				0,
+				preg_match( '/id="sswi-\d+-/', $html ),
+				sprintf(
+					'render %d namespaced its ids with a number, which restarts at zero in every ' .
+						'process and collides across Elementor\'s per-widget AJAX renders',
+					$index + 1
+				)
+			);
+		}
+	}
+
 	public function test_the_same_form_twice_shares_no_ids(): void {
 		$page = Spotship_WI_Renderer::render( 'hull' ) . Spotship_WI_Renderer::render( 'hull' );
 

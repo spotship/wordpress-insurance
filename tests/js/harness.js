@@ -61,7 +61,18 @@ function combo( name, kind ) {
 		</div>`;
 }
 
-function markup( product, config ) {
+/**
+ * ONE root, exactly as the templates emit it.
+ *
+ * Split out of markup() so a test can inject a SECOND root into a document that
+ * has already loaded. That is what Elementor's editor does — it renders a widget
+ * through its own AJAX action and drops the markup into a live preview — and it
+ * is the shape the once-at-load sweep in war-insurance.js could not see.
+ *
+ * @param {string} product hull or cargo.
+ * @param {object} config  The data-sswi-config payload.
+ */
+function rootHtml( product, config ) {
 	const cargoOnly = `
 		<div class="sswi-field sswi-destinations" data-sswi-destinations data-sswi-field="destinations">
 			<label for="sswi-destinations">Destinations</label>
@@ -80,7 +91,7 @@ function markup( product, config ) {
 			<p class="sswi-error" id="sswi-riskZone-error" data-sswi-error hidden></p>
 		</div>`;
 
-	return `<!doctype html><html><body>
+	return `
 	<div class="spotship-wi" data-sswi-root data-sswi-config='${ JSON.stringify( config ) }'>
 		<p class="sswi-noscript" data-sswi-noscript>Needs JavaScript</p>
 		<form class="sswi-form" data-sswi-form="${ product }" novalidate>
@@ -107,7 +118,12 @@ function markup( product, config ) {
 			<button type="submit" class="sswi-submit" disabled>Request a quote</button>
 			<p class="sswi-result" data-sswi-result role="status" aria-live="polite"></p>
 		</form>
-	</div>
+	</div>`;
+}
+
+function markup( product, config ) {
+	return `<!doctype html><html><body>
+	${ rootHtml( product, config ) }
 	</body></html>`;
 }
 
@@ -184,4 +200,4 @@ function boot( options = {} ) {
 	};
 }
 
-module.exports = { boot, CONFIG, SCRIPT };
+module.exports = { boot, CONFIG, SCRIPT, rootHtml };

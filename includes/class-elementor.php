@@ -42,6 +42,16 @@ final class Spotship_WI_Elementor {
 	public const CATEGORY = 'spotship';
 
 	/**
+	 * The handle of the script that re-initialises injected forms.
+	 *
+	 * Registered in spotship-war-insurance.php on `init` — never from here,
+	 * because wp_register_script() before `init` raises _doing_it_wrong(), which
+	 * with WP_DEBUG_DISPLAY prints before headers and stops WordPress setting a
+	 * cookie. Named from the widgets' get_script_depends().
+	 */
+	public const HANDLER_SCRIPT = 'spotship-wi-elementor';
+
+	/**
 	 * Hook into Elementor.
 	 *
 	 * Called at file scope rather than from `spotship_wi_boot()`, which runs on
@@ -76,9 +86,27 @@ final class Spotship_WI_Elementor {
 	 * `\Elementor\Widgets_Manager` would resolve the class at declaration time
 	 * and defeat the whole arrangement described in the file docblock.
 	 *
+	 * THE PARENT CLASS IS THE CONDITION THAT MATTERS, NOT THE MANAGER'S SHAPE.
+	 * What white-screens a site is not a manager that cannot register — it is
+	 * `new Spotship_WI_Elementor_Hull()` autoloading a file whose `extends
+	 * \Elementor\Widget_Base` is resolved at PARSE time against a class that
+	 * does not exist. `register` is a generic method name, and this file's whole
+	 * premise is that the object arriving on this hook may not be the one we
+	 * expect; guarding only on the manager would leave the actual fatal
+	 * unguarded. The manager check stays because a manager we cannot call is
+	 * still a manager we must not call.
+	 *
+	 * Autoloading is left ON deliberately. Elementor resolves `Widget_Base`
+	 * through its own autoloader, and ours returns immediately for anything not
+	 * prefixed `Spotship_WI_`, so nothing of this plugin's is loaded by asking.
+	 *
 	 * @param object $widgets_manager Elementor's widget manager.
 	 */
 	public static function register_widgets( $widgets_manager ): void {
+		if ( ! class_exists( '\Elementor\Widget_Base' ) ) {
+			return;
+		}
+
 		if ( ! is_object( $widgets_manager ) || ! method_exists( $widgets_manager, 'register' ) ) {
 			return;
 		}

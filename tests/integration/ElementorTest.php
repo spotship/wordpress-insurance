@@ -97,6 +97,49 @@ final class ElementorTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A manager that CAN register still must not construct a widget here.
+	 *
+	 * This is the row the previous version of this file was missing, and the gap
+	 * it left was the whole point of the guard. `stdClass` and a string both fail
+	 * the method_exists() check before anything is built, so they prove only that
+	 * the manager check works — not that construction is safe. A manager that
+	 * looks right to that check is what reaches `new Spotship_WI_Elementor_Hull()`,
+	 * and on this container — which has no Elementor — that is a parse-time fatal
+	 * that takes the suite down with it.
+	 */
+	public function test_a_usable_manager_still_constructs_nothing_without_elementor(): void {
+		/*
+		 * Anonymous because PHPCS allows one object structure per file, and
+		 * because a double this small has no other caller. It extends nothing,
+		 * so declaring it on a site with no Elementor is safe.
+		 */
+		$manager = new class() {
+
+			/**
+			 * @var array<int, object>
+			 */
+			public array $registered = array();
+
+			public function register( $widget ): void {
+				$this->registered[] = $widget;
+			}
+		};
+
+		Spotship_WI_Elementor::register_widgets( $manager );
+
+		$this->assertSame(
+			array(),
+			$manager->registered,
+			'A widget was constructed on a site with no Elementor.'
+		);
+
+		$this->assertFalse(
+			class_exists( 'Spotship_WI_Elementor_Hull', false ),
+			'The parent-class guard was passed and a widget was constructed.'
+		);
+	}
+
+	/**
 	 * Likewise for the category manager.
 	 */
 	public function test_an_unusable_elements_manager_is_ignored(): void {

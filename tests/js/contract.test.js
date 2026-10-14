@@ -673,12 +673,28 @@ test( 'every partial derives its element ids from the instance prefix', () => {
 	} );
 } );
 
-test( 'the renderer namespaces ids per instance', () => {
-	// The counter is the mechanism the templates depend on. If it goes away,
-	// every id above silently becomes constant again.
-	assert.match( RENDERER, /private static int \$instances = 0;/, 'the per-instance counter must exist' );
-	assert.match( RENDERER, /\+\+self::\$instances;/, 'and be advanced on every render' );
-	assert.match( RENDERER, /'uid'\s*=>\s*'sswi-' \. self::\$instances,/, 'and be published to the templates' );
+test( 'the renderer namespaces ids per render, from the form uuid', () => {
+	/*
+	 * The namespace is the mechanism every template id depends on. If it goes
+	 * away, every id silently becomes constant again.
+	 *
+	 * IT ALSO MUST NOT COME FROM A COUNTER. A per-request static restarts at
+	 * zero in every PHP process, and Elementor's editor renders each widget in
+	 * its own AJAX request — so a counter handed every form `sswi-1` and two
+	 * widgets on a page collided on every id. The form uuid is minted per
+	 * render, so it cannot depend on how often this process has been called.
+	 */
+	assert.match(
+		RENDERER,
+		/\$uid\s*=\s*'sswi-' \. substr\( str_replace\( '-', '', \$form_id \), 0, 8 \);/,
+		'the id namespace must be derived from the per-render form uuid'
+	);
+	assert.match( RENDERER, /'uid'\s*=>\s*\$uid,/, 'and be published to the templates' );
+	assert.ok(
+		! /static int \$instances/.test( RENDERER ),
+		'the id namespace must not return to a per-request counter: it restarts at zero ' +
+			'in every process, and Elementor renders each widget in a process of its own'
+	);
 } );
 
 test( 'assets are registered no earlier than init', () => {
@@ -705,6 +721,50 @@ test( 'assets are registered no earlier than init', () => {
 		! /add_action\(\s*'plugins_loaded'/.test( plugin ),
 		'nothing here may hook plugins_loaded: it is before init, and registering ' +
 			'a script there prints a notice that breaks cookie-setting site-wide'
+	);
+} );
+
+test( 'the Elementor widgets depend on a script handle that is actually registered', () => {
+	/*
+	 * A HANDLE THAT IS NOT REGISTERED IS ENQUEUED AS NOTHING, SILENTLY.
+	 *
+	 * get_script_depends() returns handles; WordPress drops any it does not
+	 * know, with no notice and no error. The symptom would be a form that works
+	 * on a published page and is inert the moment Elementor injects one — which
+	 * is the exact defect this script was added to fix, restored by a typo.
+	 *
+	 * Nothing else would catch it. PHPStan sees two strings; PHPCS sees two
+	 * strings; the front-end e2e never injects anything.
+	 */
+	const widget = read( 'includes/class-elementor-widget.php' );
+	const elementor = read( 'includes/class-elementor.php' );
+	const plugin = read( 'spotship-war-insurance.php' );
+
+	const depends = /get_script_depends\(\): array \{\s*return array\( ([^)]+) \);/.exec( widget );
+
+	assert.ok( depends, 'the widget base must declare get_script_depends()' );
+	assert.equal(
+		depends[ 1 ].trim(),
+		'Spotship_WI_Elementor::HANDLER_SCRIPT',
+		'the handle must come from the constant, not a repeated literal'
+	);
+
+	const handle = /HANDLER_SCRIPT = '([^']+)';/.exec( elementor );
+
+	assert.ok( handle, 'Spotship_WI_Elementor must define HANDLER_SCRIPT' );
+	assert.match(
+		plugin,
+		new RegExp( 'wp_register_script\\(\\s*Spotship_WI_Elementor::HANDLER_SCRIPT' ),
+		`${ handle[ 1 ] } is depended on but never registered`
+	);
+
+	// And the file it points at has to exist, for the same reason.
+	const src = /HANDLER_SCRIPT,\s*SPOTSHIP_WI_URL \. '([^']+)'/.exec( plugin );
+
+	assert.ok( src, 'the registration must name a file' );
+	assert.ok(
+		fs.existsSync( path.join( ROOT, src[ 1 ] ) ),
+		`${ src[ 1 ] } is registered but not in the tree`
 	);
 } );
 

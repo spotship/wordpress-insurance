@@ -56,6 +56,11 @@ abstract class Widget_Base {
 	public function get_keywords() {}
 
 	/**
+	 * Script handles to enqueue wherever this widget renders.
+	 */
+	public function get_script_depends() {}
+
+	/**
 	 * Whether the element is too dynamic for Elementor's element cache.
 	 */
 	protected function is_dynamic_content(): bool {

@@ -63,9 +63,34 @@ const MUTATIONS = [
 		suite: 'js',
 		what: 'the renderer stops namespacing instances',
 		file: 'includes/class-renderer.php',
-		from: "'uid'       => 'sswi-' . self::$instances,",
+		from: "'uid'       => $uid,",
 		to: "'uid'       => 'sswi',",
-		mustFail: [ 'the renderer namespaces ids per instance' ],
+		mustFail: [ 'the renderer namespaces ids per render, from the form uuid' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'mounting the same root twice binds a second set of listeners',
+		file: 'assets/js/war-insurance.js',
+		from: 'if ( ! root || mounted.has( root ) ) {',
+		to: 'if ( ! root ) {',
+		// Elementor re-runs element_ready on every re-render, and its editor
+		// re-renders freely, so a root reaching init() twice is routine rather
+		// than exotic. Two submit handlers on one form is one visitor action and
+		// two quote requests, which the backend cannot tell apart.
+		mustFail: [ 'mounting twice does not bind a second set of listeners' ],
+	},
+	{
+		suite: 'js',
+		what: 'mountAll stops looking inside the scope it is given',
+		file: 'assets/js/war-insurance.js',
+		from: "within.querySelectorAll( '[data-sswi-root]' ).forEach( mount );",
+		to: '',
+		// Elementor passes the widget wrapper, never the root: our markup is a
+		// descendant, inside .elementor-widget-container. Dropping the descendant
+		// sweep leaves every builder-injected form dead, which is the defect this
+		// whole mechanism exists to fix.
+		mustFail: [ 'mountAll reaches a root nested inside the scope Elementor passes' ],
 	},
 
 	{
@@ -177,7 +202,7 @@ const MUTATIONS = [
 		suite: 'php',
 		what: 'the renderer stops namespacing instances (rendered output)',
 		file: 'includes/class-renderer.php',
-		from: "'uid'       => 'sswi-' . self::$instances,",
+		from: "'uid'       => $uid,",
 		to: "'uid'       => 'sswi',",
 		// The js mutation above proves the TEMPLATES read the prefix. This one
 		// proves the rendered markup of two real forms on one page actually

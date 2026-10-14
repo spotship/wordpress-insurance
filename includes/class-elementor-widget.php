@@ -74,6 +74,24 @@ abstract class Spotship_WI_Elementor_Widget extends \Elementor\Widget_Base {
 	}
 
 	/**
+	 * The script that mounts this form when Elementor injects it.
+	 *
+	 * Elementor enqueues these handles wherever the widget renders, which
+	 * includes PUBLISHED pages and not only the editor. That is deliberate, and
+	 * it is a real exception to the asset budget stated in
+	 * spotship-war-insurance.php — a page with no form must load nothing. Two
+	 * reasons it earns the exception: the file is well under a kilobyte, and the
+	 * editor is not the only thing that injects. Elementor Pro popups and loop
+	 * grids inject into published pages, and a form that arrives inert there is
+	 * the same defect in front of a customer rather than a site builder.
+	 *
+	 * @return string[]
+	 */
+	public function get_script_depends(): array {
+		return array( Spotship_WI_Elementor::HANDLER_SCRIPT );
+	}
+
+	/**
 	 * This widget's markup must never be cached, and that is not the default it
 	 * looks like.
 	 *

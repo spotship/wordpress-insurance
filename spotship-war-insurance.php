@@ -109,6 +109,32 @@ function spotship_wi_boot(): void {
 		)
 	);
 
+	/*
+	 * The page-builder handler, registered here and enqueued only by the
+	 * Elementor widgets through get_script_depends(). Nothing on a site without
+	 * Elementor ever asks for it, so registering it unconditionally costs a row
+	 * in WP_Scripts and nothing else.
+	 *
+	 * THE `spotship-wi` DEPENDENCY IS LOAD-BEARING, NOT TIDINESS. In the editor
+	 * Elementor enqueues every registered widget's script dependencies up front
+	 * (Preview::enqueue_scripts -> Widgets_Manager::enqueue_widgets_scripts),
+	 * before any widget is on the page. On an empty page the renderer has
+	 * therefore never run, so nothing has enqueued `spotship-wi` — and this
+	 * handler would load with no window.spotshipWI to call. Declaring the
+	 * dependency is what drags the real script into the preview, which is why
+	 * the very first widget dropped onto a blank page comes up live.
+	 */
+	wp_register_script(
+		Spotship_WI_Elementor::HANDLER_SCRIPT,
+		SPOTSHIP_WI_URL . 'assets/js/elementor.js',
+		array( 'spotship-wi' ),
+		SPOTSHIP_WI_VERSION,
+		array(
+			'in_footer' => true,
+			'strategy'  => 'defer',
+		)
+	);
+
 	wp_register_style(
 		'spotship-wi',
 		SPOTSHIP_WI_URL . 'assets/css/war-insurance.css',

@@ -12,13 +12,35 @@
 # bin/set-version.sh writes all four. This is what stops any of them being
 # edited back out of step by hand, and what stops a fifth appearing unnoticed.
 #
-# NOTHING IS ASSERTED HERE THAT bin/set-version.sh DOES NOT WRITE.
+# EVERY RELEASE-DERIVED VALUE ASSERTED HERE IS WRITTEN BY bin/set-version.sh.
 #
 # That script calls this one as its last act, from inside semantic-release's
-# `prepare`. A value compared here and written by nobody therefore fails the
-# release AFTER the version has been computed and four files already rewritten —
-# late, and in the one place where late is expensive. `Tested up to` was that
-# value until set-version.sh took it over.
+# `prepare`. A value that VARIES WITH THE RELEASE, compared here and written by
+# nobody, therefore fails the release AFTER the version has been computed and
+# four files already rewritten — late, and in the one place where late is
+# expensive. `Tested up to` was exactly that: derived from .wp-env.json's core
+# pin and written by nobody, so a wp-env bump left readme.txt disagreeing with
+# the pin and no tooling able to put it right. set-version.sh writes it now.
+#
+# THE SUPPORT FLOORS BELOW ARE THE DELIBERATE EXCEPTION, and the line between
+# them is the rule to apply when adding a check:
+#
+#   varies with the release number -> bin/set-version.sh MUST write it
+#   hand-maintained tree invariant -> it must not; assert it and leave it
+#
+# `Requires at least`, `Requires PHP` and their four tooling counterparts are a
+# support policy a human decides, not an output of a version bump. Releasing
+# never introduces drift between them — only a commit that edits one of the six
+# without the others does, which is exactly what these are here to catch. If
+# such a commit lands, the next release aborts in `prepare` rather than shipping
+# a tree whose declared floors disagree; that is the correct outcome, and it is
+# why they stay here. Writing them from set-version.sh would turn a deliberate
+# policy change into a silent side effect of releasing.
+#
+# They stay in this script rather than moving to ci.yaml because
+# .github/workflows/cd.yaml does not depend on ci.yaml, and because ci.yaml
+# already runs this whole script twice. Moving them would lose the only check
+# standing between a drifted tree and a release, and gain nothing.
 
 set -euo pipefail
 

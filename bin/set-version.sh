@@ -22,15 +22,27 @@
 # here rather than merely asserted, every write is read back, and
 # bin/assert-version.sh then refuses a tree where any of them disagree.
 #
-# EVERYTHING bin/assert-version.sh COMPARES IS WRITTEN HERE.
+# EVERY RELEASE-DERIVED VALUE bin/assert-version.sh COMPARES IS WRITTEN HERE.
 #
 # That is not tidiness, it is the difference between a failed check and a failed
 # release. This script's last act is to call that one, from inside
-# semantic-release's `prepare` — so a value it asserts but this does not write
-# aborts the release AFTER the number has been computed and four files already
-# rewritten. `Tested up to` was exactly that: asserted against .wp-env.json's
-# core pin, written by nobody, so bumping wp-env would have taken a release down
-# mid-prepare. It is written here now, like the rest.
+# semantic-release's `prepare` — so a value that varies with the release, which
+# that script asserts and this one does not write, aborts the release AFTER the
+# number has been computed and four files already rewritten. `Tested up to` was
+# exactly that: asserted against .wp-env.json's core pin, written by nobody, so
+# bumping wp-env would have taken a release down mid-prepare. It is written
+# here now, like the rest.
+#
+# THE SUPPORT FLOORS ARE THE DELIBERATE EXCEPTION. assert-version.sh also
+# compares `Requires at least` and `Requires PHP` across the plugin header and
+# the readme, composer.json's php constraint and config.platform.php, and
+# phpcs.xml.dist's testVersion and minimum_wp_version. Nothing here writes any
+# of them, and nothing should: they are a support policy a human decides, not
+# an output of a version bump, and a release never changes them.
+#
+# The rule for anything added later is the line those two cases divide on: if
+# it varies with the release, write it here; if it is a hand-maintained
+# invariant, leave it to be asserted.
 #
 # EVERY FILE WRITTEN HERE MUST ALSO APPEAR IN THE @semantic-release/git `assets`
 # LIST IN package.json. That plugin commits only the paths it is given, so a

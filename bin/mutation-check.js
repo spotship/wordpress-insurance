@@ -83,8 +83,8 @@ const MUTATIONS = [
 		suite: 'js',
 		what: 'the decoy threshold goes back into the page source',
 		file: 'includes/class-renderer.php',
-		from: "'minQueryLength'  => 2,",
-		to: "'minAgeSeconds'   => Spotship_WI_Request_Guard::MIN_AGE,\n\t\t\t'minQueryLength'  => 2,",
+		from: "'minQueryLength'  => self::MIN_QUERY_LENGTH,",
+		to: "'minAgeSeconds'   => Spotship_WI_Request_Guard::MIN_AGE,\n\t\t\t'minQueryLength'  => self::MIN_QUERY_LENGTH,",
 		// The shipped state. It was published for the whole life of the file,
 		// read by no JavaScript, and told a bot author exactly how long to
 		// sleep to walk past the timing trap.
@@ -147,6 +147,27 @@ const MUTATIONS = [
 		mustFail: [
 			'the cargo risk zone is populated from the served rate table, not a hardcoded list',
 		],
+	},
+
+	{
+		suite: 'js',
+		what: 'a sub-threshold term goes back to announcing nothing at all',
+		file: 'assets/js/war-insurance.js',
+		from: 'text( live, minCharsMessage( minimum ) );',
+		to: "text( live, '' );",
+		// The shipped state after the hint paragraph was deleted: the live
+		// region is written only from render(), which a term shorter than the
+		// minimum never reaches.
+		mustFail: [ 'a term below the minimum says so rather than going silent' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the destinations combobox goes silent below the minimum',
+		file: 'assets/js/war-insurance.js',
+		from: 'announce( minCharsMessage( minimum ) );',
+		to: "announce( '' );",
+		mustFail: [ 'the destinations combobox announces the minimum too' ],
 	},
 
 	{

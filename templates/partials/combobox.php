@@ -9,13 +9,22 @@
  * Expects: $sswi_uid, $sswi_combo_name, $sswi_combo_label, $sswi_combo_kind,
  * $sswi_combo_required.
  *
- * NO HINT TEXT. Every combobox used to carry "Type at least two characters,
- * then choose from the list." It restated what the control already announces:
- * `role="combobox"` with `aria-autocomplete="list"` tells a screen reader the
- * interaction model, `aria-expanded` tracks the list, and the live region
- * below announces the result count on every search. Sighted users get the
- * same from the list appearing as they type. text-field.php keeps its own
- * hint mechanism, because a plain text input announces nothing comparable.
+ * NO STATIC HINT TEXT. Every combobox used to carry "Type at least two
+ * characters, then choose from the list." as a permanent paragraph. It restated
+ * what the control already announces: `role="combobox"` with
+ * `aria-autocomplete="list"` tells a screen reader the interaction model,
+ * `aria-expanded` tracks the list, and the live region below announces the
+ * result count on every search. Sighted users get the same from the list
+ * appearing as they type. text-field.php keeps its own hint mechanism, because
+ * a plain text input announces nothing comparable.
+ *
+ * THE MINIMUM IS STILL ANNOUNCED, through that live region. Deleting the
+ * paragraph on the "the live region covers it" reasoning was not quite true:
+ * the live region is written when a search returns, and a term shorter than the
+ * minimum never searches. The script now writes the minimum into it on exactly
+ * those keystrokes, so the statement is made when it is relevant instead of
+ * sitting on the page permanently. See minCharsMessage() in
+ * assets/js/war-insurance.js.
  *
  * REQUIRED IS `aria-required`, NOT THE NATIVE `required` text-field.php uses.
  * The control that gets submitted is the hidden input below, written only when

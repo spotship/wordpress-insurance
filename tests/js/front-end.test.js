@@ -94,6 +94,38 @@ test( 'aria-activedescendant names the option that is actually rendered', async 
 	assert.equal( target, options[ 0 ] );
 } );
 
+test( 'a term below the minimum says so rather than going silent', async () => {
+	const h = boot( { fetch: router() } );
+	await h.ready();
+
+	// The hint paragraph that used to state the minimum was removed on the
+	// reasoning that the live region announces every search. A sub-threshold
+	// term never searches, so before this the user got nothing at all: no list,
+	// no announcement, and no statement anywhere that a minimum exists.
+	await typeInto( h, '#sswi-fromPort', 'r' );
+
+	const live = h.document.querySelector( '#sswi-fromPort-live' );
+
+	assert.equal( live.textContent, 'TYPE AT LEAST 2 CHARACTERS' );
+	assert.equal( h.document.querySelector( '#sswi-fromPort-list' ).hidden, true );
+
+	// And it gives way to the real result count as soon as one is available.
+	await typeInto( h, '#sswi-fromPort', 'rot' );
+
+	assert.equal( live.textContent, '2 results available.' );
+} );
+
+test( 'the destinations combobox announces the minimum too', async () => {
+	const h = boot( { product: 'cargo', fetch: router() } );
+	await h.ready();
+
+	await typeInto( h, '#sswi-destinations', 'r' );
+
+	const live = h.document.querySelector( '[data-sswi-chip-live]' );
+
+	assert.equal( live.textContent, 'TYPE AT LEAST 2 CHARACTERS' );
+} );
+
 test( 'choosing an option submits the id of the option that was displayed', async () => {
 	const h = boot( { fetch: router() } );
 	await h.ready();

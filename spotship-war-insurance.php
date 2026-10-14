@@ -21,10 +21,16 @@ defined( 'ABSPATH' ) || exit;
 /**
  * SPOTSHIP_WI_VERSION must match the `Version:` header above.
  *
- * These are the only two places a version number appears, and CI asserts they
- * agree. The update checker reads the header; `X-Plugin-Version` on every
- * outbound request reports the constant. If they drift, the fleet reports one
- * version while updating against another, and stale-version alerting lies.
+ * These two are what the CODE reads: the update checker reads the header;
+ * `X-Plugin-Version` on every outbound request reports the constant. If they
+ * drift, the fleet reports one version while updating against another, and
+ * stale-version alerting lies.
+ *
+ * They are not the only two. readme.txt's `Stable tag` and the catalogue's
+ * `Project-Id-Version` ship in the same zip, and this comment claimed there
+ * were two for as long as both of those sat at 0.1.0 under a 1.0.0 plugin.
+ * bin/set-version.sh writes all four and bin/assert-version.sh asserts them;
+ * edit none of them by hand.
  */
 define( 'SPOTSHIP_WI_VERSION', '1.0.0' );
 define( 'SPOTSHIP_WI_FILE', __FILE__ );

@@ -41,6 +41,18 @@ final class Spotship_WI_Renderer {
 	private static int $instances = 0;
 
 	/**
+	 * Characters required before an autocomplete will search.
+	 *
+	 * ONE DEFINITION, because two consumers now read it: the script uses it as
+	 * the threshold, and the sentence announced below the threshold states it.
+	 * A literal in each is how a control ends up telling a screen reader to type
+	 * two characters while waiting for three.
+	 *
+	 * @var int
+	 */
+	public const MIN_QUERY_LENGTH = 2;
+
+	/**
 	 * Render a product form.
 	 *
 	 * @param string $product 'hull' or 'cargo'.
@@ -112,7 +124,7 @@ final class Spotship_WI_Renderer {
 			 * The same reasoning is already written down two paragraphs up for
 			 * MAX_DESTINATIONS. This value simply predated it.
 			 */
-			'minQueryLength'  => 2,
+			'minQueryLength'  => self::MIN_QUERY_LENGTH,
 			'maxDestinations' => Spotship_WI_Payloads::MAX_DESTINATIONS,
 			'bounds'          => array(
 				'userName'         => Spotship_WI_Payloads::MAX_NAME,
@@ -137,6 +149,17 @@ final class Spotship_WI_Renderer {
 				'removeChip'   => __( 'Remove %s', 'spotship-war-insurance' ),
 				/* translators: %d: number of autocomplete results. */
 				'resultCount'  => __( '%d results available.', 'spotship-war-insurance' ),
+
+				/*
+				 * "%d or more", NOT "at least %d characters", because the number
+				 * is substituted and the noun would then have to agree with it.
+				 * bin/extract-strings.js matches single-string gettext calls and
+				 * the catalogue it writes has no plural entries, so an `_n()`
+				 * here would be invisible to the i18n job — a missing string in
+				 * the one place built to notice missing strings.
+				 */
+				/* translators: %d: minimum number of characters before an autocomplete searches. */
+				'minChars'     => sprintf( __( 'Type %d or more characters to search.', 'spotship-war-insurance' ), self::MIN_QUERY_LENGTH ),
 				'expired'      => __( 'This form has been open too long. Please reload the page and try again.', 'spotship-war-insurance' ),
 				/* translators: %d: number of seconds to wait before retrying. */
 				'throttled'    => __( 'Too many requests. Please wait %d seconds and try again.', 'spotship-war-insurance' ),

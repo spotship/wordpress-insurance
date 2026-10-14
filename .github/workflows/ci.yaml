@@ -127,7 +127,7 @@ jobs:
       - run: npx wp-env run cli wp plugin check "$(basename "$PWD")" --format=table
 
   version:
-    name: Version header matches constant
+    name: Shipped versions agree
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -144,7 +144,7 @@ jobs:
     # without tagging, committing or publishing anything.
     #
     # It also proves bin/set-version.sh is wired in correctly, which is the step
-    # that keeps the tag and the two in-file versions from disagreeing.
+    # that keeps the tag and every shipped version string from disagreeing.
     name: Release config loads
     runs-on: ubuntu-latest
     steps:
@@ -177,17 +177,54 @@ jobs:
             exit 1
           fi
 
-      - name: bin/set-version.sh writes both places
+      - name: bin/set-version.sh writes every place, and the release commits them
         run: |
           set -euo pipefail
 
           # The step semantic-release calls in prepare. Exercised here against a
-          # throwaway number so a broken sed is caught on every push rather than
-          # during a release, where it would abort after the version bump had
-          # already been computed.
+          # throwaway number so a broken rewrite is caught on every push rather
+          # than during a release, where it would abort after the version bump
+          # had already been computed.
           bash bin/set-version.sh 99.98.97
           EXPECTED_TAG=v99.98.97 bash bin/assert-version.sh
-          git checkout -- spotship-war-insurance.php
+
+          # EVERY FILE IT TOUCHED MUST BE IN THE RELEASE COMMIT.
+          #
+          # @semantic-release/git commits only the paths it is given. A file
+          # set-version.sh rewrites that the list omits is written during
+          # prepare, shipped correctly inside the zip, and then thrown away with
+          # the runner — leaving the tag on a tree that still carries the
+          # previous number, this job's own `assert-version.sh` red on the next
+          # push, and reattach-release-asset.yaml unable to run against the tag.
+          #
+          # readme.txt was added to the script without being added to that list,
+          # which is precisely this. Comparing the two lists is what stops the
+          # next file doing it again.
+          #
+          # Tracked modifications only: set-version.sh rewrites files that must
+          # already exist — it refuses to run otherwise — and the step above
+          # leaves an untracked dry-run.log beside them.
+          touched=$( git diff --name-only )
+          assets=$( node -e '
+            const plugins = require( "./package.json" ).release.plugins;
+            const git = plugins.find( ( p ) => Array.isArray( p ) && p[ 0 ] === "@semantic-release/git" );
+            process.stdout.write( ( git ? git[ 1 ].assets : [] ).join( "\n" ) );
+          ' )
+
+          echo "bin/set-version.sh wrote:"
+          echo "$touched"
+
+          missing=0
+          for file in $touched; do
+            if ! printf '%s\n' "$assets" | grep -qxF "$file"; then
+              echo "::error::$file is written by bin/set-version.sh but missing from the @semantic-release/git assets list in package.json — the release would discard it"
+              missing=1
+            fi
+          done
+
+          [ "$missing" -eq 0 ]
+
+          git checkout -- .
           bash bin/assert-version.sh
 
   workflows:

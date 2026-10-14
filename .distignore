@@ -5,6 +5,10 @@
 .github
 .gitignore
 .sswi-release-notes.md
+# bin/set-version.sh's atomic-rewrite scratch files. Untracked, so .gitignore
+# normally keeps them out of the zip — but build-dist.sh ships the working tree,
+# not the index, and one surviving a killed release would go to a customer.
+*.set-version.tmp
 .gitattributes
 .editorconfig
 .distignore

@@ -22,6 +22,16 @@
 # here rather than merely asserted, every write is read back, and
 # bin/assert-version.sh then refuses a tree where any of them disagree.
 #
+# EVERYTHING bin/assert-version.sh COMPARES IS WRITTEN HERE.
+#
+# That is not tidiness, it is the difference between a failed check and a failed
+# release. This script's last act is to call that one, from inside
+# semantic-release's `prepare` — so a value it asserts but this does not write
+# aborts the release AFTER the number has been computed and four files already
+# rewritten. `Tested up to` was exactly that: asserted against .wp-env.json's
+# core pin, written by nobody, so bumping wp-env would have taken a release down
+# mid-prepare. It is written here now, like the rest.
+#
 # EVERY FILE WRITTEN HERE MUST ALSO APPEAR IN THE @semantic-release/git `assets`
 # LIST IN package.json. That plugin commits only the paths it is given, so a
 # file written here and missing there is rewritten during prepare, shipped
@@ -39,6 +49,7 @@ VERSION="${1:-}"
 FILE=spotship-war-insurance.php
 README=readme.txt
 POT=languages/spotship-war-insurance.pot
+WP_ENV=.wp-env.json
 NOTES=.sswi-release-notes.md
 
 if [ -z "$VERSION" ]; then
@@ -55,12 +66,37 @@ if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)
 	exit 1
 fi
 
-for required in "$FILE" "$README" "$POT"; do
+for required in "$FILE" "$README" "$POT" "$WP_ENV"; do
 	if [ ! -f "$required" ]; then
 		echo "set-version: $required not found — run from the repository root" >&2
 		exit 1
 	fi
 done
+
+# THE PRODUCT NAME IS READ, NOT WRITTEN DOWN AGAIN.
+#
+# `Spot Ship War Insurance` used to be a literal in this script twice, in
+# bin/assert-version.sh and in bin/refresh-pot.sh — four copies of a string that
+# only ever has one correct value. A rename would have left the catalogue awk
+# below matching nothing and the read-back reporting an empty version, which
+# names the wrong cause entirely. The plugin header already states it.
+PLUGIN_NAME=$( sed -n 's/^ \* Plugin Name:[[:space:]]*\(.*\)$/\1/p' "$FILE" | head -1 | sed 's/[[:space:]]*$//' )
+
+if [ -z "$PLUGIN_NAME" ]; then
+	echo "set-version: could not read the Plugin Name: header from $FILE" >&2
+	exit 1
+fi
+
+# `Tested up to` IS A CLAIM ABOUT WHAT THE SUITES RAN AGAINST, so it comes from
+# the pin rather than from memory. It was hand-corrected 6.7 -> 6.8 with nothing
+# writing it, which is the same shape of defect as `Stable tag`.
+TESTED=$( sed -n 's/.*"core"[[:space:]]*:[[:space:]]*"[^"]*#\([0-9][^"]*\)".*/\1/p' "$WP_ENV" | head -1 )
+
+if [ -z "$TESTED" ]; then
+	echo "set-version: $WP_ENV does not pin a numbered core (\"core\": \"WordPress/WordPress#6.8\")" >&2
+	echo "set-version: readme.txt's 'Tested up to' is a numeric claim, so there has to be a number behind it." >&2
+	exit 1
+fi
 
 # ONE TRAP, INSTALLED ONCE.
 #
@@ -78,6 +114,11 @@ trap 'if [ -n "$rewrite_tmp" ]; then rm -f "$rewrite_tmp"; fi' EXIT
 # filesystems is not atomic, and a half-written plugin header is a file that
 # does not parse. One copy of that reasoning for every file written below,
 # rather than one copy per file to drift apart.
+#
+# `*.set-version.tmp` is in .gitignore and .distignore: the trap above does not
+# run on SIGKILL or a cancelled runner, and a stray one left at the repo root
+# fails bin/build-dist.sh's ship-list check on the next build, naming a file
+# nobody wrote on purpose.
 rewrite_in_place() {
 	local file=$1
 	shift
@@ -98,13 +139,13 @@ rewrite_in_place() {
 # header; reordering two lines, or an early exit added to that script, would
 # have removed its verification while this one still reported success.
 read_back() {
-	local what=$1 file=$2 expr=$3
+	local what=$1 file=$2 expr=$3 want=${4:-$VERSION}
 	local got
 
 	got=$( sed -n "$expr" "$file" | head -1 | tr -d '[:space:]' )
 
-	if [ "$got" != "$VERSION" ]; then
-		echo "set-version: asked for '$VERSION' but $what in $file says '$got'" >&2
+	if [ "$got" != "$want" ]; then
+		echo "set-version: asked for '$want' but $what in $file says '$got'" >&2
 		exit 1
 	fi
 }
@@ -136,28 +177,7 @@ rewrite_in_place "$FILE" awk -v ver="$VERSION" '
 read_back "the Version: header" "$FILE" 's/^ \* Version:[[:space:]]*\(.*\)$/\1/p'
 read_back "SPOTSHIP_WI_VERSION" "$FILE" "s/^define( 'SPOTSHIP_WI_VERSION', '\(.*\)' );\$/\1/p"
 
-# THE THIRD PLACE A VERSION APPEARS.
-#
-# readme.txt carries `Stable tag:`, and nothing used to write it — so it sat at
-# 0.1.0 while the plugin shipped 1.0.0, and the zip customers unpack contained a
-# readme contradicting the plugin beside it.
-#
-# It tracks the plugin version exactly, prereleases included. On wordpress.org
-# `Stable tag` means something more specific, but this plugin is licensed
-# Proprietary and cannot be listed there, so the only useful property is that it
-# never disagrees with the plugin beside it.
-rewrite_in_place "$README" awk -v ver="$VERSION" '
-	!st && /^Stable tag:[ \t]*[^ \t]/ {
-		sub( /[^ \t]+$/, ver )
-		st = 1
-	}
-
-	{ print }
-'
-
-read_back "'Stable tag'" "$README" 's/^Stable tag:[[:space:]]*\(.*\)$/\1/p'
-
-# AND THE CHANGELOG SECTION, WHICH DRIFTED THE SAME WAY AND FOR THE SAME REASON.
+# THE RELEASE NOTES THAT ARE BEING PUBLISHED ANYWAY ARE THE CHANGELOG ENTRY.
 #
 # `== Changelog ==` still said "0.1.0 — Initial release" when 1.0.0 shipped.
 # Asserting that a section for the current version exists is only possible if
@@ -165,8 +185,6 @@ read_back "'Stable tag'" "$README" 's/^Stable tag:[[:space:]]*\(.*\)$/\1/p'
 # no human can have written the heading in advance, and a release that aborted
 # because the heading was missing would abort after the version had already been
 # decided.
-#
-# THE ENTRY IS THE RELEASE NOTES THAT ARE BEING PUBLISHED ANYWAY.
 #
 # The prepareCmd in package.json writes ${nextRelease.notes} to NOTES with a
 # QUOTED heredoc — `<<'SSWI_NOTES_EOF'` — so that nothing inside a commit
@@ -180,60 +198,156 @@ read_back "'Stable tag'" "$README" 's/^Stable tag:[[:space:]]*\(.*\)$/\1/p'
 # matching `'". A heredoc at the top level parses everywhere.
 #
 # Reduced to the bullets and their section labels: the markdown heading repeats
-# the version that is already the heading above it, and the commit-sha links go
-# nowhere useful in a plain-text file on a customer's server.
+# the version that is already the heading above it, and the links go nowhere
+# useful in a plain-text file on a customer's server.
 #
 # Absent — any run that is not a release, ci.yaml's rehearsal included — it
 # falls back to the heading and a link to the GitHub release, so the assertion
 # in bin/assert-version.sh still has something true to find. An entry written by
 # hand before the release is left alone either way.
-if ! grep -q "^= ${VERSION} =$" "$README"; then
-	SSWI_CHANGELOG_BODY=
+SSWI_CHANGELOG_BODY=
+HAVE_SECTION=0
 
-	if [ -f "$NOTES" ]; then
-		SSWI_CHANGELOG_BODY=$( awk '
-			/^#+[ \t]/ {
-				# The first heading is the version, which readme.txt is about to
-				# state itself. Later ones are "Bug Fixes" and friends, worth
-				# keeping as labels.
-				if ( ++depth > 1 ) {
-					sub( /^#+[ \t]+/, "" )
-					print ""
-					print $0
-				}
-				next
+if grep -q "^= ${VERSION} =$" "$README"; then
+	HAVE_SECTION=1
+elif [ -f "$NOTES" ]; then
+	SSWI_CHANGELOG_BODY=$( awk '
+		/^#+[ \t]/ {
+			# The first heading is the version, which readme.txt is about to
+			# state itself. Later ones are "Bug Fixes" and friends, worth
+			# keeping as labels.
+			if ( ++depth > 1 ) {
+				sub( /^#+[ \t]+/, "" )
+				print ""
+				print $0
 			}
-
-			/^[*-][ \t]/ {
-				# conventional-changelog appends ([abc1234](url)) to every
-				# subject. A link to a commit is not changelog prose.
-				gsub( /[ \t]*\(\[[0-9a-f]+\]\([^)]*\)\)[ \t]*$/, "" )
-				sub( /^-[ \t]/, "* " )
-				print
-				next
-			}
-		' "$NOTES" )
-	fi
-
-	if [ -z "$SSWI_CHANGELOG_BODY" ]; then
-		SSWI_CHANGELOG_BODY="* See https://github.com/spotship/wordpress-insurance/releases/tag/v${VERSION}"
-	fi
-
-	# Through the environment, not `awk -v`: -v applies backslash-escape
-	# processing to the value, which would mangle any commit subject containing
-	# one. ENVIRON hands the string over exactly as it is.
-	export SSWI_CHANGELOG_BODY
-
-	rewrite_in_place "$README" awk -v ver="$VERSION" '
-		{ print }
-
-		!seen && /^== Changelog ==$/ {
-			print ""
-			print "= " ver " ="
-			print ENVIRON["SSWI_CHANGELOG_BODY"]
-			seen = 1
+			next
 		}
-	'
+
+		/^[*-][ \t]/ {
+			# EVERY LINK GOES, NOT JUST A TRAILING COMMIT ONE.
+			#
+			# conventional-changelog decorates a subject with up to three
+			# kinds of link, and the first version of this stripped only the
+			# last of them — anchored to end-of-line and matching a hex sha —
+			# so against the notes this repo actually produces it removed
+			# nothing at all. v1.0.0 published
+			#
+			#   ... ([#5](…/issues/5)) ([2c18c5e](…/commit/2c18c5e…)), closes
+			#   [hi#severity](https://github.com/hi/issues/severity)
+			#
+			# where the `closes` tail sits after the sha group, so the
+			# end-anchor never matched, and the `#5` group is not a sha. A
+			# plain-text readme would have shipped two 60-character URLs and
+			# one known-broken link to every customer.
+			#
+			# The `closes` refs first, because they are bare `[x](y)` rather
+			# than parenthesised and always run to end of line.
+			sub( /,[ \t]*closes[ \t]+\[[^][]*\]\([^()]*\).*$/, "" )
+
+			# Then every `([text](url))` group, wherever it sits.
+			gsub( /[ \t]*\(\[[^][]*\]\([^()]*\)\)/, "" )
+
+			sub( /[ \t]+$/, "" )
+			sub( /^-[ \t]/, "* " )
+			print
+			next
+		}
+	' "$NOTES" )
+fi
+
+if [ "$HAVE_SECTION" = 0 ] && [ -z "$SSWI_CHANGELOG_BODY" ]; then
+	SSWI_CHANGELOG_BODY="* See https://github.com/spotship/wordpress-insurance/releases/tag/v${VERSION}"
+fi
+
+# Through the environment, not `awk -v`: -v applies backslash-escape processing
+# to the value, which would mangle any commit subject containing one. ENVIRON
+# hands the string over exactly as it is.
+export SSWI_CHANGELOG_BODY
+
+# ONE PASS OVER readme.txt, NOT THREE.
+#
+# `Stable tag`, `Tested up to` and the changelog section used to be separate
+# rewrites of the same file, each copying it whole. Beyond the wasted work that
+# tripled the window in which a crash leaves readme.txt half-written — the tag
+# bumped, no entry under it — and tripled the number of places the atomic-rename
+# reasoning had to hold.
+#
+# A PRERELEASE SUPERSEDES ITS PREDECESSORS RATHER THAN STACKING ON THEM.
+#
+# `dev` is a prerelease branch, so every push to it runs a real release:
+# 1.1.0-dev.1, -dev.2, -dev.3, each one landing here and each one committed back
+# by @semantic-release/git. Appending would put one section per internal build
+# into the readme a customer unpacks — the same bullets three and four times
+# over under numbers that mean nothing outside this repo — and nothing would
+# ever remove them. So a section whose version shares this one's base is
+# replaced by this one: -dev.2 supersedes -dev.1, and 1.1.0 supersedes every
+# 1.1.0-dev.N. Released versions are never touched.
+rewrite_in_place "$README" awk \
+	-v ver="$VERSION" \
+	-v base="${VERSION%%-*}" \
+	-v tested="$TESTED" \
+	-v have="$HAVE_SECTION" '
+	function superseded( line,    v ) {
+		# "= X =" -> X. Shares this version base and is a prerelease of it.
+		v = substr( line, 3, length( line ) - 4 )
+		return substr( v, 1, length( base ) + 1 ) == base "-"
+	}
+
+	!st && /^Stable tag:[ \t]*[^ \t]/ {
+		sub( /[^ \t]+$/, ver )
+		st = 1
+		print
+		next
+	}
+
+	!tu && /^Tested up to:[ \t]*[^ \t]/ {
+		sub( /[^ \t]+$/, tested )
+		tu = 1
+		print
+		next
+	}
+
+	/^== / {
+		# Any other section heading ends the changelog, so the supersede scan
+		# below cannot run off the end of it.
+		inlog = ( $0 == "== Changelog ==" )
+		drop = 0
+		print
+
+		if ( inlog && ! seen ) {
+			seen = 1
+
+			if ( have != "1" ) {
+				print ""
+				print "= " ver " ="
+				print ENVIRON["SSWI_CHANGELOG_BODY"]
+			}
+		}
+
+		next
+	}
+
+	inlog && /^= .* =$/ {
+		drop = ( have != "1" && superseded( $0 ) )
+	}
+
+	{ if ( ! drop ) print }
+'
+
+read_back "'Stable tag'" "$README" 's/^Stable tag:[[:space:]]*\(.*\)$/\1/p'
+read_back "'Tested up to'" "$README" 's/^Tested up to:[[:space:]]*\(.*\)$/\1/p' "$TESTED"
+
+# READ BACK LOCALLY, LIKE EVERY OTHER WRITE.
+#
+# This was the one rewrite covered only transitively, by assert-version.sh's
+# grep further down the pipeline — which is the arrangement the comment above
+# read_back() exists to argue against. A readme that lost its literal
+# `== Changelog ==` heading would have had nothing inserted, silently.
+if ! grep -q "^= ${VERSION} =$" "$README"; then
+	echo "set-version: no '= $VERSION =' section in $README after writing it" >&2
+	echo "set-version: the insert is anchored to a literal '== Changelog ==' heading; $README has none." >&2
+	exit 1
 fi
 
 # Consumed. Leaving it would put an untracked file in front of
@@ -248,9 +362,9 @@ rm -f "$NOTES"
 # still read 0.1.0 — the identical defect as `Stable tag`, one file over.
 # refresh-pot.sh now interpolates it from the plugin header, so a regenerated
 # catalogue agrees; this is what keeps a RELEASE agreeing without regenerating.
-rewrite_in_place "$POT" awk -v ver="$VERSION" -v bs='\\' '
-	!pid && /^"Project-Id-Version: Spot Ship War Insurance / {
-		print "\"Project-Id-Version: Spot Ship War Insurance " ver bs "n\""
+rewrite_in_place "$POT" awk -v ver="$VERSION" -v name="$PLUGIN_NAME" -v bs='\\' '
+	!pid && index( $0, "\"Project-Id-Version: " name " " ) == 1 {
+		print "\"Project-Id-Version: " name " " ver bs "n\""
 		pid = 1
 		next
 	}
@@ -258,7 +372,8 @@ rewrite_in_place "$POT" awk -v ver="$VERSION" -v bs='\\' '
 	{ print }
 '
 
-read_back "'Project-Id-Version'" "$POT" 's/^"Project-Id-Version: Spot Ship War Insurance \(.*\)\\n"$/\1/p'
+read_back "'Project-Id-Version'" "$POT" \
+	"s/^\"Project-Id-Version: ${PLUGIN_NAME} \(.*\)\\\\n\"\$/\1/p"
 
 # The cross-file check, plus the tag check this script cannot do on its own.
 bash bin/assert-version.sh

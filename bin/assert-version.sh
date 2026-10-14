@@ -11,6 +11,14 @@
 #
 # bin/set-version.sh writes all four. This is what stops any of them being
 # edited back out of step by hand, and what stops a fifth appearing unnoticed.
+#
+# NOTHING IS ASSERTED HERE THAT bin/set-version.sh DOES NOT WRITE.
+#
+# That script calls this one as its last act, from inside semantic-release's
+# `prepare`. A value compared here and written by nobody therefore fails the
+# release AFTER the version has been computed and four files already rewritten —
+# late, and in the one place where late is expensive. `Tested up to` was that
+# value until set-version.sh took it over.
 
 set -euo pipefail
 
@@ -18,6 +26,8 @@ FILE=spotship-war-insurance.php
 README=readme.txt
 POT=languages/spotship-war-insurance.pot
 WP_ENV=.wp-env.json
+COMPOSER=composer.json
+PHPCS=phpcs.xml.dist
 
 # ABSENT IS A FAILURE, NOT A SKIP.
 #
@@ -25,12 +35,23 @@ WP_ENV=.wp-env.json
 # whole release. Without this guard a missing file reaches `sed` instead, which
 # under `pipefail` aborts the script on a raw "No such file or directory" before
 # the named message below can explain what is actually wrong.
-for required in "$FILE" "$README" "$POT"; do
+for required in "$FILE" "$README" "$POT" "$WP_ENV"; do
 	if [ ! -f "$required" ]; then
 		echo "assert-version: $required not found — run from the repository root" >&2
 		exit 1
 	fi
 done
+
+# THE PRODUCT NAME IS READ, NOT WRITTEN DOWN AGAIN. It had four hardcoded
+# copies across this script, bin/set-version.sh and bin/refresh-pot.sh; a rename
+# would have made every one of them match nothing and report an empty version,
+# which names the wrong cause. The header the script is already parsing has it.
+plugin_name=$( sed -n 's/^ \* Plugin Name:[[:space:]]*\(.*\)$/\1/p' "$FILE" | head -1 | sed 's/[[:space:]]*$//' )
+
+if [ -z "$plugin_name" ]; then
+	echo "assert-version: could not read the Plugin Name: header from $FILE" >&2
+	exit 1
+fi
 
 header=$( sed -n 's/^ \* Version:[[:space:]]*\(.*\)$/\1/p' "$FILE" | head -1 | tr -d '[:space:]' )
 constant=$( sed -n "s/^define( 'SPOTSHIP_WI_VERSION', '\(.*\)' );$/\1/p" "$FILE" | head -1 )
@@ -83,6 +104,40 @@ fi
 # readme, and WordPress reads a different one in each context — the header for
 # install-time blocking, the readme for what a human is told. Two numbers with
 # no check between them is how `Stable tag` got where it did.
+#
+# AND THEY APPEAR IN THE TOOLING, WHICH IS WHERE THEY DO THE MOST DAMAGE.
+#
+# Checking only the two declarations left the two enforcers out: composer
+# resolves dependencies against `config.platform.php`, and PHPCompatibilityWP
+# scans against phpcs's `testVersion` while WPCS reads `minimum_wp_version`.
+# Raise the header and the readme to 8.2 with those three behind and everything
+# is green while the suites still prove 8.1 — a declared floor nothing tests.
+# Six numbers with two checks between them was the same defect, further out.
+#
+# Each spelling differs, so each is compared to the form it is supposed to take
+# rather than to a bare number.
+check_echo() {
+	local label=$1 file=$2 expr=$3 want=$4
+	local got
+
+	if [ ! -f "$file" ]; then
+		echo "assert-version: $file not found — run from the repository root" >&2
+		exit 1
+	fi
+
+	got=$( sed -n "$expr" "$file" | head -1 | tr -d '[:space:]' )
+
+	if [ -z "$got" ]; then
+		echo "assert-version: $label not found in $file" >&2
+		exit 1
+	fi
+
+	if [ "$got" != "$want" ]; then
+		echo "assert-version: MISMATCH — $label is '$got' in $file, expected '$want'" >&2
+		exit 1
+	fi
+}
+
 for field in 'Requires at least' 'Requires PHP'; do
 	plugin_value=$( sed -n "s/^ \* ${field}:[[:space:]]*\(.*\)\$/\1/p" "$FILE" | head -1 | tr -d '[:space:]' )
 	readme_value=$( sed -n "s/^${field}:[[:space:]]*\(.*\)\$/\1/p" "$README" | head -1 | tr -d '[:space:]' )
@@ -96,30 +151,54 @@ for field in 'Requires at least' 'Requires PHP'; do
 		echo "assert-version: MISMATCH — '$field' is '$plugin_value' in $FILE and '$readme_value' in $README" >&2
 		exit 1
 	fi
+
+	if [ "$field" = 'Requires PHP' ]; then
+		# "php": ">=8.1" — what composer will install for.
+		check_echo "the 'php' constraint" "$COMPOSER" \
+			's/.*"php"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' ">=$plugin_value"
+
+		# platform.php is a full x.y.z — what composer RESOLVES against, which
+		# is the one that silently pulls a dependency the floor cannot run.
+		check_echo "config.platform.php" "$COMPOSER" \
+			's/^[[:space:]]*"php"[[:space:]]*:[[:space:]]*"\([0-9][^"]*\)".*/\1/p' "$plugin_value.0"
+
+		# testVersion is a RANGE: "8.1-" means 8.1 and up.
+		check_echo "phpcs testVersion" "$PHPCS" \
+			's/.*name="testVersion"[[:space:]]*value="\([^"]*\)".*/\1/p' "$plugin_value-"
+	else
+		check_echo "phpcs minimum_wp_version" "$PHPCS" \
+			's/.*name="minimum_wp_version"[[:space:]]*value="\([^"]*\)".*/\1/p' "$plugin_value"
+	fi
 done
 
-# `Tested up to` IS A CLAIM ABOUT WHAT CI ACTUALLY RAN.
+# `Tested up to` IS A CLAIM ABOUT WHAT THE SUITES ACTUALLY RAN AGAINST.
 #
 # It was hand-corrected 6.7 -> 6.8 with nothing checking it, which is the same
-# shape of defect as everything above. .wp-env.json pins the core the suites run
-# against, so that pin is the evidence for the claim; when it says `latest`
-# there is no number to compare and this does not pretend otherwise.
-if [ -f "$WP_ENV" ]; then
-	pinned=$( sed -n 's/.*"core"[[:space:]]*:[[:space:]]*"[^"]*#\([0-9][^"]*\)".*/\1/p' "$WP_ENV" | head -1 )
-	tested=$( sed -n 's/^Tested up to:[[:space:]]*\(.*\)$/\1/p' "$README" | head -1 | tr -d '[:space:]' )
+# shape of defect as everything above. .wp-env.json pins the core, so that pin
+# is the evidence — and ci.yaml's integration matrix is checked against the same
+# pin by its own job, because wp-env's pin is overridden by WP_ENV_CORE on every
+# runner and a pin no suite honours is not evidence of anything.
+#
+# ABSENT IS A FAILURE HERE TOO. This used to skip when .wp-env.json was missing
+# or pinned `latest`, so the readme could claim any version at all and stay
+# green — an advisory check on the one value nothing wrote. bin/set-version.sh
+# writes it from this same pin now, so there is always a number to compare.
+pinned=$( sed -n 's/.*"core"[[:space:]]*:[[:space:]]*"[^"]*#\([0-9][^"]*\)".*/\1/p' "$WP_ENV" | head -1 )
 
-	if [ -n "$pinned" ] && [ "$pinned" != "$tested" ]; then
-		echo "assert-version: MISMATCH — $README 'Tested up to: $tested' vs $WP_ENV core '$pinned'" >&2
-		exit 1
-	fi
+if [ -z "$pinned" ]; then
+	echo "assert-version: $WP_ENV does not pin a numbered core (\"core\": \"WordPress/WordPress#6.8\")" >&2
+	echo "assert-version: $README 'Tested up to' is a numeric claim, so there has to be a number behind it." >&2
+	exit 1
 fi
+
+check_echo "'Tested up to'" "$README" 's/^Tested up to:[[:space:]]*\(.*\)$/\1/p' "$pinned"
 
 # THE CATALOGUE HEADER IS SHIPPED TOO.
 #
 # bin/build-dist.sh puts languages/ in the zip, so `Project-Id-Version` reaches
 # every customer and every translator. It was hardcoded to 0.1.0 in
 # bin/refresh-pot.sh and nobody had ever looked at it.
-catalogue=$( sed -n 's/^"Project-Id-Version: Spot Ship War Insurance \(.*\)\\n"$/\1/p' "$POT" | head -1 | tr -d '[:space:]' )
+catalogue=$( sed -n "s/^\"Project-Id-Version: ${plugin_name} \(.*\)\\\\n\"\$/\1/p" "$POT" | head -1 | tr -d '[:space:]' )
 
 if [ -z "$catalogue" ]; then
 	echo "assert-version: no 'Project-Id-Version' line found in $POT" >&2

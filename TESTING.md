@@ -20,8 +20,8 @@ it must not acquire a browser or a Docker dependency.
 | PHPCS (WPCS + PHPCompatibilityWP) | whole tree | clean |
 | PHPStan level 6 | plugin + templates + uninstall | clean |
 | PHPUnit unit | 54 tests × PHP 8.1 / 8.2 / 8.3 | pass |
-| PHPUnit integration | 47 methods × PHP {8.1,8.2,8.3} × WP {6.4,latest} | pass |
-| jsdom (`npm run test:js`) | 41 tests | pass, every guard mutation-checked |
+| PHPUnit integration | 47 methods × PHP {8.1,8.2,8.3} × WP {6.4,6.8,latest} | pass |
+| jsdom (`npm run test:js`) | 55 tests | pass, every guard mutation-checked |
 | Playwright + axe | desktop + narrow projects, incl. the block editor | pass |
 | Plugin Check (WP.org scanner) | built plugin | pass |
 | Translation catalogue freshness | regenerate + diff | pass |

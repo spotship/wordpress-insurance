@@ -133,6 +133,37 @@ jobs:
       - uses: actions/checkout@v4
       - run: bash bin/assert-version.sh
 
+      - name: The core pin behind 'Tested up to' is a core the suites run
+        run: |
+          set -euo pipefail
+
+          # bin/assert-version.sh ties readme.txt's `Tested up to` to
+          # .wp-env.json's core pin and calls that pin the evidence. It is only
+          # evidence if a suite honours it — and the integration matrix sets
+          # WP_ENV_CORE on every job, which OVERRIDES .wp-env.json, so for a
+          # while the claim rested on a pin nothing had ever run against.
+          #
+          # This is here rather than in assert-version.sh on purpose:
+          # set-version.sh calls that script from inside semantic-release's
+          # prepare, and a check it cannot satisfy by writing a file would abort
+          # a release after the version had been computed. A matrix is not
+          # something set-version.sh can write.
+          pinned=$( sed -n 's/.*"core"[[:space:]]*:[[:space:]]*"[^"]*#\([0-9][^"]*\)".*/\1/p' .wp-env.json | head -1 )
+
+          if [ -z "$pinned" ]; then
+            echo "::error::.wp-env.json does not pin a numbered core"
+            exit 1
+          fi
+
+          legs=$( sed -n "s/^ *wp: *\[\(.*\)\] *$/\1/p" .github/workflows/ci.yaml | head -1 | tr -d "' " | tr ',' '\n' )
+
+          if ! printf '%s\n' "$legs" | grep -qxF "$pinned"; then
+            echo "::error::readme.txt claims 'Tested up to: $pinned' from .wp-env.json, but the integration matrix does not run WP $pinned (legs: $( echo $legs ))"
+            exit 1
+          fi
+
+          echo "WP $pinned is in the integration matrix"
+
   release-config:
     # RELEASE AUTOMATION IS ONLY EXERCISED BY RELEASING, UNLESS YOU MAKE IT
     # OTHERWISE.
@@ -205,35 +236,24 @@ jobs:
           # already exist — it refuses to run otherwise — and the step above
           # leaves an untracked dry-run.log beside them.
           touched=$( git diff --name-only )
-          assets=$( node -e '
-            const plugins = require( "./package.json" ).release.plugins;
-            const git = plugins.find( ( p ) => Array.isArray( p ) && p[ 0 ] === "@semantic-release/git" );
-            process.stdout.write( ( git ? git[ 1 ].assets : [] ).join( "\n" ) );
-          ' )
 
           echo "bin/set-version.sh wrote:"
           echo "$touched"
 
-          # A rewrite that wrote nothing is a broken rewrite, not a pass.
-          if [ -z "$touched" ]; then
-            echo "::error::bin/set-version.sh changed no tracked file"
-            exit 1
-          fi
-
-          # SET SUBTRACTION, NOT A SHELL LOOP. `for file in $touched` depends on
-          # newline being in IFS, and where it is not the loop runs once with
-          # the whole multi-line list in $file — which `grep -qxF` then reads as
-          # one pattern per line and matches on any of them. Written that way
-          # the check passed while the assets list was missing readme.txt, which
-          # is precisely what it is here to catch.
-          missing=$( printf '%s\n' "$touched" | grep -vxF -f <( printf '%s\n' "$assets" ) || true )
-
-          if [ -n "$missing" ]; then
-            echo "$missing" | while IFS= read -r file; do
-              echo "::error::$file is written by bin/set-version.sh but missing from the @semantic-release/git assets list in package.json — the release would discard it"
-            done
-            exit 1
-          fi
+          # COMPARED BY bin/check-release-assets.js, WHICH HAS A TEST SUITE.
+          #
+          # Two earlier versions of this lived here as shell. The first,
+          # `for file in $touched` with `grep -qxF`, PASSED while readme.txt was
+          # missing from the list — newline splitting depends on IFS, and
+          # `grep -F` given the whole multi-line list reads it as one pattern
+          # per line and matches on any of them. The second, `grep -vxF -f`, was
+          # correct set subtraction but compared whole lines, so a glob or the
+          # object form the plugin documents would have failed a valid config.
+          #
+          # A `run:` block cannot be unit tested, and the failure mode that
+          # matters here is a check that cannot fail. tests/js/release-assets.js
+          # exercises both directions.
+          printf '%s\n' "$touched" | node bin/check-release-assets.js
 
           git checkout -- .
           bash bin/assert-version.sh
@@ -287,7 +307,15 @@ jobs:
         # invisible unless you compared the two matrices — and 8.2 is a real
         # supported version that a customer's host may well be on.
         php: ['8.1', '8.2', '8.3']
-        wp: ['6.4', 'latest']
+        # 6.8 IS HERE BECAUSE readme.txt CLAIMS IT.
+        #
+        # `Tested up to: 6.8` comes from .wp-env.json's core pin, and the
+        # `version` job refuses a pin that is not one of these legs. Without it
+        # the claim rested on `latest`, which is whatever WordPress shipped this
+        # week and is not the number in the readme — and .wp-env.json's pin was
+        # overridden by WP_ENV_CORE on every job here, so nothing had ever run
+        # 6.8 at all.
+        wp: ['6.4', '6.8', 'latest']
     env:
       WP_ENV_CORE: ${{ matrix.wp == 'latest' && 'WordPress/WordPress' || format('WordPress/WordPress#{0}', matrix.wp) }}
     steps:

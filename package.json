@@ -37,7 +37,7 @@
       [
         "@semantic-release/exec",
         {
-          "prepareCmd": "cat > .sswi-release-notes.md <<'SSWI_NOTES_EOF'\n${nextRelease.notes}\nSSWI_NOTES_EOF\nbash bin/set-version.sh ${nextRelease.version} && bash bin/generate-fallback-rates.sh && bash bin/build-dist.sh"
+          "prepareCmd": "cat > .sswi-release-notes.md <<'SSWI_NOTES_EOF' &&\n${nextRelease.notes}\nSSWI_NOTES_EOF\nbash bin/set-version.sh ${nextRelease.version} && bash bin/generate-fallback-rates.sh && bash bin/build-dist.sh"
         }
       ],
       [

@@ -345,8 +345,21 @@ const MUTATIONS = [
 		suite: 'php',
 		what: 'the disclaimers are read from the top level again',
 		file: 'templates/partials/rates-table.php',
-		from: "$sswi_section['disclaimers']",
-		to: "$sswi_rates['disclaimers']",
+		// THE WHOLE ASSIGNMENT, because the section expression appears three
+		// times across its two lines and `from` must identify exactly one edit.
+		// Named by the single expression, this mutated only the `isset()` and
+		// left the two reads below it pointing at the right place — a mutation
+		// that was not the one described. The AMBIG guard below refuses that.
+		//
+		// NOTE THE TWO TABS on the continuation. Unlike the columns assignment
+		// above, this one is nested inside an indented <?php block, so a
+		// one-tab copy of that entry matches nothing and fails as STALE.
+		from:
+			"$sswi_disclaimers = isset( $sswi_section['disclaimers'] ) && is_array( $sswi_section['disclaimers'] )\n" +
+			"\t\t? $sswi_section['disclaimers']",
+		to:
+			"$sswi_disclaimers = isset( $sswi_rates['disclaimers'] ) && is_array( $sswi_rates['disclaimers'] )\n" +
+			"\t\t? $sswi_rates['disclaimers']",
 		// The shipped state, and the one with a compliance consequence: the
 		// block is simply never reached, on every install.
 		mustFail: [ 'test_the_disclaimers_are_rendered' ],

@@ -214,15 +214,26 @@ jobs:
           echo "bin/set-version.sh wrote:"
           echo "$touched"
 
-          missing=0
-          for file in $touched; do
-            if ! printf '%s\n' "$assets" | grep -qxF "$file"; then
-              echo "::error::$file is written by bin/set-version.sh but missing from the @semantic-release/git assets list in package.json — the release would discard it"
-              missing=1
-            fi
-          done
+          # A rewrite that wrote nothing is a broken rewrite, not a pass.
+          if [ -z "$touched" ]; then
+            echo "::error::bin/set-version.sh changed no tracked file"
+            exit 1
+          fi
 
-          [ "$missing" -eq 0 ]
+          # SET SUBTRACTION, NOT A SHELL LOOP. `for file in $touched` depends on
+          # newline being in IFS, and where it is not the loop runs once with
+          # the whole multi-line list in $file — which `grep -qxF` then reads as
+          # one pattern per line and matches on any of them. Written that way
+          # the check passed while the assets list was missing readme.txt, which
+          # is precisely what it is here to catch.
+          missing=$( printf '%s\n' "$touched" | grep -vxF -f <( printf '%s\n' "$assets" ) || true )
+
+          if [ -n "$missing" ]; then
+            echo "$missing" | while IFS= read -r file; do
+              echo "::error::$file is written by bin/set-version.sh but missing from the @semantic-release/git assets list in package.json — the release would discard it"
+            done
+            exit 1
+          fi
 
           git checkout -- .
           bash bin/assert-version.sh

@@ -51,7 +51,12 @@ Playwright never executed.
 - **No WP nonces on the public proxy routes.** A nonce baked into
   Cloudflare-cached HTML goes stale and every submit 403s. The admin screens DO
   use nonces — different request, different reasoning.
-- **The version lives in exactly two places** and CI asserts they agree.
+- **The version lives in four shipped places** — the `Version:` header, the
+  `SPOTSHIP_WI_VERSION` constant, readme.txt's `Stable tag` and the catalogue's
+  `Project-Id-Version`. `bin/set-version.sh` writes all four,
+  `bin/assert-version.sh` asserts them, and anything it writes must also be in
+  the `@semantic-release/git` assets list in package.json or the release commit
+  drops it. Do not edit any of them by hand.
 - **`bin/build-dist.sh` must stay non-mutating.** An earlier version ran
   `composer install --no-dev` in place and destroyed the working vendor/.
 - **Never invent a rate figure.** `includes/data/rates-fallback.php` ships empty

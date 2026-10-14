@@ -39,6 +39,7 @@ $sswi_uid = $data['uid'];
 $sswi_dest_id   = $sswi_uid . '-destinations';
 $sswi_dest_list = $sswi_dest_id . '-list';
 $sswi_dest_err  = $sswi_dest_id . '-error';
+$sswi_dest_hint = $sswi_dest_id . '-hint';
 $sswi_ccy_id    = $sswi_uid . '-cargoCurrency';
 $sswi_ccy_err   = $sswi_ccy_id . '-error';
 $sswi_zone_id   = $sswi_uid . '-riskZone';
@@ -94,14 +95,12 @@ $sswi_notes_err = $sswi_notes_id . '-error';
 		$sswi_combo_label    = __( 'Vessel (optional)', 'spotship-war-insurance' );
 		$sswi_combo_kind     = 'vessel';
 		$sswi_combo_required = false;
-		$sswi_combo_hint     = __( 'Type at least two characters, then choose from the list.', 'spotship-war-insurance' );
 		require SPOTSHIP_WI_PATH . 'templates/partials/combobox.php';
 
 		$sswi_combo_name     = 'fromPort';
 		$sswi_combo_label    = __( 'From location', 'spotship-war-insurance' );
 		$sswi_combo_kind     = 'location';
 		$sswi_combo_required = true;
-		$sswi_combo_hint     = __( 'Type at least two characters, then choose from the list.', 'spotship-war-insurance' );
 		require SPOTSHIP_WI_PATH . 'templates/partials/combobox.php';
 		?>
 
@@ -114,9 +113,11 @@ $sswi_notes_err = $sswi_notes_id . '-error';
 				<span class="sswi-sr"><?php esc_html_e( '(required)', 'spotship-war-insurance' ); ?></span>
 			</label>
 			<ul class="sswi-chips" data-sswi-chips></ul>
+			<?php /* The threshold, read on focus. See combobox.php — the live region only speaks once a key has been pressed. */ ?>
+			<p class="sswi-sr" id="<?php echo esc_attr( $sswi_dest_hint ); ?>"><?php echo esc_html( Spotship_WI_Renderer::min_chars_hint() ); ?></p>
 			<input type="text" id="<?php echo esc_attr( $sswi_dest_id ); ?>" role="combobox" aria-expanded="false"
 				aria-controls="<?php echo esc_attr( $sswi_dest_list ); ?>" aria-autocomplete="list" aria-required="true"
-				aria-describedby="<?php echo esc_attr( $sswi_dest_err ); ?>" autocomplete="off" disabled>
+				aria-describedby="<?php echo esc_attr( $sswi_dest_hint . ' ' . $sswi_dest_err ); ?>" autocomplete="off" disabled>
 			<ul class="sswi-listbox" id="<?php echo esc_attr( $sswi_dest_list ); ?>" role="listbox" hidden></ul>
 			<p class="sswi-sr" role="status" aria-live="polite" data-sswi-chip-live></p>
 			<p class="sswi-error" id="<?php echo esc_attr( $sswi_dest_err ); ?>" data-sswi-error hidden></p>

@@ -865,3 +865,126 @@ test( 'no tracked file reaches the customer zip without a decision', () => {
 			'Add it to .distignore, or to ALLOWED in bin/build-dist.sh if it genuinely ships'
 	);
 } );
+
+test( 'no IGNORED local artefact reaches the customer zip either', () => {
+	/*
+	 * The sibling above reads `git ls-tree`, so it sees only TRACKED files —
+	 * and is therefore blind to the half of the problem that actually bites.
+	 *
+	 * bin/build-dist.sh rsyncs the WORKING TREE, not the index. A file git is
+	 * told to ignore is still sitting on disk and still gets copied, so
+	 * .gitignore buys nothing at all here. Run the unit suite and build:
+	 * `.phpunit.result.cache` fails the ship-list check. The allow-list means
+	 * it fails CLOSED, which is why this is an annoyance rather than a leak —
+	 * but the annoyance is a release-time one, and `.env` is on the same list.
+	 *
+	 * So every .gitignore pattern must also be a .distignore pattern, or be
+	 * something that genuinely ships. Those are the only two answers, and this
+	 * is where the next entry added to one list is forced into the other.
+	 */
+	const lines = ( file ) =>
+		read( file )
+			.split( '\n' )
+			.map( ( line ) => line.trim() )
+			.filter( ( line ) => line && ! line.startsWith( '#' ) );
+
+	// `vendor/` and `vendor` are the same instruction to both tools.
+	const bare = ( pattern ) => pattern.replace( /\/$/, '' );
+
+	const blocked = lines( '.distignore' ).map( bare );
+	const declared = ( read( 'bin/build-dist.sh' ).match( /^ALLOWED="([^"]*)"/m ) || [] )[ 1 ];
+	const ships = new Set( declared.split( /\s+/ ).filter( Boolean ) );
+
+	const covered = ( name ) =>
+		blocked.some( ( pattern ) =>
+			new RegExp(
+				`^${ pattern.replace( /[.+^${}()|[\]\\]/g, '\\$&' ).replace( /\*/g, '[^/]*' ) }$`
+			).test( name )
+		);
+
+	const undecided = lines( '.gitignore' )
+		.map( bare )
+		.filter( ( name ) => ! covered( name ) && ! ships.has( name ) );
+
+	assert.deepStrictEqual(
+		undecided,
+		[],
+		'git ignores these, so they sit untracked in the working tree that ' +
+			'bin/build-dist.sh copies. Add each to .distignore, or to ALLOWED ' +
+			'in bin/build-dist.sh if it genuinely ships'
+	);
+} );
+
+test( 'the minimum-characters sentence is published with its %d intact', () => {
+	/*
+	 * It was published pre-substituted — `sprintf( __( … ), MIN_QUERY_LENGTH )`
+	 * — so the browser got a finished sentence and minCharsMessage()'s
+	 * `.replace( '%d', … )` was dead code. The two behaviour tests covering it
+	 * passed only because tests/js/harness.js supplies a template with a `%d`
+	 * in it, which is a shape the server never actually sent: the path that
+	 * ran in production had no test, and the path under test never ran.
+	 *
+	 * It also made the number a render-time constant while the script reads
+	 * `minQueryLength` from the config, so a cached page could announce one
+	 * number and enforce another.
+	 *
+	 * A source assertion because no runtime test can see it: both values render
+	 * the same string today, and they diverge only once something changes.
+	 */
+	const entry = RENDERER.match( /'minChars'\s*=>\s*([^\n]*)/ );
+
+	assert.ok( entry, "config() publishes no 'minChars' entry" );
+	assert.ok(
+		! /sprintf/.test( entry[ 1 ] ),
+		`'minChars' is substituted before it is published, so the script cannot substitute it: ${ entry[ 1 ].trim() }`
+	);
+	const template = RENDERER.match(
+		/function min_chars_template\(\)[^{]*\{\s*(?:\/\*[^*]*\*\/\s*)?return __\( '([^']*)'/
+	);
+
+	assert.ok( template, 'min_chars_template() does not return a single gettext string' );
+	assert.match(
+		template[ 1 ],
+		/%d/,
+		'the published sentence has no %d for the script to replace'
+	);
+} );
+
+test( 'every combobox states the minimum through aria-describedby', () => {
+	/*
+	 * THE LIVE REGION IS NOT A SUBSTITUTE FOR A DESCRIPTION.
+	 *
+	 * The static hint was dropped from `aria-describedby` on the reasoning that
+	 * the threshold is announced through `role="status"` instead. That region
+	 * is written from the `input` handler, so it says nothing to someone who
+	 * focuses the control and waits, and nothing on a re-read through a virtual
+	 * buffer or braille display — the same silence the change set out to fix,
+	 * one keystroke earlier.
+	 *
+	 * Both comboboxes are checked: templates/cargo.php writes the destinations
+	 * one inline rather than through the partial, which is how it came to be
+	 * the only one missing the live-region announcement in the first place.
+	 */
+	[
+		[ 'templates/partials/combobox.php', '$sswi_hint' ],
+		[ 'templates/cargo.php', '$sswi_dest_hint' ],
+	].forEach( ( [ file, variable ] ) => {
+		const src = read( file );
+		const described = [ ...src.matchAll( /aria-describedby="([^"]*)"/g ) ].filter(
+			( m ) => m[ 1 ].includes( variable.replace( 'hint', '' ) )
+		);
+
+		assert.ok(
+			src.includes( `id="<?php echo esc_attr( ${ variable } ); ?>"` ),
+			`${ file } renders no element with the ${ variable } id to describe the combobox`
+		);
+		assert.ok(
+			described.some( ( m ) => m[ 1 ].includes( variable ) ),
+			`${ file }: the combobox aria-describedby omits ${ variable }, so the threshold is never read on focus`
+		);
+		assert.ok(
+			src.includes( 'Spotship_WI_Renderer::min_chars_hint()' ),
+			`${ file }: the hint text is not the shared one, so it can state a different number`
+		);
+	} );
+} );

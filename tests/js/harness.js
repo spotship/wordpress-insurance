@@ -32,6 +32,7 @@ const CONFIG = {
 		errorSummary: 'ERROR SUMMARY',
 		removeChip: 'Remove %s',
 		resultCount: '%d results available.',
+		minChars: 'TYPE AT LEAST %d CHARACTERS',
 		expired: 'EXPIRED',
 		throttled: 'WAIT %d SECONDS',
 	},

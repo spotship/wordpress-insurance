@@ -165,6 +165,19 @@ add_action(
 
 add_action( 'init', array( 'Spotship_WI_Shortcodes', 'register_blocks' ) );
 
+/*
+ * Elementor's own hooks, added unconditionally. They cost nothing on a site
+ * without Elementor, because nothing fires them there — and crucially this
+ * call loads no Elementor class, so it is safe at file scope. The widget
+ * subclasses, which DO extend an Elementor class, are reached only through the
+ * autoloader from inside the registration callback.
+ *
+ * Not deferred to spotship_wi_boot(): that runs on `init`, Elementor builds
+ * its widget registry during `init` as well, and losing that race would mean
+ * the widgets quietly never appear in the panel.
+ */
+Spotship_WI_Elementor::register();
+
 if ( is_admin() ) {
 	Spotship_WI_Admin::register();
 }

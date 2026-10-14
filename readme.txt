@@ -16,10 +16,14 @@ Adds two forms to your site — war hull and war cargo — that capture insuranc
 quote requests and send them to Spot Ship's insurance desk. Visitors do not need
 an account.
 
-Both forms are available as shortcodes and as blocks:
+Both forms are available three ways — as shortcodes, as blocks in the WordPress
+editor, and as native Elementor widgets. All three render the same form.
 
 * `[spotship_war_hull]`
 * `[spotship_war_cargo]`
+
+In the WordPress editor, search the inserter for "War Hull Quote" or "War Cargo
+Quote". In Elementor, the same two names appear in the panel under "Spot Ship".
 
 An indicative rate table is served from Spot Ship and rendered above the form,
 always showing the date the rates were published.
@@ -47,7 +51,9 @@ submission, so configure the privacy notice URL in settings.
 2. Go to Settings -> Spot Ship War Insurance.
 3. Enter the API base URL and your API key, then use "Test connection".
 4. Set your privacy notice URL.
-5. Add `[spotship_war_hull]` or `[spotship_war_cargo]` to a page.
+5. Add a form to a page: insert the "War Hull Quote" or "War Cargo Quote" block,
+   drag the matching widget from Elementor's "Spot Ship" panel category, or put
+   `[spotship_war_hull]` / `[spotship_war_cargo]` anywhere a shortcode runs.
 
 Enabling automatic updates for this plugin is recommended: it runs on your
 server against an API we version, and auto-update is the simplest way to avoid

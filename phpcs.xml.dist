@@ -122,6 +122,17 @@
 	</rule>
 
 	<!--
+	  The Elementor stub DECLARES THE `Elementor` NAMESPACE, and must, for the
+	  same reason as above: it stands in for somebody else's class so PHPStan
+	  can check what this plugin extends. Prefixing it would describe a class
+	  that does not exist and check nothing. It is analysis-only and never
+	  loaded at runtime — see the file's own docblock.
+	-->
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedNamespaceFound">
+		<exclude-pattern>/tests/stubs/*</exclude-pattern>
+	</rule>
+
+	<!--
 	  PHPCS and PHPStan disagree here and PHPStan wins.
 
 	  WP_REST_Request is generic, so at level 6 PHPStan wants

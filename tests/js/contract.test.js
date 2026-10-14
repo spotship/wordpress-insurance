@@ -806,6 +806,55 @@ test( 'no tracked file reaches the customer zip without a decision', () => {
 	);
 } );
 
+test( 'no IGNORED local artefact reaches the customer zip either', () => {
+	/*
+	 * The sibling above reads `git ls-tree`, so it sees only TRACKED files —
+	 * and is therefore blind to the half of the problem that actually bites.
+	 *
+	 * bin/build-dist.sh rsyncs the WORKING TREE, not the index. A file git is
+	 * told to ignore is still sitting on disk and still gets copied, so
+	 * .gitignore buys nothing at all here. Run the unit suite and build:
+	 * `.phpunit.result.cache` fails the ship-list check. The allow-list means
+	 * it fails CLOSED, which is why this is an annoyance rather than a leak —
+	 * but the annoyance is a release-time one, and `.env` is on the same list.
+	 *
+	 * So every .gitignore pattern must also be a .distignore pattern, or be
+	 * something that genuinely ships. Those are the only two answers, and this
+	 * is where the next entry added to one list is forced into the other.
+	 */
+	const lines = ( file ) =>
+		read( file )
+			.split( '\n' )
+			.map( ( line ) => line.trim() )
+			.filter( ( line ) => line && ! line.startsWith( '#' ) );
+
+	// `vendor/` and `vendor` are the same instruction to both tools.
+	const bare = ( pattern ) => pattern.replace( /\/$/, '' );
+
+	const blocked = lines( '.distignore' ).map( bare );
+	const declared = ( read( 'bin/build-dist.sh' ).match( /^ALLOWED="([^"]*)"/m ) || [] )[ 1 ];
+	const ships = new Set( declared.split( /\s+/ ).filter( Boolean ) );
+
+	const covered = ( name ) =>
+		blocked.some( ( pattern ) =>
+			new RegExp(
+				`^${ pattern.replace( /[.+^${}()|[\]\\]/g, '\\$&' ).replace( /\*/g, '[^/]*' ) }$`
+			).test( name )
+		);
+
+	const undecided = lines( '.gitignore' )
+		.map( bare )
+		.filter( ( name ) => ! covered( name ) && ! ships.has( name ) );
+
+	assert.deepStrictEqual(
+		undecided,
+		[],
+		'git ignores these, so they sit untracked in the working tree that ' +
+			'bin/build-dist.sh copies. Add each to .distignore, or to ALLOWED ' +
+			'in bin/build-dist.sh if it genuinely ships'
+	);
+} );
+
 test( 'the minimum-characters sentence is published with its %d intact', () => {
 	/*
 	 * It was published pre-substituted — `sprintf( __( … ), MIN_QUERY_LENGTH )`

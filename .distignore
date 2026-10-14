@@ -5,10 +5,6 @@
 .github
 .gitignore
 .sswi-release-notes.md
-# bin/set-version.sh's atomic-rewrite scratch files. Untracked, so .gitignore
-# normally keeps them out of the zip — but build-dist.sh ships the working tree,
-# not the index, and one surviving a killed release would go to a customer.
-*.set-version.tmp
 .gitattributes
 .editorconfig
 .distignore
@@ -17,6 +13,33 @@
 .ship
 .idea
 .DS_Store
+
+# LOCAL ARTEFACTS — EVERYTHING .gitignore KEEPS OUT OF THE INDEX.
+#
+# build-dist.sh rsyncs the WORKING TREE, not the index, so .gitignore buys
+# nothing here: a file git is told to ignore is still sitting on disk and still
+# gets copied. The sibling of this list in tests/js/contract.test.js asserts the
+# two files agree, because every one of these was found the same way — by a
+# local build failing on something a normal day's work had left behind.
+#
+# The phpunit caches and the zips are matched by SHAPE rather than by name, for
+# the same reason the playwright configs further down are: there are two cache
+# files today, and naming them is how the third one ships.
+#
+# Those shapes are deliberately not quoted here. bin/mutation-check.js finds the
+# line it edits by first occurrence, so a comment repeating a pattern verbatim
+# mutates the comment and leaves the pattern armed — which is precisely how this
+# block, on its first draft, silently disarmed the playwright mutation.
+.env
+dist
+*.zip
+.phpunit*.result.cache
+mutation-junit.xml
+mutation-check-php.txt
+# bin/set-version.sh's atomic-rewrite scratch files. Its EXIT trap does not run
+# on SIGKILL or a cancelled runner, and one surviving a killed release would go
+# to a customer.
+*.set-version.tmp
 
 tests
 bin

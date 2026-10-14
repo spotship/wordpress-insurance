@@ -104,10 +104,31 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: '.distignore names one phpunit cache instead of the shape',
+		file: '.distignore',
+		from: '.phpunit*.result.cache',
+		to: '.phpunit.result.cache',
+		// Same defect as the playwright one above, on the half of the ship list
+		// that covers UNTRACKED files: there are two cache files, and build-dist
+		// copies the working tree, so naming one ships the other.
+		mustFail: [ 'no IGNORED local artefact reaches the customer zip either' ],
+	},
+
+	{
+		suite: 'js',
 		what: 'the rate table goes back to reading a top-level columns list',
 		file: 'templates/partials/rates-table.php',
-		from: "$sswi_section['columns']",
-		to: "$sswi_rates['columns']",
+		// THE WHOLE ASSIGNMENT, because `$sswi_section['columns']` appears three
+		// times in two lines and `from` must identify exactly one edit. Named
+		// by the single expression, this mutated only the `isset()` and left
+		// the two below it reading the right place — a mutation that was not
+		// the one described. The AMBIG guard below refuses that now.
+		from:
+			"$sswi_columns = isset( $sswi_section['columns'] ) && is_array( $sswi_section['columns'] )\n" +
+			"\t? $sswi_section['columns']",
+		to:
+			"$sswi_columns = isset( $sswi_rates['columns'] ) && is_array( $sswi_rates['columns'] )\n" +
+			"\t? $sswi_rates['columns']",
 		// The shipped state. The endpoint nests columns under the product, so this
 		// rendered a table with no header cells at all against the real backend.
 		mustFail: [ 'the rate table reads the payload the rates endpoint actually returns' ],
@@ -305,8 +326,17 @@ const MUTATIONS = [
 		suite: 'php',
 		what: 'the rate table reads columns from the top level again',
 		file: 'templates/partials/rates-table.php',
-		from: "$sswi_section['columns']",
-		to: "$sswi_rates['columns']",
+		// THE WHOLE ASSIGNMENT, because `$sswi_section['columns']` appears three
+		// times in two lines and `from` must identify exactly one edit. Named
+		// by the single expression, this mutated only the `isset()` and left
+		// the two below it reading the right place — a mutation that was not
+		// the one described. The AMBIG guard below refuses that now.
+		from:
+			"$sswi_columns = isset( $sswi_section['columns'] ) && is_array( $sswi_section['columns'] )\n" +
+			"\t? $sswi_section['columns']",
+		to:
+			"$sswi_columns = isset( $sswi_rates['columns'] ) && is_array( $sswi_rates['columns'] )\n" +
+			"\t? $sswi_rates['columns']",
 		// The shipped state: the endpoint nests columns under the product, so
 		// this rendered a header row with only the risk-zone cell in it.
 		mustFail: [ 'test_the_header_row_is_the_products_own_columns' ],
@@ -517,6 +547,27 @@ for ( const mutation of SELECTED ) {
 		process.stdout.write(
 			`STALE  ${ mutation.what }\n       ${ mutation.file } no longer contains the line this mutation edits.\n` +
 				'       Update bin/mutation-check.js alongside the refactor.\n\n'
+		);
+		broken += 1;
+		continue;
+	}
+
+	// AMBIGUOUS IS NOT APPLIED, BECAUSE A MUTATION THAT LANDS ON THE WRONG
+	// OCCURRENCE IS WORSE THAN NO MUTATION.
+	//
+	// String.replace() with a string pattern edits the FIRST occurrence. So a
+	// `from` that also appears in a comment above the line mutates the comment,
+	// leaves the code untouched, and reports UNDETECTED — which reads as a weak
+	// test rather than as a mutation that never happened, and sends you to fix
+	// the wrong file. A comment added to .distignore disarmed the playwright
+	// glob mutation exactly this way, in the same change that was adding a
+	// second one beside it.
+	const hits = original.split( mutation.from ).length - 1;
+
+	if ( hits > 1 ) {
+		process.stdout.write(
+			`AMBIG  ${ mutation.what }\n       ${ mutation.file } contains this text ${ hits } times, so only the first would be edited.\n` +
+				'       Make `from` unique — add surrounding context, or stop repeating it verbatim in a comment.\n\n'
 		);
 		broken += 1;
 		continue;

@@ -28,10 +28,10 @@
 # release. This script's last act is to call that one, from inside
 # semantic-release's `prepare` — so a value that varies with the release, which
 # that script asserts and this one does not write, aborts the release AFTER the
-# number has been computed and four files already rewritten. `Tested up to` was
-# exactly that: asserted against .wp-env.json's core pin, written by nobody, so
-# bumping wp-env would have taken a release down mid-prepare. It is written
-# here now, like the rest.
+# number has been computed and four values across three files already
+# rewritten. `Tested up to` was exactly that: asserted against .wp-env.json's
+# core pin, written by nobody, so bumping wp-env would have taken a release
+# down mid-prepare. It is written here now, like the rest.
 #
 # THE SUPPORT FLOORS ARE THE DELIBERATE EXCEPTION. assert-version.sh also
 # compares `Requires at least` and `Requires PHP` across the plugin header and

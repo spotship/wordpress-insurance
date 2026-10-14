@@ -17,10 +17,11 @@
 # That script calls this one as its last act, from inside semantic-release's
 # `prepare`. A value that VARIES WITH THE RELEASE, compared here and written by
 # nobody, therefore fails the release AFTER the version has been computed and
-# four files already rewritten — late, and in the one place where late is
-# expensive. `Tested up to` was exactly that: derived from .wp-env.json's core
-# pin and written by nobody, so a wp-env bump left readme.txt disagreeing with
-# the pin and no tooling able to put it right. set-version.sh writes it now.
+# four values across three files already rewritten — late, and in the one place
+# where late is expensive. `Tested up to` was exactly that: derived from
+# .wp-env.json's core pin and written by nobody, so a wp-env bump left
+# readme.txt disagreeing with the pin and no tooling able to put it right.
+# set-version.sh writes it now.
 #
 # THE SUPPORT FLOORS BELOW ARE THE DELIBERATE EXCEPTION, and the line between
 # them is the rule to apply when adding a check:
@@ -39,8 +40,10 @@
 #
 # They stay in this script rather than moving to ci.yaml because
 # .github/workflows/cd.yaml does not depend on ci.yaml, and because ci.yaml
-# already runs this whole script twice. Moving them would lose the only check
-# standing between a drifted tree and a release, and gain nothing.
+# already runs this whole script four times — once in the `version` job, and
+# three more across the `release-config` rehearsal, one of those through
+# set-version.sh. Moving them would lose the only check standing between a
+# drifted tree and a release, and gain nothing.
 
 set -euo pipefail
 

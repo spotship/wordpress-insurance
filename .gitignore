@@ -13,9 +13,13 @@ dist/
 .env
 .DS_Store
 
-# Written by bin/mutation-check.js --suite=php; a transient report, never committed.
+# Written by bin/mutation-check.js; transient reports, never committed.
+#
+# MATCHED BY SHAPE, like the phpunit caches below. There was one report file
+# when this line named one, and a second suite arrived without this line being
+# touched -- which is how the third one ships.
 mutation-junit.xml
-mutation-check-php.txt
+mutation-check-*.txt
 
 # PHPUnit writes these next to the config it was given; local runs only.
 .phpunit.result.cache

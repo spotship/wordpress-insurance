@@ -35,7 +35,7 @@ dist
 *.zip
 .phpunit*.result.cache
 mutation-junit.xml
-mutation-check-php.txt
+mutation-check-*.txt
 # bin/set-version.sh's atomic-rewrite scratch files. Its EXIT trap does not run
 # on SIGKILL or a cancelled runner, and one surviving a killed release would go
 # to a customer.

@@ -58,11 +58,37 @@ jobs:
           coverage: none
       - run: composer install --no-interaction --no-progress
       - run: composer exec -- phpunit --testsuite unit --log-junit junit-unit.xml
+
+      # THE SAME PROOF THE OTHER TWO SUITES GET.
+      #
+      # The unit suite had no fail-before-fix evidence: the harness drove jsdom
+      # and the integration suite, so everything here was trusted rather than
+      # checked. It matters most for the Elementor guards, which ONLY this suite
+      # can reach — the integration container has no Elementor, so
+      # register_widgets() returns at its class_exists() guard before the
+      # duck-type check behind it runs, whichever manager is passed.
+      #
+      # Needs no container, unlike --suite=php: Brain Monkey, no WordPress.
+      #
+      # One matrix leg, not three. The mutations exercise this plugin's own
+      # logic, which does not vary across the PHP matrix, and each mutation
+      # costs a full suite run.
+      - uses: actions/setup-node@v4
+        if: matrix.php == '8.3'
+        with:
+          node-version: '22'
+      - name: Mutation check (unit)
+        if: matrix.php == '8.3'
+        run: |
+          set -o pipefail
+          node bin/mutation-check.js --suite=unit | tee mutation-check-unit.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: phpunit-unit-php${{ matrix.php }}
-          path: junit-unit.xml
+          path: |
+            junit-unit.xml
+            mutation-check-unit.txt
           if-no-files-found: warn
 
   front-end:

@@ -49,6 +49,26 @@
 		node.textContent = value;
 	}
 
+	/**
+	 * What the live region says while the typed term is still too short.
+	 *
+	 * SILENCE IS NOT AN ANSWER, AND IT WAS THE ANSWER. Every combobox used to
+	 * carry "Type at least two characters, then choose from the list." That was
+	 * dropped on the reasoning that the live region announces the result count
+	 * on every search — true, but a term below the minimum never reaches a
+	 * search, so render() never runs and the live region is never written. A
+	 * screen reader user typed one character and was told nothing at all, with
+	 * `role="combobox"` conveying only that a list exists, never that it is
+	 * being withheld until the second character.
+	 *
+	 * The threshold comes from the server with the rest of the config, so the
+	 * sentence states the number actually in force rather than restating two.
+	 */
+	function minCharsMessage( minimum ) {
+		return String( i18n.minChars || 'Type %d or more characters to search.' )
+			.replace( '%d', String( minimum ) );
+	}
+
 	function show( node ) {
 		node.hidden = false;
 	}
@@ -206,9 +226,18 @@
 
 			window.clearTimeout( timer );
 
-			if ( term.length < ( state.config.minQueryLength || 2 ) ) {
+			var minimum = state.config.minQueryLength || 2;
+
+			if ( term.length < minimum ) {
 				rows = [];
 				close();
+
+				// The only statement of the minimum that reaches anyone. See
+				// minCharsMessage().
+				if ( live ) {
+					text( live, minCharsMessage( minimum ) );
+				}
+
 				return;
 			}
 
@@ -558,9 +587,16 @@
 
 				window.clearTimeout( timer );
 
-				if ( term.length < ( config.minQueryLength || 2 ) ) {
+				var minimum = config.minQueryLength || 2;
+
+				if ( term.length < minimum ) {
 					rows = [];
 					close();
+
+					// Same hole as the single-value combobox, same fix. See
+					// minCharsMessage().
+					announce( minCharsMessage( minimum ) );
+
 					return;
 				}
 

@@ -83,8 +83,8 @@ const MUTATIONS = [
 		suite: 'js',
 		what: 'the decoy threshold goes back into the page source',
 		file: 'includes/class-renderer.php',
-		from: "'minQueryLength'  => 2,",
-		to: "'minAgeSeconds'   => Spotship_WI_Request_Guard::MIN_AGE,\n\t\t\t'minQueryLength'  => 2,",
+		from: "'minQueryLength'  => self::MIN_QUERY_LENGTH,",
+		to: "'minAgeSeconds'   => Spotship_WI_Request_Guard::MIN_AGE,\n\t\t\t'minQueryLength'  => self::MIN_QUERY_LENGTH,",
 		// The shipped state. It was published for the whole life of the file,
 		// read by no JavaScript, and told a bot author exactly how long to
 		// sleep to walk past the timing trap.
@@ -104,10 +104,31 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: '.distignore names one phpunit cache instead of the shape',
+		file: '.distignore',
+		from: '.phpunit*.result.cache',
+		to: '.phpunit.result.cache',
+		// Same defect as the playwright one above, on the half of the ship list
+		// that covers UNTRACKED files: there are two cache files, and build-dist
+		// copies the working tree, so naming one ships the other.
+		mustFail: [ 'no IGNORED local artefact reaches the customer zip either' ],
+	},
+
+	{
+		suite: 'js',
 		what: 'the rate table goes back to reading a top-level columns list',
 		file: 'templates/partials/rates-table.php',
-		from: "$sswi_section['columns']",
-		to: "$sswi_rates['columns']",
+		// THE WHOLE ASSIGNMENT, because `$sswi_section['columns']` appears three
+		// times in two lines and `from` must identify exactly one edit. Named
+		// by the single expression, this mutated only the `isset()` and left
+		// the two below it reading the right place — a mutation that was not
+		// the one described. The AMBIG guard below refuses that now.
+		from:
+			"$sswi_columns = isset( $sswi_section['columns'] ) && is_array( $sswi_section['columns'] )\n" +
+			"\t? $sswi_section['columns']",
+		to:
+			"$sswi_columns = isset( $sswi_rates['columns'] ) && is_array( $sswi_rates['columns'] )\n" +
+			"\t? $sswi_rates['columns']",
 		// The shipped state. The endpoint nests columns under the product, so this
 		// rendered a table with no header cells at all against the real backend.
 		mustFail: [ 'the rate table reads the payload the rates endpoint actually returns' ],
@@ -147,6 +168,61 @@ const MUTATIONS = [
 		mustFail: [
 			'the cargo risk zone is populated from the served rate table, not a hardcoded list',
 		],
+	},
+
+	{
+		suite: 'js',
+		what: 'a sub-threshold term goes back to announcing nothing at all',
+		file: 'assets/js/war-insurance.js',
+		from: 'text( live, minCharsMessage( minimum ) );',
+		to: "text( live, '' );",
+		// The shipped state after the hint paragraph was deleted: the live
+		// region is written only from render(), which a term shorter than the
+		// minimum never reaches.
+		mustFail: [ 'a term below the minimum says so rather than going silent' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the destinations combobox goes silent below the minimum',
+		file: 'assets/js/war-insurance.js',
+		from: 'announce( minCharsMessage( minimum ) );',
+		to: "announce( '' );",
+		mustFail: [ 'the destinations combobox announces the minimum too' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the minimum sentence is substituted before the script ever sees it',
+		file: 'includes/class-renderer.php',
+		from: "'minChars'     => self::min_chars_template(),",
+		to: "'minChars'     => sprintf( self::min_chars_template(), self::MIN_QUERY_LENGTH ),",
+		// The shipped state: the browser received a finished sentence, so
+		// minCharsMessage()'s `.replace( '%d', … )` never replaced anything.
+		// Both behaviour tests stayed green, because the harness supplies a
+		// template the server was not sending.
+		mustFail: [ 'the minimum-characters sentence is published with its %d intact' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the combobox stops stating the minimum on focus',
+		file: 'templates/partials/combobox.php',
+		from: "esc_attr( $sswi_hint . ' ' . $sswi_err )",
+		to: 'esc_attr( $sswi_err )',
+		// The shipped state: the threshold left the accessibility tree, so a
+		// user who focused the field and typed nothing was told nothing. The
+		// live region only speaks on `input`.
+		mustFail: [ 'every combobox states the minimum through aria-describedby' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the destinations combobox stops stating the minimum on focus',
+		file: 'templates/cargo.php',
+		from: "esc_attr( $sswi_dest_hint . ' ' . $sswi_dest_err )",
+		to: 'esc_attr( $sswi_dest_err )',
+		mustFail: [ 'every combobox states the minimum through aria-describedby' ],
 	},
 
 	{
@@ -250,8 +326,17 @@ const MUTATIONS = [
 		suite: 'php',
 		what: 'the rate table reads columns from the top level again',
 		file: 'templates/partials/rates-table.php',
-		from: "$sswi_section['columns']",
-		to: "$sswi_rates['columns']",
+		// THE WHOLE ASSIGNMENT, because `$sswi_section['columns']` appears three
+		// times in two lines and `from` must identify exactly one edit. Named
+		// by the single expression, this mutated only the `isset()` and left
+		// the two below it reading the right place — a mutation that was not
+		// the one described. The AMBIG guard below refuses that now.
+		from:
+			"$sswi_columns = isset( $sswi_section['columns'] ) && is_array( $sswi_section['columns'] )\n" +
+			"\t? $sswi_section['columns']",
+		to:
+			"$sswi_columns = isset( $sswi_rates['columns'] ) && is_array( $sswi_rates['columns'] )\n" +
+			"\t? $sswi_rates['columns']",
 		// The shipped state: the endpoint nests columns under the product, so
 		// this rendered a header row with only the risk-zone cell in it.
 		mustFail: [ 'test_the_header_row_is_the_products_own_columns' ],
@@ -260,8 +345,21 @@ const MUTATIONS = [
 		suite: 'php',
 		what: 'the disclaimers are read from the top level again',
 		file: 'templates/partials/rates-table.php',
-		from: "$sswi_section['disclaimers']",
-		to: "$sswi_rates['disclaimers']",
+		// THE WHOLE ASSIGNMENT, because the section expression appears three
+		// times across its two lines and `from` must identify exactly one edit.
+		// Named by the single expression, this mutated only the `isset()` and
+		// left the two reads below it pointing at the right place — a mutation
+		// that was not the one described. The AMBIG guard below refuses that.
+		//
+		// NOTE THE TWO TABS on the continuation. Unlike the columns assignment
+		// above, this one is nested inside an indented <?php block, so a
+		// one-tab copy of that entry matches nothing and fails as STALE.
+		from:
+			"$sswi_disclaimers = isset( $sswi_section['disclaimers'] ) && is_array( $sswi_section['disclaimers'] )\n" +
+			"\t\t? $sswi_section['disclaimers']",
+		to:
+			"$sswi_disclaimers = isset( $sswi_rates['disclaimers'] ) && is_array( $sswi_rates['disclaimers'] )\n" +
+			"\t\t? $sswi_rates['disclaimers']",
 		// The shipped state, and the one with a compliance consequence: the
 		// block is simply never reached, on every install.
 		mustFail: [ 'test_the_disclaimers_are_rendered' ],
@@ -462,6 +560,27 @@ for ( const mutation of SELECTED ) {
 		process.stdout.write(
 			`STALE  ${ mutation.what }\n       ${ mutation.file } no longer contains the line this mutation edits.\n` +
 				'       Update bin/mutation-check.js alongside the refactor.\n\n'
+		);
+		broken += 1;
+		continue;
+	}
+
+	// AMBIGUOUS IS NOT APPLIED, BECAUSE A MUTATION THAT LANDS ON THE WRONG
+	// OCCURRENCE IS WORSE THAN NO MUTATION.
+	//
+	// String.replace() with a string pattern edits the FIRST occurrence. So a
+	// `from` that also appears in a comment above the line mutates the comment,
+	// leaves the code untouched, and reports UNDETECTED — which reads as a weak
+	// test rather than as a mutation that never happened, and sends you to fix
+	// the wrong file. A comment added to .distignore disarmed the playwright
+	// glob mutation exactly this way, in the same change that was adding a
+	// second one beside it.
+	const hits = original.split( mutation.from ).length - 1;
+
+	if ( hits > 1 ) {
+		process.stdout.write(
+			`AMBIG  ${ mutation.what }\n       ${ mutation.file } contains this text ${ hits } times, so only the first would be edited.\n` +
+				'       Make `from` unique — add surrounding context, or stop repeating it verbatim in a comment.\n\n'
 		);
 		broken += 1;
 		continue;

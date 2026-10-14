@@ -41,6 +41,59 @@ final class Spotship_WI_Renderer {
 	private static int $instances = 0;
 
 	/**
+	 * Characters required before an autocomplete will search.
+	 *
+	 * ONE DEFINITION, because two consumers now read it: the script uses it as
+	 * the threshold, and the sentence announced below the threshold states it.
+	 * A literal in each is how a control ends up telling a screen reader to type
+	 * two characters while waiting for three.
+	 *
+	 * @var int
+	 */
+	public const MIN_QUERY_LENGTH = 2;
+
+	/**
+	 * The sentence stating the autocomplete threshold, with its `%d` intact.
+	 *
+	 * ONE LITERAL, TWO CONSUMERS. config() publishes it for the script to
+	 * substitute per keystroke, and min_chars_hint() substitutes it server-side
+	 * for the combobox description. Written out twice it would be two msgids
+	 * one edit apart, and the catalogue would carry whichever the extractor saw
+	 * first.
+	 *
+	 * "%d or more", NOT "at least %d characters", because the number is
+	 * substituted and the noun would then have to agree with it.
+	 * bin/extract-strings.js matches single-string gettext calls and the
+	 * catalogue it writes has no plural entries, so an `_n()` here would be
+	 * invisible to the i18n job — a missing string in the one place built to
+	 * notice missing strings.
+	 */
+	public static function min_chars_template(): string {
+		/* translators: %d: minimum number of characters before an autocomplete searches. */
+		return __( 'Type %d or more characters to search.', 'spotship-war-insurance' );
+	}
+
+	/**
+	 * That sentence, for a combobox's `aria-describedby`.
+	 *
+	 * THE LIVE REGION IS NOT ENOUGH ON ITS OWN. It is written from the `input`
+	 * handler, so it says nothing to someone who focuses the control and waits
+	 * — which is every screen reader user arriving at the field, and every
+	 * re-read of it through a virtual buffer or a braille display. The combobox
+	 * hint was deleted from `aria-describedby` on the reasoning that the live
+	 * region covers the threshold; it covers it only once a key has been
+	 * pressed.
+	 *
+	 * Visually hidden rather than restored as a paragraph: the sentence that
+	 * was removed also said "then choose from the list", which `role="combobox"`
+	 * and `aria-autocomplete="list"` already convey, and the list appearing says
+	 * it to everyone else. The threshold is the part nothing else states.
+	 */
+	public static function min_chars_hint(): string {
+		return sprintf( self::min_chars_template(), self::MIN_QUERY_LENGTH );
+	}
+
+	/**
 	 * Render a product form.
 	 *
 	 * @param string $product 'hull' or 'cargo'.
@@ -112,7 +165,7 @@ final class Spotship_WI_Renderer {
 			 * The same reasoning is already written down two paragraphs up for
 			 * MAX_DESTINATIONS. This value simply predated it.
 			 */
-			'minQueryLength'  => 2,
+			'minQueryLength'  => self::MIN_QUERY_LENGTH,
 			'maxDestinations' => Spotship_WI_Payloads::MAX_DESTINATIONS,
 			'bounds'          => array(
 				'userName'         => Spotship_WI_Payloads::MAX_NAME,
@@ -137,6 +190,26 @@ final class Spotship_WI_Renderer {
 				'removeChip'   => __( 'Remove %s', 'spotship-war-insurance' ),
 				/* translators: %d: number of autocomplete results. */
 				'resultCount'  => __( '%d results available.', 'spotship-war-insurance' ),
+
+				/*
+				 * UNSUBSTITUTED, LIKE EVERY OTHER ENTRY HERE.
+				 *
+				 * This was sprintf'd before it was published, so the browser
+				 * received a sentence with no `%d` left in it and
+				 * minCharsMessage()'s `.replace( '%d', … )` was dead code. The
+				 * two jsdom tests covering it passed only because the harness
+				 * supplies a template the server never sends — a substitution
+				 * path that does not run in production, tested, and the one
+				 * that does, untested.
+				 *
+				 * It also defeated the point: the sentence was frozen to
+				 * MIN_QUERY_LENGTH at render time while the script reads
+				 * `minQueryLength` from the config, so a page cached across a
+				 * change to that constant would announce one number and enforce
+				 * another. Substituted in the browser, from the same config the
+				 * threshold comes from, they cannot disagree.
+				 */
+				'minChars'     => self::min_chars_template(),
 				'expired'      => __( 'This form has been open too long. Please reload the page and try again.', 'spotship-war-insurance' ),
 				/* translators: %d: number of seconds to wait before retrying. */
 				'throttled'    => __( 'Too many requests. Please wait %d seconds and try again.', 'spotship-war-insurance' ),

@@ -37,14 +37,16 @@
       [
         "@semantic-release/exec",
         {
-          "prepareCmd": "bash bin/set-version.sh ${nextRelease.version} && bash bin/generate-fallback-rates.sh && bash bin/build-dist.sh"
+          "prepareCmd": "cat > .sswi-release-notes.md <<'SSWI_NOTES_EOF' &&\n${nextRelease.notes}\nSSWI_NOTES_EOF\nbash bin/set-version.sh ${nextRelease.version} && bash bin/generate-fallback-rates.sh && bash bin/build-dist.sh"
         }
       ],
       [
         "@semantic-release/git",
         {
           "assets": [
-            "spotship-war-insurance.php"
+            "spotship-war-insurance.php",
+            "readme.txt",
+            "languages/spotship-war-insurance.pot"
           ],
           "message": "release: v${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
         }

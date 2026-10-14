@@ -6,9 +6,15 @@
  * and the thing that checks it cannot disagree about what counts as a string —
  * which is the usual way a freshness check passes over a stale file.
  *
- * `wp i18n make-pot` remains authoritative: it parses PHP properly rather than
- * by regex. This is deliberately conservative — it is used to detect DRIFT, not
- * to replace that tool.
+ * THIS IS THE GENERATOR OF RECORD, not a drift detector beside `wp i18n
+ * make-pot`. It used to be the latter, and this comment still said so after
+ * bin/refresh-pot.sh had dropped make-pot entirely — the catalogue in
+ * languages/ is the output of this file and nothing else.
+ *
+ * It matches PHP rather than parsing it, which make-pot does properly. That is
+ * the trade accepted on purpose: the catalogue is gated by regenerating and
+ * diffing, and a gate needs a generator that is present on every runner. See
+ * bin/refresh-pot.sh for the failure that settled it.
  */
 'use strict';
 

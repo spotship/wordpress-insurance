@@ -94,14 +94,12 @@ $sswi_notes_err = $sswi_notes_id . '-error';
 		$sswi_combo_label    = __( 'Vessel (optional)', 'spotship-war-insurance' );
 		$sswi_combo_kind     = 'vessel';
 		$sswi_combo_required = false;
-		$sswi_combo_hint     = __( 'Type at least two characters, then choose from the list.', 'spotship-war-insurance' );
 		require SPOTSHIP_WI_PATH . 'templates/partials/combobox.php';
 
 		$sswi_combo_name     = 'fromPort';
 		$sswi_combo_label    = __( 'From location', 'spotship-war-insurance' );
 		$sswi_combo_kind     = 'location';
 		$sswi_combo_required = true;
-		$sswi_combo_hint     = __( 'Type at least two characters, then choose from the list.', 'spotship-war-insurance' );
 		require SPOTSHIP_WI_PATH . 'templates/partials/combobox.php';
 		?>
 

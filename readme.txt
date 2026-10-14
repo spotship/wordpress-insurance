@@ -25,6 +25,10 @@ editor, and as native Elementor widgets. All three render the same form.
 In the WordPress editor, search the inserter for "War Hull Quote" or "War Cargo
 Quote". In Elementor, the same two names appear in the panel under "Spot Ship".
 
+The Elementor widgets need **Elementor 3.5 or later** (December 2021). On an
+older Elementor they will not appear in the panel, with no error shown; the
+shortcodes and the blocks are unaffected and still work.
+
 An indicative rate table is served from Spot Ship and rendered above the form,
 always showing the date the rates were published.
 

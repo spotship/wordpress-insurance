@@ -12,11 +12,13 @@
  * dependency whose contents nobody here has read would be a poor trade for
  * about twenty lines.
  *
- * SIGNATURES ARE DELIBERATELY BARE. Elementor declares no return types on
- * these methods. Adding them here would let a subclass compile against a
- * contract Elementor does not actually have — PHP permits a child to add a
- * return type where the parent declares none, but not to disagree with one.
- * Keeping the stub faithful is what makes the check meaningful.
+ * SIGNATURES ARE COPIED, NEVER INVENTED. Elementor declares no return type on
+ * most of these, and the stub must not either: PHP permits a child to add a
+ * return type where the parent declares none, but not to disagree with one, so
+ * a stub that guessed would let the subclasses compile against a contract
+ * Elementor does not have. `is_dynamic_content()` is the one exception —
+ * Elementor really does declare `: bool` there — and it is reproduced exactly,
+ * for the same reason.
  *
  * @package Spotship_WI
  */
@@ -52,6 +54,13 @@ abstract class Widget_Base {
 	 * Extra search terms for the panel.
 	 */
 	public function get_keywords() {}
+
+	/**
+	 * Whether the element is too dynamic for Elementor's element cache.
+	 */
+	protected function is_dynamic_content(): bool {
+		return true;
+	}
 
 	/**
 	 * Emit the front-end markup.

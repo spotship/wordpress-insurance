@@ -50,6 +50,19 @@ final class Spotship_WI_Elementor {
 	 * listener late enough to miss `elementor/widgets/register` would mean the
 	 * widgets silently never appear. add_action() itself calls no WordPress API
 	 * that warns before `init`, so there is nothing to defer.
+	 *
+	 * ELEMENTOR 3.5.0 IS THE FLOOR, AND IT IS NOT ENFORCED ANYWHERE. Both
+	 * `elementor/widgets/register` and Widgets_Manager::register() arrived in
+	 * 3.5.0, which deprecated `elementor/widgets/widgets_registered` and
+	 * register_widget_type() without removing them. On an older Elementor the
+	 * hook below never fires: no error, no notice, the widgets are simply absent
+	 * from the panel. readme.txt states the requirement because nothing in the
+	 * code can.
+	 *
+	 * Deliberately no fallback to the deprecated pair. 3.5.0 is from December
+	 * 2021, and a second registration path would double the code that has to
+	 * stay safe to load on a site with no Elementor at all — which is the
+	 * property this whole file is arranged around.
 	 */
 	public static function register(): void {
 		add_action( 'elementor/widgets/register', array( self::class, 'register_widgets' ) );
@@ -81,6 +94,9 @@ final class Spotship_WI_Elementor {
 	 * list of eighty and a site builder can find them by scrolling as well as
 	 * by searching.
 	 *
+	 * `eicon-anchor` for the same reason get_icon() is not `eicon-shield`: the
+	 * eicons font has no shield, and an unknown class draws nothing at all.
+	 *
 	 * @param object $elements_manager Elementor's elements manager.
 	 */
 	public static function register_category( $elements_manager ): void {
@@ -92,7 +108,7 @@ final class Spotship_WI_Elementor {
 			self::CATEGORY,
 			array(
 				'title' => __( 'Spot Ship', 'spotship-war-insurance' ),
-				'icon'  => 'eicon-shield',
+				'icon'  => 'eicon-anchor',
 			)
 		);
 	}

@@ -87,13 +87,20 @@ for ( const widget of WIDGETS ) {
 
 		const preview = page.frameLocator( '#elementor-preview-iframe' );
 
-		// NON-VACUITY. The page already carries one widget, rendered with the
-		// document on the initial preview load. If the assertion below passed
-		// against that one it would prove nothing about injection, so count
-		// what is there before adding to it.
-		const before = await preview.locator( '[data-sswi-root]' ).count();
-
-		expect( before, 'the seeded widget should have rendered with the document' ).toBe( 1 );
+		/*
+		 * NON-VACUITY, AND THE WAIT FOR THE PREVIEW IN ONE STEP.
+		 *
+		 * The page already carries one widget, rendered with the document on
+		 * the initial preview load. If the assertion further down passed
+		 * against THAT one it would prove nothing about injection, so establish
+		 * the baseline first.
+		 *
+		 * toHaveCount rather than .count(): a bare count does not retry, and
+		 * the preview iframe is still rendering when the command API becomes
+		 * available. Counting too early would read zero and fail for a reason
+		 * that has nothing to do with this plugin.
+		 */
+		await expect( preview.locator( '[data-sswi-root]' ) ).toHaveCount( 1, { timeout: 120000 } );
 
 		await page.evaluate( ( type ) => {
 			window.$e.run( 'document/elements/create', {

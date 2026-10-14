@@ -20,3 +20,8 @@ mutation-check-php.txt
 # PHPUnit writes these next to the config it was given; local runs only.
 .phpunit.result.cache
 .phpunit-integration.result.cache
+
+# Written by the semantic-release prepareCmd so bin/set-version.sh can read
+# ${nextRelease.notes} without it passing through the shell. Consumed and
+# deleted by that script; never committed, never shipped.
+.sswi-release-notes.md

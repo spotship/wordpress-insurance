@@ -39,6 +39,7 @@ VERSION="${1:-}"
 FILE=spotship-war-insurance.php
 README=readme.txt
 POT=languages/spotship-war-insurance.pot
+NOTES=.sswi-release-notes.md
 
 if [ -z "$VERSION" ]; then
 	echo "set-version: a version is required (e.g. bin/set-version.sh 1.2.3)" >&2
@@ -165,24 +166,80 @@ read_back "'Stable tag'" "$README" 's/^Stable tag:[[:space:]]*\(.*\)$/\1/p'
 # because the heading was missing would abort after the version had already been
 # decided.
 #
-# A STUB, NOT THE PROSE. Release notes generated from conventional-commit
-# subjects are not what a site administrator needs — that is why the 1.0.0 entry
-# in readme.txt was hand-written — so this writes the heading and a pointer and
-# leaves the description to a human. What it buys is that the shipped readme can
-# no longer be silent about the version sitting beside it, and an entry written
-# by hand before the release is left untouched.
+# THE ENTRY IS THE RELEASE NOTES THAT ARE BEING PUBLISHED ANYWAY.
+#
+# The prepareCmd in package.json writes ${nextRelease.notes} to NOTES with a
+# QUOTED heredoc — `<<'SSWI_NOTES_EOF'` — so that nothing inside a commit
+# subject is ever evaluated. Interpolating the notes straight into the command
+# string instead would hand every backtick and `$(...)` in a commit message
+# to /bin/sh.
+#
+# A FILE, NOT A COMMAND SUBSTITUTION. The obvious `X=$(cat <<'EOF' ...)` form
+# does not parse in bash 3.2, which is still /bin/sh on macOS: an apostrophe
+# inside the heredoc body aborts it with "unexpected EOF while looking for
+# matching `'". A heredoc at the top level parses everywhere.
+#
+# Reduced to the bullets and their section labels: the markdown heading repeats
+# the version that is already the heading above it, and the commit-sha links go
+# nowhere useful in a plain-text file on a customer's server.
+#
+# Absent — any run that is not a release, ci.yaml's rehearsal included — it
+# falls back to the heading and a link to the GitHub release, so the assertion
+# in bin/assert-version.sh still has something true to find. An entry written by
+# hand before the release is left alone either way.
 if ! grep -q "^= ${VERSION} =$" "$README"; then
+	SSWI_CHANGELOG_BODY=
+
+	if [ -f "$NOTES" ]; then
+		SSWI_CHANGELOG_BODY=$( awk '
+			/^#+[ \t]/ {
+				# The first heading is the version, which readme.txt is about to
+				# state itself. Later ones are "Bug Fixes" and friends, worth
+				# keeping as labels.
+				if ( ++depth > 1 ) {
+					sub( /^#+[ \t]+/, "" )
+					print ""
+					print $0
+				}
+				next
+			}
+
+			/^[*-][ \t]/ {
+				# conventional-changelog appends ([abc1234](url)) to every
+				# subject. A link to a commit is not changelog prose.
+				gsub( /[ \t]*\(\[[0-9a-f]+\]\([^)]*\)\)[ \t]*$/, "" )
+				sub( /^-[ \t]/, "* " )
+				print
+				next
+			}
+		' "$NOTES" )
+	fi
+
+	if [ -z "$SSWI_CHANGELOG_BODY" ]; then
+		SSWI_CHANGELOG_BODY="* See https://github.com/spotship/wordpress-insurance/releases/tag/v${VERSION}"
+	fi
+
+	# Through the environment, not `awk -v`: -v applies backslash-escape
+	# processing to the value, which would mangle any commit subject containing
+	# one. ENVIRON hands the string over exactly as it is.
+	export SSWI_CHANGELOG_BODY
+
 	rewrite_in_place "$README" awk -v ver="$VERSION" '
 		{ print }
 
 		!seen && /^== Changelog ==$/ {
 			print ""
 			print "= " ver " ="
-			print "* See https://github.com/spotship/wordpress-insurance/releases/tag/v" ver
+			print ENVIRON["SSWI_CHANGELOG_BODY"]
 			seen = 1
 		}
 	'
 fi
+
+# Consumed. Leaving it would put an untracked file in front of
+# bin/build-dist.sh's ship-list check in the same prepare run, and a stale copy
+# in front of the next one.
+rm -f "$NOTES"
 
 # THE FOURTH PLACE, AND THE ONE NOBODY HAD NOTICED AT ALL.
 #

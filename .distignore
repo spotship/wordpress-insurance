@@ -4,6 +4,7 @@
 .git
 .github
 .gitignore
+.sswi-release-notes.md
 .gitattributes
 .editorconfig
 .distignore

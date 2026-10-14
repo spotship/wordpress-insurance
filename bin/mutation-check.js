@@ -233,7 +233,7 @@ const MUTATIONS = [
 		suite: 'js',
 		what: 'the combobox stops stating the minimum on focus',
 		file: 'templates/partials/combobox.php',
-		from: "esc_attr( $sswi_hint . ' ' . $sswi_err )",
+		from: "esc_attr( $sswi_hint_id . ' ' . $sswi_err )",
 		to: 'esc_attr( $sswi_err )',
 		// The shipped state: the threshold left the accessibility tree, so a
 		// user who focused the field and typed nothing was told nothing. The
@@ -248,6 +248,19 @@ const MUTATIONS = [
 		from: "esc_attr( $sswi_dest_hint . ' ' . $sswi_dest_err )",
 		to: 'esc_attr( $sswi_dest_err )',
 		mustFail: [ 'every combobox states the minimum through aria-describedby' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the combobox hint id goes back into text-field.php\'s hint TEXT variable',
+		file: 'templates/partials/combobox.php',
+		from: "$sswi_hint_id = $sswi_id . '-hint';",
+		to: "$sswi_hint = $sswi_id . '-hint';",
+		// The shipped state. hull.php and cargo.php require both partials into
+		// one scope, and text-field.php reads `$sswi_hint` as the hint TEXT it
+		// is handed. A DOM id left in that name renders to the visitor as a
+		// sentence, where an unset input would at least raise a notice.
+		mustFail: [ 'no partial writes a variable another partial takes as an input' ],
 	},
 
 	{

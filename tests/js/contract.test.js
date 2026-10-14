@@ -950,6 +950,79 @@ test( 'the minimum-characters sentence is published with its %d intact', () => {
 	);
 } );
 
+test( 'no partial writes a variable another partial takes as an input', () => {
+	/*
+	 * THE PARTIALS SHARE ONE VARIABLE SCOPE, AND NOTHING ENFORCED THAT.
+	 *
+	 * hull.php and cargo.php `require` these files in sequence, into the scope
+	 * they are themselves included in. So a name one partial ASSIGNS is still
+	 * set when the next one READS it — and a partial that reads a name without
+	 * assigning it is declaring that name an input, which the caller is
+	 * supposed to supply.
+	 *
+	 * combobox.php assigned `$sswi_hint` — the id of its hint element — while
+	 * text-field.php reads `$sswi_hint` as the visible hint TEXT. Every
+	 * text-field.php call site happens to assign it first, so nothing broke;
+	 * had one not, a DOM id would have been rendered to the visitor as a
+	 * sentence, silently, where an unset input raises a notice. A comment
+	 * cannot hold two templates apart across a rename. This can.
+	 */
+	const PARTIALS = [
+		'templates/partials/combobox.php',
+		'templates/partials/text-field.php',
+		'templates/partials/consent.php',
+		'templates/partials/rates-table.php',
+	];
+
+	// `$x = …` at the start of a line, which is where these templates set up.
+	const assigns = ( src ) =>
+		new Set( [ ...src.matchAll( /^(\$sswi_\w+)\s*=[^=]/gm ) ].map( ( m ) => m[ 1 ] ) );
+
+	// Read but never assigned: what the docblock calls "Expects".
+	const inputs = ( src ) => {
+		const written = assigns( src );
+		const seen = new Set( [ ...src.matchAll( /\$sswi_\w+/g ) ].map( ( m ) => m[ 0 ] ) );
+
+		return [ ...seen ].filter( ( name ) => ! written.has( name ) );
+	};
+
+	const read_ = PARTIALS.map( ( file ) => [ file, read( file ) ] );
+
+	// Non-vacuity: the extraction must find something in both directions, or
+	// every assertion below passes over an empty set.
+	assert.ok(
+		read_.every( ( [ , src ] ) => assigns( src ).size > 0 ),
+		'the assignment pattern matched nothing, so this test proves nothing'
+	);
+	assert.ok(
+		read_.some( ( [ , src ] ) => inputs( src ).length > 0 ),
+		'the input pattern matched nothing, so this test proves nothing'
+	);
+
+	const clashes = [];
+
+	for ( const [ file, src ] of read_ ) {
+		const written = assigns( src );
+
+		for ( const [ other, otherSrc ] of read_ ) {
+			if ( other === file ) {
+				continue;
+			}
+
+			for ( const name of inputs( otherSrc ) ) {
+				if ( written.has( name ) ) {
+					clashes.push(
+						`${ file } assigns ${ name }, which ${ other } reads as an input it ` +
+							'is handed — a stale value from one survives into the other'
+					);
+				}
+			}
+		}
+	}
+
+	assert.deepStrictEqual( clashes, [] );
+} );
+
 test( 'every combobox states the minimum through aria-describedby', () => {
 	/*
 	 * THE LIVE REGION IS NOT A SUBSTITUTE FOR A DESCRIPTION.
@@ -966,13 +1039,11 @@ test( 'every combobox states the minimum through aria-describedby', () => {
 	 * the only one missing the live-region announcement in the first place.
 	 */
 	[
-		[ 'templates/partials/combobox.php', '$sswi_hint' ],
+		[ 'templates/partials/combobox.php', '$sswi_hint_id' ],
 		[ 'templates/cargo.php', '$sswi_dest_hint' ],
 	].forEach( ( [ file, variable ] ) => {
 		const src = read( file );
-		const described = [ ...src.matchAll( /aria-describedby="([^"]*)"/g ) ].filter(
-			( m ) => m[ 1 ].includes( variable.replace( 'hint', '' ) )
-		);
+		const described = [ ...src.matchAll( /aria-describedby="([^"]*)"/g ) ];
 
 		assert.ok(
 			src.includes( `id="<?php echo esc_attr( ${ variable } ); ?>"` ),

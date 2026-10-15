@@ -853,11 +853,79 @@
 		}
 	}
 
+	/**
+	 * Roots this script has already initialised.
+	 *
+	 * A WeakSet rather than a marker attribute on the element. Elementor's
+	 * duplicate action CLONES a widget's DOM, and a clone would carry the
+	 * attribute and be skipped — initialised in appearance and inert in fact.
+	 * Identity is the thing being tracked, so track identity.
+	 */
+	var mounted = new WeakSet();
+
+	/**
+	 * Initialise one root, at most once.
+	 *
+	 * @param {Element} root A `[data-sswi-root]` element.
+	 */
+	function mount( root ) {
+		if ( ! root || mounted.has( root ) ) {
+			return;
+		}
+
+		// Claimed BEFORE init(), not after: init() binds listeners, and anything
+		// re-entrant during binding must find this root already taken. Claiming a
+		// root init() then bails on is correct too — it bails on markup that will
+		// not become valid by being visited again.
+		mounted.add( root );
+
+		init( root );
+	}
+
+	/**
+	 * Initialise every root within a scope, the scope itself included.
+	 *
+	 * @param {Document|Element} scope Where to look. Defaults to the document.
+	 */
+	function mountAll( scope ) {
+		var within = scope && scope.querySelectorAll ? scope : document;
+
+		// querySelectorAll never matches the node it is called on, and the scope
+		// a page builder hands us may BE the root rather than contain one.
+		if ( within.matches && within.matches( '[data-sswi-root]' ) ) {
+			mount( within );
+		}
+
+		within.querySelectorAll( '[data-sswi-root]' ).forEach( mount );
+	}
+
+	/*
+	 * THE ONLY EXPORT, AND IT IS HERE FOR FORMS THAT ARRIVE AFTER LOAD.
+	 *
+	 * The sweep below runs once. Anything injected into the page afterwards is
+	 * never seen by it, and an uninitialised form is a visibly dead one — the
+	 * controls stay disabled and the "needs JavaScript" notice stays up, because
+	 * removing them is the last thing init() does.
+	 *
+	 * ELEMENTOR'S EDITOR INJECTS. It renders a widget through its own AJAX action
+	 * and drops the markup into a preview document that loaded long ago, so a
+	 * form the site builder has just placed is inert the moment it appears —
+	 * announcing itself as broken on the first interaction anyone has with it.
+	 * The same is true of anything else that injects: Elementor Pro popups and
+	 * loop grids, a theme's infinite scroll. So the entry point is general rather
+	 * than an Elementor-shaped callback living in here; assets/js/elementor.js is
+	 * the only part that knows what Elementor is.
+	 */
+	window.spotshipWI = {
+		mount: mount,
+		mountAll: mountAll,
+	};
+
 	if ( 'loading' === document.readyState ) {
 		document.addEventListener( 'DOMContentLoaded', function () {
-			document.querySelectorAll( '[data-sswi-root]' ).forEach( init );
+			mountAll( document );
 		} );
 	} else {
-		document.querySelectorAll( '[data-sswi-root]' ).forEach( init );
+		mountAll( document );
 	}
 } )();

@@ -115,6 +115,32 @@ function spotship_wi_boot(): void {
 		)
 	);
 
+	/*
+	 * The page-builder handler, registered here and enqueued only by the
+	 * Elementor widgets through get_script_depends(). Nothing on a site without
+	 * Elementor ever asks for it, so registering it unconditionally costs a row
+	 * in WP_Scripts and nothing else.
+	 *
+	 * THE `spotship-wi` DEPENDENCY IS LOAD-BEARING, NOT TIDINESS. In the editor
+	 * Elementor enqueues every registered widget's script dependencies up front
+	 * (Preview::enqueue_scripts -> Widgets_Manager::enqueue_widgets_scripts),
+	 * before any widget is on the page. On an empty page the renderer has
+	 * therefore never run, so nothing has enqueued `spotship-wi` — and this
+	 * handler would load with no window.spotshipWI to call. Declaring the
+	 * dependency is what drags the real script into the preview, which is why
+	 * the very first widget dropped onto a blank page comes up live.
+	 */
+	wp_register_script(
+		Spotship_WI_Elementor::HANDLER_SCRIPT,
+		SPOTSHIP_WI_URL . 'assets/js/elementor.js',
+		array( 'spotship-wi' ),
+		SPOTSHIP_WI_VERSION,
+		array(
+			'in_footer' => true,
+			'strategy'  => 'defer',
+		)
+	);
+
 	wp_register_style(
 		'spotship-wi',
 		SPOTSHIP_WI_URL . 'assets/css/war-insurance.css',
@@ -170,6 +196,19 @@ add_action(
 );
 
 add_action( 'init', array( 'Spotship_WI_Shortcodes', 'register_blocks' ) );
+
+/*
+ * Elementor's own hooks, added unconditionally. They cost nothing on a site
+ * without Elementor, because nothing fires them there — and crucially this
+ * call loads no Elementor class, so it is safe at file scope. The widget
+ * subclasses, which DO extend an Elementor class, are reached only through the
+ * autoloader from inside the registration callback.
+ *
+ * Not deferred to spotship_wi_boot(): that runs on `init`, Elementor builds
+ * its widget registry during `init` as well, and losing that race would mean
+ * the widgets quietly never appear in the panel.
+ */
+Spotship_WI_Elementor::register();
 
 if ( is_admin() ) {
 	Spotship_WI_Admin::register();

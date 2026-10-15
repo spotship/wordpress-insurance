@@ -12,14 +12,20 @@
  * mutation leaves the suite green, the test has stopped earning its place and
  * this exits non-zero.
  *
- * TWO SUITES. `--suite=js` (the default) mutates source the jsdom tests cover
- * and needs nothing but Node. `--suite=php` mutates source the PHPUnit
- * integration tests cover and needs wp-env, so it runs in the integration job
- * instead. Splitting them is not cosmetic: without the php suite the
- * integration tests had no fail-before-fix evidence at all, which is the same
- * unverifiable claim this file exists to replace.
+ * THREE SUITES, SPLIT BY WHAT THEY NEED TO RUN, NOT BY TASTE.
  *
- * Usage: node bin/mutation-check.js [--suite=js|php]
+ *   --suite=js    (the default) mutates source the jsdom tests cover and needs
+ *                 nothing but Node.
+ *   --suite=unit  mutates source the PHPUnit UNIT tests cover and needs only
+ *                 PHP and composer, so it rides along in the unit job.
+ *   --suite=php   mutates source the PHPUnit INTEGRATION tests cover and needs
+ *                 wp-env, so it runs in the integration job instead.
+ *
+ * Splitting them is not cosmetic: without the php suite the integration tests
+ * had no fail-before-fix evidence at all, and without the unit suite neither
+ * did the unit tests — the same unverifiable claim this file exists to replace.
+ *
+ * Usage: node bin/mutation-check.js [--suite=js|unit|php]
  */
 'use strict';
 
@@ -63,9 +69,34 @@ const MUTATIONS = [
 		suite: 'js',
 		what: 'the renderer stops namespacing instances',
 		file: 'includes/class-renderer.php',
-		from: "'uid'       => 'sswi-' . self::$instances,",
+		from: "'uid'       => $uid,",
 		to: "'uid'       => 'sswi',",
-		mustFail: [ 'the renderer namespaces ids per instance' ],
+		mustFail: [ 'the renderer namespaces ids per render, from the form uuid' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'mounting the same root twice binds a second set of listeners',
+		file: 'assets/js/war-insurance.js',
+		from: 'if ( ! root || mounted.has( root ) ) {',
+		to: 'if ( ! root ) {',
+		// Elementor re-runs element_ready on every re-render, and its editor
+		// re-renders freely, so a root reaching init() twice is routine rather
+		// than exotic. Two submit handlers on one form is one visitor action and
+		// two quote requests, which the backend cannot tell apart.
+		mustFail: [ 'mounting twice does not bind a second set of listeners' ],
+	},
+	{
+		suite: 'js',
+		what: 'mountAll stops looking inside the scope it is given',
+		file: 'assets/js/war-insurance.js',
+		from: "within.querySelectorAll( '[data-sswi-root]' ).forEach( mount );",
+		to: '',
+		// Elementor passes the widget wrapper, never the root: our markup is a
+		// descendant, inside .elementor-widget-container. Dropping the descendant
+		// sweep leaves every builder-injected form dead, which is the defect this
+		// whole mechanism exists to fix.
+		mustFail: [ 'mountAll reaches a root nested inside the scope Elementor passes' ],
 	},
 
 	{
@@ -208,7 +239,7 @@ const MUTATIONS = [
 		suite: 'js',
 		what: 'the combobox stops stating the minimum on focus',
 		file: 'templates/partials/combobox.php',
-		from: "esc_attr( $sswi_hint . ' ' . $sswi_err )",
+		from: "esc_attr( $sswi_hint_id . ' ' . $sswi_err )",
 		to: 'esc_attr( $sswi_err )',
 		// The shipped state: the threshold left the accessibility tree, so a
 		// user who focused the field and typed nothing was told nothing. The
@@ -227,6 +258,20 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: 'the Elementor widgets stop declaring a stylesheet',
+		file: 'includes/class-elementor-widget.php',
+		from: "return array( 'spotship-wi' );",
+		to: 'return array();',
+		// The shipped state. The renderer's own enqueue is discarded inside
+		// Elementor's render_widget AJAX request, so only a declared handle
+		// reaches the preview. Without it the first widget dropped onto a page
+		// came up live and unstyled — screen-reader hints as body copy, and the
+		// anti-bot honeypot as a visible input.
+		mustFail: [ 'the Elementor widgets depend on a style handle that is actually registered' ],
+	},
+
+	{
+		suite: 'js',
 		what: 'the changelog lookup goes back to grepping the whole readme',
 		file: 'bin/set-version.sh',
 		from: '\t\tinlog && $0 == "= " ver " =" { found = 1 }',
@@ -241,6 +286,19 @@ const MUTATIONS = [
 			'a heading elsewhere in the readme does not stand in for the changelog entry',
 			'both scripts bound the changelog lookup with the same awk',
 		],
+	},
+
+	{
+		suite: 'js',
+		what: 'the combobox hint id goes back into text-field.php\'s hint TEXT variable',
+		file: 'templates/partials/combobox.php',
+		from: "$sswi_hint_id = $sswi_id . '-hint';",
+		to: "$sswi_hint = $sswi_id . '-hint';",
+		// The shipped state. hull.php and cargo.php require both partials into
+		// one scope, and text-field.php reads `$sswi_hint` as the hint TEXT it
+		// is handed. A DOM id left in that name renders to the visitor as a
+		// sentence, where an unset input would at least raise a notice.
+		mustFail: [ 'no partial writes a variable another partial takes as an input' ],
 	},
 
 	{
@@ -367,13 +425,43 @@ const MUTATIONS = [
 		mustFail: [ 'every named input can be reached by a field error' ],
 	},
 
+	// --- unit: driven by the PHPUnit unit suite, needs only PHP ---
+
+	{
+		suite: 'unit',
+		what: 'the widgets manager is called without checking it can be',
+		file: 'includes/class-elementor.php',
+		from: "if ( ! is_object( $widgets_manager ) || ! method_exists( $widgets_manager, 'register' ) ) {",
+		to: 'if ( false ) {',
+		// Elementor has renamed this hook before and passed a different object
+		// to it. Calling a method that is not there is an Error — a white
+		// screen on every page of a site that merely has this plugin
+		// installed. The integration suite cannot see this: it runs without
+		// Elementor, so the class_exists() guard above returns first and
+		// nothing below it is ever reached, whichever manager is passed.
+		mustFail: [ 'test_a_manager_of_the_wrong_shape_is_refused_rather_than_fatal' ],
+	},
+
+	{
+		suite: 'unit',
+		what: 'a widget is registered under the other product\'s stored name',
+		file: 'includes/class-elementor-cargo.php',
+		from: "return 'spotship-war-cargo';",
+		to: "return 'spotship-war-hull';",
+		// Elementor persists get_name() in `_elementor_data` on every page
+		// using the widget, so this string is a compatibility surface: a page
+		// whose stored type no longer resolves draws a missing-widget
+		// placeholder and still returns 200.
+		mustFail: [ 'test_both_widgets_are_registered_under_the_names_pages_store' ],
+	},
+
 	// --- php: driven by the PHPUnit integration suite, needs wp-env ---
 
 	{
 		suite: 'php',
 		what: 'the renderer stops namespacing instances (rendered output)',
 		file: 'includes/class-renderer.php',
-		from: "'uid'       => 'sswi-' . self::$instances,",
+		from: "'uid'       => $uid,",
 		to: "'uid'       => 'sswi',",
 		// The js mutation above proves the TEMPLATES read the prefix. This one
 		// proves the rendered markup of two real forms on one page actually
@@ -540,8 +628,8 @@ const MUTATIONS = [
 const SUITE = ( process.argv.slice( 2 ).find( ( a ) => a.startsWith( '--suite=' ) ) || '--suite=js' )
 	.slice( '--suite='.length );
 
-if ( ! [ 'js', 'php' ].includes( SUITE ) ) {
-	process.stdout.write( `unknown suite "${ SUITE }" — expected js or php\n` );
+if ( ! [ 'js', 'unit', 'php' ].includes( SUITE ) ) {
+	process.stdout.write( `unknown suite "${ SUITE }" — expected js, unit or php\n` );
 	process.exit( 1 );
 }
 
@@ -560,6 +648,20 @@ function phpunitCommand() {
 		process.env.MUTATION_PHPUNIT_CMD ||
 		`npx wp-env run tests-cli --env-cwd=wp-content/plugins/${ path.basename( ROOT ) } ` +
 			`vendor/bin/phpunit -c phpunit-integration.xml.dist --log-junit ${ JUNIT }`
+	);
+}
+
+/**
+ * How to run the unit suite. No container: Brain Monkey, no WordPress, so this
+ * is the same command a developer runs. Overridable for the same reason as
+ * above.
+ *
+ * @returns {string} shell command.
+ */
+function unitCommand() {
+	return (
+		process.env.MUTATION_UNIT_CMD ||
+		`vendor/bin/phpunit -c phpunit.xml.dist --log-junit ${ JUNIT }`
 	);
 }
 
@@ -594,22 +696,23 @@ function failingJs() {
 }
 
 /**
- * Run the PHPUnit integration suite and return the set of failing test names.
+ * Run a PHPUnit suite and return the set of failing test names.
  *
  * Read from the JUnit report rather than the console output: PHPUnit's
  * human-readable format prints a dot per test and names a failure only in a
  * summary block, so scraping it is guesswork. The report is a contract.
  *
+ * @param {string} command How to run it — see phpunitCommand()/unitCommand().
  * @returns {Set<string>|null} names, or null if the run produced no report.
  */
-function failingPhp() {
+function failingPhpunit( command ) {
 	const report = path.join( ROOT, JUNIT );
 
 	if ( fs.existsSync( report ) ) {
 		fs.unlinkSync( report );
 	}
 
-	spawnSync( phpunitCommand(), {
+	spawnSync( command, {
 		cwd: ROOT,
 		shell: true,
 		encoding: 'utf8',
@@ -646,7 +749,15 @@ function failingPhp() {
  * @returns {Set<string>|null} failing test names for the selected suite.
  */
 function failingTests() {
-	return 'php' === SUITE ? failingPhp() : failingJs();
+	if ( 'php' === SUITE ) {
+		return failingPhpunit( phpunitCommand() );
+	}
+
+	if ( 'unit' === SUITE ) {
+		return failingPhpunit( unitCommand() );
+	}
+
+	return failingJs();
 }
 
 /**

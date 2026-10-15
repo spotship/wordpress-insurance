@@ -64,11 +64,26 @@ defined( 'ABSPATH' ) || exit;
  * @var bool $sswi_combo_required
  */
 
-$sswi_id   = $sswi_uid . '-' . $sswi_combo_name;
-$sswi_list = $sswi_id . '-list';
-$sswi_err  = $sswi_id . '-error';
-$sswi_live = $sswi_id . '-live';
-$sswi_hint = $sswi_id . '-hint';
+/*
+ * `$sswi_hint_id`, NOT `$sswi_hint`. THESE PARTIALS SHARE ONE SCOPE.
+ *
+ * hull.php and cargo.php `require` this file and text-field.php into the same
+ * variable scope, in sequence. text-field.php READS `$sswi_hint` as its visible
+ * hint TEXT without assigning it first — it is a documented input of that
+ * template — so an id left behind in that name by this one is a DOM id rendered
+ * to the visitor as a sentence, silently, instead of the undefined-variable
+ * notice that an unset input would raise.
+ *
+ * It does not bite today only because every text-field.php call site assigns
+ * `$sswi_hint` immediately above its require. The id belongs in the name
+ * text-field.php uses for the same thing, which also assigns it on every pass.
+ * tests/js/contract.test.js holds the two apart.
+ */
+$sswi_id      = $sswi_uid . '-' . $sswi_combo_name;
+$sswi_list    = $sswi_id . '-list';
+$sswi_err     = $sswi_id . '-error';
+$sswi_live    = $sswi_id . '-live';
+$sswi_hint_id = $sswi_id . '-hint';
 ?>
 <div class="sswi-field sswi-combo" data-sswi-combo="<?php echo esc_attr( $sswi_combo_kind ); ?>" data-sswi-field="<?php echo esc_attr( $sswi_combo_name ); ?>">
 	<label for="<?php echo esc_attr( $sswi_id ); ?>">
@@ -89,12 +104,12 @@ $sswi_hint = $sswi_id . '-hint';
 		<?php if ( ! empty( $sswi_combo_required ) ) : ?>
 			aria-required="true"
 		<?php endif; ?>
-		aria-describedby="<?php echo esc_attr( $sswi_hint . ' ' . $sswi_err ); ?>"
+		aria-describedby="<?php echo esc_attr( $sswi_hint_id . ' ' . $sswi_err ); ?>"
 		autocomplete="off"
 		disabled
 	>
 
-	<p class="sswi-sr" id="<?php echo esc_attr( $sswi_hint ); ?>"><?php echo esc_html( Spotship_WI_Renderer::min_chars_hint() ); ?></p>
+	<p class="sswi-sr" id="<?php echo esc_attr( $sswi_hint_id ); ?>"><?php echo esc_html( Spotship_WI_Renderer::min_chars_hint() ); ?></p>
 
 	<ul class="sswi-listbox" id="<?php echo esc_attr( $sswi_list ); ?>" role="listbox" hidden></ul>
 

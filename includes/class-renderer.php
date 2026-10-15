@@ -24,23 +24,6 @@ defined( 'ABSPATH' ) || exit;
 final class Spotship_WI_Renderer {
 
 	/**
-	 * How many forms this request has already rendered.
-	 *
-	 * Element ids must be unique within a DOCUMENT, and a page may legitimately
-	 * carry more than one form: hull and cargo on one "Insurance" page, or the
-	 * same shortcode twice. Every id below is therefore namespaced with this
-	 * counter. Without it the second form's labels resolve to the first form's
-	 * inputs -- clicking a label focuses the wrong field -- which is a WCAG
-	 * 1.3.1 and 4.1.2 failure, not a cosmetic one.
-	 *
-	 * A counter rather than the form uuid because ids only need to be unique
-	 * within one render pass, and short readable ids keep the markup legible.
-	 *
-	 * @var int
-	 */
-	private static int $instances = 0;
-
-	/**
 	 * Characters required before an autocomplete will search.
 	 *
 	 * ONE DEFINITION, because two consumers now read it: the script uses it as
@@ -112,11 +95,33 @@ final class Spotship_WI_Renderer {
 		$timestamp = time();
 		$form_id   = wp_generate_uuid4();
 
-		++self::$instances;
+		/*
+		 * IDS ARE NAMESPACED PER FORM, AND THE NAMESPACE MUST NOT BE A COUNTER.
+		 *
+		 * Element ids must be unique within a DOCUMENT, and a page may legitimately
+		 * carry more than one form: hull and cargo on one "Insurance" page, or the
+		 * same shortcode twice. Without a namespace the second form's labels
+		 * resolve to the first form's inputs -- clicking a label focuses the wrong
+		 * field -- which is a WCAG 1.3.1 and 4.1.2 failure, not a cosmetic one.
+		 *
+		 * THIS WAS A PER-REQUEST STATIC COUNTER, and that was wrong in a way only
+		 * one surface reveals. Elementor's editor renders each widget in its own
+		 * `render_widget` AJAX request, so the counter restarted at zero every
+		 * time and every form was emitted as `sswi-1`. Two Spot Ship widgets on
+		 * one Elementor page collided on every id in the preview -- exactly the
+		 * defect the counter was added to prevent, reintroduced by the assumption
+		 * that a page renders in one pass.
+		 *
+		 * The form uuid is unique per RENDER rather than per position in a render
+		 * pass, so it cannot depend on how many times this process happens to have
+		 * been called. Eight hex characters is what the counter was really buying:
+		 * markup a human can still read.
+		 */
+		$uid = 'sswi-' . substr( str_replace( '-', '', $form_id ), 0, 8 );
 
 		$data = array(
 			'product'   => $product,
-			'uid'       => 'sswi-' . self::$instances,
+			'uid'       => $uid,
 			'form_id'   => $form_id,
 			'timestamp' => $timestamp,
 			'signature' => Spotship_WI_Request_Guard::sign( $timestamp, $form_id ),

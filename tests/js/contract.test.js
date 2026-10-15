@@ -673,12 +673,28 @@ test( 'every partial derives its element ids from the instance prefix', () => {
 	} );
 } );
 
-test( 'the renderer namespaces ids per instance', () => {
-	// The counter is the mechanism the templates depend on. If it goes away,
-	// every id above silently becomes constant again.
-	assert.match( RENDERER, /private static int \$instances = 0;/, 'the per-instance counter must exist' );
-	assert.match( RENDERER, /\+\+self::\$instances;/, 'and be advanced on every render' );
-	assert.match( RENDERER, /'uid'\s*=>\s*'sswi-' \. self::\$instances,/, 'and be published to the templates' );
+test( 'the renderer namespaces ids per render, from the form uuid', () => {
+	/*
+	 * The namespace is the mechanism every template id depends on. If it goes
+	 * away, every id silently becomes constant again.
+	 *
+	 * IT ALSO MUST NOT COME FROM A COUNTER. A per-request static restarts at
+	 * zero in every PHP process, and Elementor's editor renders each widget in
+	 * its own AJAX request — so a counter handed every form `sswi-1` and two
+	 * widgets on a page collided on every id. The form uuid is minted per
+	 * render, so it cannot depend on how often this process has been called.
+	 */
+	assert.match(
+		RENDERER,
+		/\$uid\s*=\s*'sswi-' \. substr\( str_replace\( '-', '', \$form_id \), 0, 8 \);/,
+		'the id namespace must be derived from the per-render form uuid'
+	);
+	assert.match( RENDERER, /'uid'\s*=>\s*\$uid,/, 'and be published to the templates' );
+	assert.ok(
+		! /static int \$instances/.test( RENDERER ),
+		'the id namespace must not return to a per-request counter: it restarts at zero ' +
+			'in every process, and Elementor renders each widget in a process of its own'
+	);
 } );
 
 test( 'assets are registered no earlier than init', () => {
@@ -705,6 +721,91 @@ test( 'assets are registered no earlier than init', () => {
 		! /add_action\(\s*'plugins_loaded'/.test( plugin ),
 		'nothing here may hook plugins_loaded: it is before init, and registering ' +
 			'a script there prints a notice that breaks cookie-setting site-wide'
+	);
+} );
+
+test( 'the Elementor widgets depend on a script handle that is actually registered', () => {
+	/*
+	 * A HANDLE THAT IS NOT REGISTERED IS ENQUEUED AS NOTHING, SILENTLY.
+	 *
+	 * get_script_depends() returns handles; WordPress drops any it does not
+	 * know, with no notice and no error. The symptom would be a form that works
+	 * on a published page and is inert the moment Elementor injects one — which
+	 * is the exact defect this script was added to fix, restored by a typo.
+	 *
+	 * Nothing else would catch it. PHPStan sees two strings; PHPCS sees two
+	 * strings; the front-end e2e never injects anything.
+	 */
+	const widget = read( 'includes/class-elementor-widget.php' );
+	const elementor = read( 'includes/class-elementor.php' );
+	const plugin = read( 'spotship-war-insurance.php' );
+
+	const depends = /get_script_depends\(\): array \{\s*return array\( ([^)]+) \);/.exec( widget );
+
+	assert.ok( depends, 'the widget base must declare get_script_depends()' );
+	assert.equal(
+		depends[ 1 ].trim(),
+		'Spotship_WI_Elementor::HANDLER_SCRIPT',
+		'the handle must come from the constant, not a repeated literal'
+	);
+
+	const handle = /HANDLER_SCRIPT = '([^']+)';/.exec( elementor );
+
+	assert.ok( handle, 'Spotship_WI_Elementor must define HANDLER_SCRIPT' );
+	assert.match(
+		plugin,
+		new RegExp( 'wp_register_script\\(\\s*Spotship_WI_Elementor::HANDLER_SCRIPT' ),
+		`${ handle[ 1 ] } is depended on but never registered`
+	);
+
+	// And the file it points at has to exist, for the same reason.
+	const src = /HANDLER_SCRIPT,\s*SPOTSHIP_WI_URL \. '([^']+)'/.exec( plugin );
+
+	assert.ok( src, 'the registration must name a file' );
+	assert.ok(
+		fs.existsSync( path.join( ROOT, src[ 1 ] ) ),
+		`${ src[ 1 ] } is registered but not in the tree`
+	);
+} );
+
+test( 'the Elementor widgets depend on a style handle that is actually registered', () => {
+	/*
+	 * THE STYLESHEET NEEDS DECLARING FOR THE SAME REASON THE SCRIPT DOES, AND
+	 * IT WAS THE HALF THAT GOT MISSED.
+	 *
+	 * Spotship_WI_Renderer::render() enqueues the stylesheet, which carries a
+	 * published page — WordPress prints a late enqueue through
+	 * print_late_styles(). In the editor that render happens inside Elementor's
+	 * `render_widget` AJAX request, which returns markup and nothing else, so
+	 * the enqueue is thrown away. Only a declared handle reaches the preview,
+	 * through Preview::enqueue_styles -> Widgets_Manager::enqueue_widgets_styles.
+	 *
+	 * The symptom is not a dead form, which is why no existing guard saw it: the
+	 * form came up live and UNSTYLED, and war-insurance.css is the only thing
+	 * visually hiding `.sswi-sr` and `.sswi-hp` — so the screen-reader hints
+	 * rendered as body copy and the anti-bot honeypot rendered as a visible
+	 * input. The editor e2e cannot catch it either: it seeds a page that already
+	 * carries a widget, whose server-side render has already put the stylesheet
+	 * in the preview before the injected one arrives.
+	 */
+	const widget = read( 'includes/class-elementor-widget.php' );
+	const plugin = read( 'spotship-war-insurance.php' );
+
+	const depends = /get_style_depends\(\): array \{\s*return array\( '([^']+)' \);/.exec( widget );
+
+	assert.ok( depends, 'the widget base must declare get_style_depends()' );
+
+	// The literal, not a constant, because that is how every other call site
+	// spells this handle — class-renderer.php enqueues it the same way.
+	const handle = depends[ 1 ];
+	const registered = new RegExp(
+		`wp_register_style\\(\\s*'${ handle }',\\s*SPOTSHIP_WI_URL \\. '([^']+)'`
+	).exec( plugin );
+
+	assert.ok( registered, `${ handle } is depended on but never registered` );
+	assert.ok(
+		fs.existsSync( path.join( ROOT, registered[ 1 ] ) ),
+		`${ registered[ 1 ] } is registered but not in the tree`
 	);
 } );
 
@@ -890,6 +991,79 @@ test( 'the minimum-characters sentence is published with its %d intact', () => {
 	);
 } );
 
+test( 'no partial writes a variable another partial takes as an input', () => {
+	/*
+	 * THE PARTIALS SHARE ONE VARIABLE SCOPE, AND NOTHING ENFORCED THAT.
+	 *
+	 * hull.php and cargo.php `require` these files in sequence, into the scope
+	 * they are themselves included in. So a name one partial ASSIGNS is still
+	 * set when the next one READS it — and a partial that reads a name without
+	 * assigning it is declaring that name an input, which the caller is
+	 * supposed to supply.
+	 *
+	 * combobox.php assigned `$sswi_hint` — the id of its hint element — while
+	 * text-field.php reads `$sswi_hint` as the visible hint TEXT. Every
+	 * text-field.php call site happens to assign it first, so nothing broke;
+	 * had one not, a DOM id would have been rendered to the visitor as a
+	 * sentence, silently, where an unset input raises a notice. A comment
+	 * cannot hold two templates apart across a rename. This can.
+	 */
+	const PARTIALS = [
+		'templates/partials/combobox.php',
+		'templates/partials/text-field.php',
+		'templates/partials/consent.php',
+		'templates/partials/rates-table.php',
+	];
+
+	// `$x = …` at the start of a line, which is where these templates set up.
+	const assigns = ( src ) =>
+		new Set( [ ...src.matchAll( /^(\$sswi_\w+)\s*=[^=]/gm ) ].map( ( m ) => m[ 1 ] ) );
+
+	// Read but never assigned: what the docblock calls "Expects".
+	const inputs = ( src ) => {
+		const written = assigns( src );
+		const seen = new Set( [ ...src.matchAll( /\$sswi_\w+/g ) ].map( ( m ) => m[ 0 ] ) );
+
+		return [ ...seen ].filter( ( name ) => ! written.has( name ) );
+	};
+
+	const read_ = PARTIALS.map( ( file ) => [ file, read( file ) ] );
+
+	// Non-vacuity: the extraction must find something in both directions, or
+	// every assertion below passes over an empty set.
+	assert.ok(
+		read_.every( ( [ , src ] ) => assigns( src ).size > 0 ),
+		'the assignment pattern matched nothing, so this test proves nothing'
+	);
+	assert.ok(
+		read_.some( ( [ , src ] ) => inputs( src ).length > 0 ),
+		'the input pattern matched nothing, so this test proves nothing'
+	);
+
+	const clashes = [];
+
+	for ( const [ file, src ] of read_ ) {
+		const written = assigns( src );
+
+		for ( const [ other, otherSrc ] of read_ ) {
+			if ( other === file ) {
+				continue;
+			}
+
+			for ( const name of inputs( otherSrc ) ) {
+				if ( written.has( name ) ) {
+					clashes.push(
+						`${ file } assigns ${ name }, which ${ other } reads as an input it ` +
+							'is handed — a stale value from one survives into the other'
+					);
+				}
+			}
+		}
+	}
+
+	assert.deepStrictEqual( clashes, [] );
+} );
+
 test( 'every combobox states the minimum through aria-describedby', () => {
 	/*
 	 * THE LIVE REGION IS NOT A SUBSTITUTE FOR A DESCRIPTION.
@@ -906,13 +1080,11 @@ test( 'every combobox states the minimum through aria-describedby', () => {
 	 * the only one missing the live-region announcement in the first place.
 	 */
 	[
-		[ 'templates/partials/combobox.php', '$sswi_hint' ],
+		[ 'templates/partials/combobox.php', '$sswi_hint_id' ],
 		[ 'templates/cargo.php', '$sswi_dest_hint' ],
 	].forEach( ( [ file, variable ] ) => {
 		const src = read( file );
-		const described = [ ...src.matchAll( /aria-describedby="([^"]*)"/g ) ].filter(
-			( m ) => m[ 1 ].includes( variable.replace( 'hint', '' ) )
-		);
+		const described = [ ...src.matchAll( /aria-describedby="([^"]*)"/g ) ];
 
 		assert.ok(
 			src.includes( `id="<?php echo esc_attr( ${ variable } ); ?>"` ),

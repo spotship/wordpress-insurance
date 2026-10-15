@@ -170,6 +170,9 @@ msgstr ""
 msgid "Shown to visitors when the form cannot be served."
 msgstr ""
 
+msgid "Spot Ship"
+msgstr ""
+
 msgid "Spot Ship War Insurance"
 msgstr ""
 
@@ -231,6 +234,12 @@ msgid "Vessel"
 msgstr ""
 
 msgid "Vessel (optional)"
+msgstr ""
+
+msgid "War Cargo Quote"
+msgstr ""
+
+msgid "War Hull Quote"
 msgstr ""
 
 msgid "You do not have permission to do that."

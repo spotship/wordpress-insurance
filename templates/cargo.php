@@ -32,7 +32,8 @@ $sswi_rates   = $sswi_serving['rates'];
 /*
  * Every element id below is namespaced with this. A page may carry more than
  * one form, and duplicate ids silently re-point each label at the first form's
- * input. See the $instances counter in class-renderer.php.
+ * input. Derived from the per-render form uuid -- NOT from a counter, which
+ * restarts at zero in every process; see Spotship_WI_Renderer::render().
  */
 $sswi_uid = $data['uid'];
 

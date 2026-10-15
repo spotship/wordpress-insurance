@@ -976,10 +976,11 @@ test( 'every path CI writes into the checkout is on the ignore list', () => {
 	 *   - what a step writes — `| tee x`, `> x`, `--report-…=x`
 	 *   - what upload-artifact declares the job produced
 	 *
-	 * The second is not redundant with the first. Playwright's html reporter
-	 * takes its output directory from a config file, so real-backend-report/ is
-	 * never named on a shell line anywhere; the upload block is the only place
-	 * in CI that says it exists. Reading only the redirects misses six paths.
+	 * The second is not redundant with the first. A reporter can take its output
+	 * directory from a config file rather than a command, and three do:
+	 * playwright-report/, real-backend-report/ and test-results/ are named on no
+	 * shell line in any workflow, and the upload blocks are the only place CI
+	 * admits they exist. Reading only the shell lines reaches 16 of the 19.
 	 *
 	 * This asserts only that git ignores each one. The sibling above carries it
 	 * from there to .distignore and ALLOWED, so the chain is workflow →
@@ -997,10 +998,23 @@ test( 'every path CI writes into the checkout is on the ignore list', () => {
 	 * reads as a test that passes rather than one that failed to look, which is
 	 * the honest limit of deriving names from text.
 	 */
-	const PATHISH = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
-	const WRITES =
-		/(?:\btee\b\s+(?:-{1,2}[A-Za-z][A-Za-z0-9-]*\s+)*|(?<!-)>>?\s*)["']?([A-Za-z0-9][A-Za-z0-9._/-]*)/g;
-	const FLAGS = /--[a-z-]*(?:report|output|out|log)[a-z-]*=["']?([A-Za-z0-9][A-Za-z0-9._/-]*)/g;
+	const PATHISH = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+	// `tee` takes a LIST of files. Capturing one target read `tee a.txt b.txt`
+	// as a.txt alone, so the tail is captured whole and split below.
+	const TEE = /\btee\b((?:\s+(?:-{1,2}[A-Za-z][A-Za-z0-9-]*|["']?[A-Za-z0-9][A-Za-z0-9._/-]*["']?))+)/g;
+	const REDIRECT = /(?<!-)>>?\s*["']?([A-Za-z0-9][A-Za-z0-9._/-]*)/g;
+
+	// `=` OR A SPACE. ci.yaml:67 writes `--log-junit junit-unit.xml` space-
+	// separated, and with `=` alone that report was reachable only because it
+	// also happens to be uploaded. The stems cover the report flags a PHP/JS
+	// toolchain emits, not just the two this repo uses today.
+	const FLAGS =
+		/--[a-z-]*(?:report|output|out|log|coverage|junit|testdox)[a-z-]*[= ]["']?([A-Za-z0-9][A-Za-z0-9._/-]*)/g;
+
+	// A `path:` value this cannot reduce to a repo path, which is NOT the same
+	// as one it did not look at. See the assertion on `unreducible` below.
+	const OUTSIDE_THE_CHECKOUT = /^[!/~]/;
 
 	// What build-dist.sh's allow-list sees is the top-level entry, so that is
 	// the unit here too. A path with anything after that entry names a
@@ -1009,7 +1023,8 @@ test( 'every path CI writes into the checkout is on the ignore list', () => {
 	// about a directory, so the distinction has to survive to the probe.
 	const produced = new Map();
 
-	const arms = { redirect: 0, flag: 0, upload: 0 };
+	const arms = { tee: 0, redirect: 0, flag: 0, upload: 0 };
+	const unreducible = [];
 
 	const record = ( raw, where, via ) => {
 		// Quotes are shell and YAML syntax, not part of the name. `tee "x.txt"`
@@ -1020,11 +1035,19 @@ test( 'every path CI writes into the checkout is on the ignore list', () => {
 			.replace( /^\.\//, '' )
 			.replace( /\/+$/, '/' );
 
-		if ( ! PATHISH.test( clean.replace( /\/$/, '' ) ) ) {
+		const [ entry ] = clean.split( '/' );
+
+		// THE FIRST SEGMENT, not the whole value. Testing the whole string threw
+		// away `reports/*.xml` entirely — glob and directory together — when the
+		// directory is exactly what build-dist.sh would have refused.
+		if ( ! PATHISH.test( entry ) ) {
+			if ( via === 'upload' && ! OUTSIDE_THE_CHECKOUT.test( clean ) ) {
+				unreducible.push( `${ raw.trim() } (${ where })` );
+			}
+
 			return;
 		}
 
-		const [ entry ] = clean.split( '/' );
 		const isDir = clean.length > entry.length;
 		const seen = produced.get( entry );
 
@@ -1037,14 +1060,16 @@ test( 'every path CI writes into the checkout is on the ignore list', () => {
 	};
 
 	for ( const file of fs.readdirSync( WORKFLOWS ).filter( ( n ) => /\.ya?ml$/.test( n ) ) ) {
-		// Indent of the `path: |` key, while its block scalar is open.
+		// Indent of the `path:` key, while its block scalar is open. `|` alone
+		// missed `|-`, `|+` and the folded forms — and a header this did not
+		// recognise took the WHOLE block with it, silently.
 		let block = null;
 
 		read( '.github', 'workflows', file )
 			.split( '\n' )
 			.forEach( ( line, i ) => {
 				const where = `${ file }:${ i + 1 }`;
-				const opens = line.match( /^(\s*)path:\s*\|\s*$/ );
+				const opens = line.match( /^(\s*)path:\s*[|>][-+]?[0-9]*\s*$/ );
 
 				if ( opens ) {
 					block = opens[ 1 ].length;
@@ -1060,16 +1085,30 @@ test( 'every path CI writes into the checkout is on the ignore list', () => {
 					block = null;
 				}
 
-				const inline = line.match( /^\s*path:\s*(\S+)\s*$/ );
+				// `(\S+)\s*$` refused any line with a trailing comment on it.
+				// The negative class keeps a block-scalar header out: `path: |` is
+				// a header the branch above owns, not a one-line value, and without
+				// this the two forms prop each other up when either one breaks.
+				const inline = line.match( /^\s*path:\s*([^|>#\s]\S*)\s*(?:#.*)?$/ );
 
 				if ( inline ) {
 					record( inline[ 1 ], where, 'upload' );
 				}
 
-				for ( const m of line.matchAll( WRITES ) ) {
-					// A redirect target is a file, so it has an extension. The
-					// guard is what separates `> live.json` from `-> staging`.
-					if ( /\.[A-Za-z0-9]+$/.test( m[ 1 ] ) ) {
+				// A written target is a file, so it has an extension. That guard
+				// is what separates `> live.json` from `-> staging` and `tee from`.
+				const looksWritten = ( t ) => /\.[A-Za-z0-9]+$/.test( t );
+
+				for ( const m of line.matchAll( TEE ) ) {
+					for ( const target of m[ 1 ].trim().split( /\s+/ ) ) {
+						if ( ! target.startsWith( '-' ) && looksWritten( target ) ) {
+							record( target, where, 'tee' );
+						}
+					}
+				}
+
+				for ( const m of line.matchAll( REDIRECT ) ) {
+					if ( looksWritten( m[ 1 ] ) ) {
 						record( m[ 1 ], where, 'redirect' );
 					}
 				}
@@ -1080,11 +1119,44 @@ test( 'every path CI writes into the checkout is on the ignore list', () => {
 			} );
 	}
 
-	// EACH OF THE THREE SEPARATELY, because a total hides the loss of any one of
-	// them. The upload arm contributes six paths no shell line names, and the
-	// flag arm contributes exactly one — so a dead redirect regex would still
-	// leave a total that clears any floor worth setting, and this would go green
-	// over thirteen unchecked paths.
+	/*
+	 * A `path:` VALUE THAT COULD NOT BE REDUCED IS A FAILURE, NOT AN ABSENCE.
+	 *
+	 * Everything above is a regex over text, and the lesson from the other
+	 * static-analysis tests in this org is that an escape route you cannot
+	 * analyse needs a RULE, not a cleverer regex. Each of these dropped a real
+	 * path silently, and the arm counters stayed satisfied by other workflows:
+	 *
+	 *   path: |-            a chomping indicator — took the whole block with it
+	 *   path: reports/*.xml a glob — and `reports/` went with it
+	 *   path: out-${{ … }}  an interpolated name, which is in use in mavis today
+	 *   path: x  # comment  a trailing comment
+	 *
+	 * The first three are fixed above. This is what catches the fourth spelling,
+	 * whatever it turns out to be: an upload block names paths the job PRODUCED,
+	 * so a value here that is not a repo path is something this cannot reason
+	 * about, and it has to say so rather than skip it. `!`-exclusions and
+	 * absolute paths are the one exemption, by rule rather than by name — they
+	 * are categorically not artefacts in the checkout root.
+	 */
+	assert.deepStrictEqual(
+		unreducible,
+		[],
+		'an upload-artifact path: could not be reduced to a path in this checkout, ' +
+			'so nothing here checked it. Spell it as a literal path, or — if it is ' +
+			'genuinely variable — ignore a pattern that covers every name it can take'
+	);
+
+	// EACH ARM SEPARATELY, because a total hides the loss of any one of them.
+	// These are MATCH counts, not distinct paths, and they are lopsided — three
+	// for the flag arm against seventeen for the upload arm — so a dead arm
+	// still leaves a total that clears any floor worth setting.
+	//
+	// A dead arm is not always a missing path today: every path the flag arm
+	// finds is also uploaded, so killing it loses nothing right now. It is
+	// asserted anyway, because that was true of the junit reports until the
+	// flag regex learned the space-separated form, and the next report written
+	// by a flag and NOT uploaded is invisible the moment this stops matching.
 	const dead = Object.entries( arms ).filter( ( [ , n ] ) => n === 0 );
 
 	assert.deepStrictEqual(

@@ -1,8 +1,20 @@
 name: PR lint
 
+# BASE `dev` ONLY, WHICH IS WHAT EVERY OTHER REPO DOES.
+#
+# `branches:` filters the BASE of a pull_request, and the five sibling repos
+# that call this shared workflow all pin it to dev. Without the line this fired
+# on `dev` -> `main` too — the release PR, whose title start-release.yaml writes
+# as `release: vX.Y.Z`. The shared pattern has no `release` arm and wants an
+# ENG number, so that PR failed the lint on every push to dev, from the first
+# release this repo ever cut.
+#
+# The title is machine-generated, so there is nothing for a human to fix on
+# that PR; the gate exists for the branches a human names.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
+    branches: [dev]
 
 jobs:
   lint:

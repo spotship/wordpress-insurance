@@ -768,6 +768,47 @@ test( 'the Elementor widgets depend on a script handle that is actually register
 	);
 } );
 
+test( 'the Elementor widgets depend on a style handle that is actually registered', () => {
+	/*
+	 * THE STYLESHEET NEEDS DECLARING FOR THE SAME REASON THE SCRIPT DOES, AND
+	 * IT WAS THE HALF THAT GOT MISSED.
+	 *
+	 * Spotship_WI_Renderer::render() enqueues the stylesheet, which carries a
+	 * published page — WordPress prints a late enqueue through
+	 * print_late_styles(). In the editor that render happens inside Elementor's
+	 * `render_widget` AJAX request, which returns markup and nothing else, so
+	 * the enqueue is thrown away. Only a declared handle reaches the preview,
+	 * through Preview::enqueue_styles -> Widgets_Manager::enqueue_widgets_styles.
+	 *
+	 * The symptom is not a dead form, which is why no existing guard saw it: the
+	 * form came up live and UNSTYLED, and war-insurance.css is the only thing
+	 * visually hiding `.sswi-sr` and `.sswi-hp` — so the screen-reader hints
+	 * rendered as body copy and the anti-bot honeypot rendered as a visible
+	 * input. The editor e2e cannot catch it either: it seeds a page that already
+	 * carries a widget, whose server-side render has already put the stylesheet
+	 * in the preview before the injected one arrives.
+	 */
+	const widget = read( 'includes/class-elementor-widget.php' );
+	const plugin = read( 'spotship-war-insurance.php' );
+
+	const depends = /get_style_depends\(\): array \{\s*return array\( '([^']+)' \);/.exec( widget );
+
+	assert.ok( depends, 'the widget base must declare get_style_depends()' );
+
+	// The literal, not a constant, because that is how every other call site
+	// spells this handle — class-renderer.php enqueues it the same way.
+	const handle = depends[ 1 ];
+	const registered = new RegExp(
+		`wp_register_style\\(\\s*'${ handle }',\\s*SPOTSHIP_WI_URL \\. '([^']+)'`
+	).exec( plugin );
+
+	assert.ok( registered, `${ handle } is depended on but never registered` );
+	assert.ok(
+		fs.existsSync( path.join( ROOT, registered[ 1 ] ) ),
+		`${ registered[ 1 ] } is registered but not in the tree`
+	);
+} );
+
 test( 'the customisable accent never lands on a text-contrast surface', () => {
 	/*
 	 * --spotship-wi-accent is the one colour a customer sets, and there is no

@@ -92,6 +92,35 @@ abstract class Spotship_WI_Elementor_Widget extends \Elementor\Widget_Base {
 	}
 
 	/**
+	 * The stylesheet, declared for exactly the reason the script above is.
+	 *
+	 * THE PREVIEW IS A DOCUMENT THAT LOADED LONG AGO, AND THAT IS TRUE OF CSS
+	 * TOO. Spotship_WI_Renderer::render() enqueues the stylesheet itself, which
+	 * is enough on a published page — WordPress prints a late enqueue through
+	 * print_late_styles(). It is not enough here: in the editor that render runs
+	 * inside Elementor's `render_widget` AJAX request, which returns markup and
+	 * nothing else, so the enqueue is discarded.
+	 *
+	 * Elementor enqueues every registered widget's declared styles up front
+	 * (Preview::enqueue_styles -> Widgets_Manager::enqueue_widgets_styles),
+	 * which is the only way the CSS reaches a preview that does not already
+	 * contain one of these forms. Without this the first widget dropped onto a
+	 * page came up live and UNSTYLED: war-insurance.css is the only thing that
+	 * visually hides `.sswi-sr` and `.sswi-hp`, so the screen-reader hints
+	 * rendered as body copy and the anti-bot honeypot rendered as a visible
+	 * text input.
+	 *
+	 * The asset-budget exception reasoned through above covers this handle too,
+	 * and more cheaply: the renderer enqueues the same stylesheet anyway on any
+	 * page that has a form.
+	 *
+	 * @return string[]
+	 */
+	public function get_style_depends(): array {
+		return array( 'spotship-wi' );
+	}
+
+	/**
 	 * This widget's markup must never be cached, and that is not the default it
 	 * looks like.
 	 *

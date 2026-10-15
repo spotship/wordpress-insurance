@@ -252,6 +252,20 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: 'the Elementor widgets stop declaring a stylesheet',
+		file: 'includes/class-elementor-widget.php',
+		from: "return array( 'spotship-wi' );",
+		to: 'return array();',
+		// The shipped state. The renderer's own enqueue is discarded inside
+		// Elementor's render_widget AJAX request, so only a declared handle
+		// reaches the preview. Without it the first widget dropped onto a page
+		// came up live and unstyled — screen-reader hints as body copy, and the
+		// anti-bot honeypot as a visible input.
+		mustFail: [ 'the Elementor widgets depend on a style handle that is actually registered' ],
+	},
+
+	{
+		suite: 'js',
 		what: 'the combobox hint id goes back into text-field.php\'s hint TEXT variable',
 		file: 'templates/partials/combobox.php',
 		from: "$sswi_hint_id = $sswi_id . '-hint';",

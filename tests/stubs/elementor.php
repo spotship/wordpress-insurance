@@ -61,6 +61,12 @@ abstract class Widget_Base {
 	public function get_script_depends() {}
 
 	/**
+	 * Style handles to enqueue wherever this widget renders, and — in the
+	 * editor preview — up front for every registered widget.
+	 */
+	public function get_style_depends() {}
+
+	/**
 	 * Whether the element is too dynamic for Elementor's element cache.
 	 */
 	protected function is_dynamic_content(): bool {

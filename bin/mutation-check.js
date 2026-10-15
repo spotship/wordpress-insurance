@@ -147,6 +147,47 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: 'the mutation reports go back to requiring an infix hyphen',
+		file: '.gitignore',
+		from: 'mutation-check*.txt',
+		to: 'mutation-check-*.txt',
+		// THE SHIPPED DEFECT, AND THE REASON THE TEST BELOW EXISTS. Both ignore
+		// files carried this glob; one of the three reports is written without the
+		// hyphen, so it was ignored by neither and would abort the next release
+		// build. Only ONE test names this mutation: with .distignore left alone the
+		// two tests that compare the files to each other still agree, which is
+		// exactly how the gap survived review.
+		mustFail: [ 'every path CI writes into the checkout is on the ignore list' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'a workflow writes a report under a name nothing ignores',
+		file: '.github/workflows/ci.yaml',
+		from: '| tee jsdom.txt',
+		to: '| tee jsdom-report.txt',
+		// Proves the names are READ FROM THE WORKFLOWS and not listed a third time
+		// in the test. Renaming the target here must break the test without any
+		// ignore file being touched; if it does not, the test has a frozen copy of
+		// the list and is the very thing it was written to replace.
+		mustFail: [ 'every path CI writes into the checkout is on the ignore list' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'an uploaded report directory is renamed',
+		file: '.github/workflows/real-backend-e2e.yaml',
+		from: 'real-backend-report/',
+		to: 'coverage-report/',
+		// The same proof for the OTHER half of the extraction. This directory is
+		// named by playwright's reporter config, never by a shell line, so the
+		// upload block is the only place CI admits it exists — and reading only
+		// redirects would miss it and five others.
+		mustFail: [ 'every path CI writes into the checkout is on the ignore list' ],
+	},
+
+	{
+		suite: 'js',
 		what: 'the rate table goes back to reading a top-level columns list',
 		file: 'templates/partials/rates-table.php',
 		// THE WHOLE ASSIGNMENT, because `$sswi_section['columns']` appears three

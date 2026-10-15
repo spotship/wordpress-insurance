@@ -37,3 +37,33 @@ mutation-check*.txt
 # ${nextRelease.notes} without it passing through the shell. Consumed and
 # deleted by that script; never committed, never shipped.
 .sswi-release-notes.md
+
+# WRITTEN INTO THE CHECKOUT ROOT BY .github/workflows/*.yaml.
+#
+# NAMES, NOT SHAPES — which is the opposite of the two blocks above, on
+# purpose. Those are written by tools from wherever they are invoked, so
+# nothing can enumerate them and a shape is the only defence. These are
+# written by steps that spell the filename out in a file in this repo, so
+# tests/js/contract.test.js reads the workflows, collects every path a step
+# writes or uploads, and fails until each one is listed here. The list is
+# checked against its source rather than remembered.
+#
+# That test exists because the shape above it was wrong in BOTH ignore files
+# at once, and the two tests that compare those files to each other agreed
+# with one another over two copies of the same mistake.
+phpcs.txt
+phpcs-checkstyle.xml
+phpstan.txt
+junit-unit.xml
+junit-integration.xml
+jsdom.txt
+dry-run.log
+payload.json
+live.json
+expected.json
+actual.json
+drift.diff
+playwright-report/
+test-results/
+real-backend-report/
+real-backend-evidence/

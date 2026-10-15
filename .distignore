@@ -41,6 +41,32 @@ mutation-check*.txt
 # to a customer.
 *.set-version.tmp
 
+# The reports and scratch files the workflows leave in the checkout root. Named
+# rather than shaped, and kept honest the same way their .gitignore twins are:
+# tests/js/contract.test.js derives the set from .github/workflows/ and fails
+# until each one is on both lists. A shape would be wrong here anyway: these sit
+# at the repo root beside tracked files and one that ships, sharing their
+# extensions, so any glob wide enough to cover them would take those too.
+#
+# None of these names is repeated in a comment, for the first-occurrence
+# reason already given above.
+phpcs.txt
+phpcs-checkstyle.xml
+phpstan.txt
+junit-unit.xml
+junit-integration.xml
+jsdom.txt
+dry-run.log
+payload.json
+live.json
+expected.json
+actual.json
+drift.diff
+playwright-report
+test-results
+real-backend-report
+real-backend-evidence
+
 tests
 bin
 node_modules

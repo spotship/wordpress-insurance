@@ -956,6 +956,274 @@ test( 'no IGNORED local artefact reaches the customer zip either', () => {
 	);
 } );
 
+test( 'every path CI writes into the checkout is on the ignore list', () => {
+	/*
+	 * THE TWO TESTS ABOVE COMPARE A LIST WITH A LIST. Neither compares either
+	 * list with the filenames CI actually produces, so a pattern can be wrong
+	 * in both files at once and both tests still agree with each other.
+	 *
+	 * That is not hypothetical. Both files carried a mutation-report glob that
+	 * required an infix hyphen, and one of the three reports is written without
+	 * one. The pair above passed over it — satisfied by two copies of a single
+	 * mistake — and the artefact that escaped would abort the next release
+	 * build, because bin/build-dist.sh rsyncs the WORKING TREE and checks what
+	 * comes out against an allow-list.
+	 *
+	 * So this reads the workflows. A third hand-maintained list would have
+	 * exactly the failure mode of the first two; these names are DERIVED, from
+	 * the two places a workflow commits to a filename:
+	 *
+	 *   - what a step writes — `| tee x`, `> x`, `--report-…=x`
+	 *   - what upload-artifact declares the job produced
+	 *
+	 * The second is not redundant with the first. A reporter can take its output
+	 * directory from a config file rather than a command, and three do:
+	 * playwright-report/, real-backend-report/ and test-results/ are named on no
+	 * shell line in any workflow, and the upload blocks are the only place CI
+	 * admits they exist. Reading only the shell lines reaches 16 of the 19.
+	 *
+	 * This asserts only that git ignores each one. The sibling above carries it
+	 * from there to .distignore and ALLOWED, so the chain is workflow →
+	 * .gitignore → .distignore, with a test on each link and no link held by
+	 * memory.
+	 */
+	const WORKFLOWS = path.join( ROOT, '.github', 'workflows' );
+
+	/*
+	 * Deliberately narrow. It takes a name only if the name could be a path in
+	 * this repo, which drops `2>&1`, `/dev/null`, YAML's own `>-` folded-scalar
+	 * marker, the `->` in prose, and the `>` inside a sed expression. The cost
+	 * is that a redirect through a variable — `> "$OUT"` — is invisible here.
+	 * Nothing in the workflows does that today; if something starts to, this
+	 * reads as a test that passes rather than one that failed to look, which is
+	 * the honest limit of deriving names from text.
+	 */
+	const PATHISH = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+	// `tee` takes a LIST of files. Capturing one target read `tee a.txt b.txt`
+	// as a.txt alone, so the tail is captured whole and split below.
+	const TEE = /\btee\b((?:\s+(?:-{1,2}[A-Za-z][A-Za-z0-9-]*|["']?[A-Za-z0-9][A-Za-z0-9._/-]*["']?))+)/g;
+	const REDIRECT = /(?<!-)>>?\s*["']?([A-Za-z0-9][A-Za-z0-9._/-]*)/g;
+
+	// `=` OR A SPACE. ci.yaml:67 writes `--log-junit junit-unit.xml` space-
+	// separated, and with `=` alone that report was reachable only because it
+	// also happens to be uploaded. The stems cover the report flags a PHP/JS
+	// toolchain emits, not just the two this repo uses today.
+	const FLAGS =
+		/--[a-z-]*(?:report|output|out|log|coverage|junit|testdox)[a-z-]*[= ]["']?([A-Za-z0-9][A-Za-z0-9._/-]*)/g;
+
+	// A `path:` value this cannot reduce to a repo path, which is NOT the same
+	// as one it did not look at. See the assertion on `unreducible` below.
+	const OUTSIDE_THE_CHECKOUT = /^[!/~]/;
+
+	// What build-dist.sh's allow-list sees is the top-level entry, so that is
+	// the unit here too. A path with anything after that entry names a
+	// DIRECTORY, and a .gitignore rule may legitimately say so with a trailing
+	// slash — `git check-ignore` will not match such a rule unless it is asked
+	// about a directory, so the distinction has to survive to the probe.
+	const produced = new Map();
+
+	const arms = { tee: 0, redirect: 0, flag: 0, upload: 0 };
+	const unreducible = [];
+
+	const record = ( raw, where, via ) => {
+		// Quotes are shell and YAML syntax, not part of the name. `tee "x.txt"`
+		// and `path: "x/"` are ordinary spellings, and without this they read as
+		// nothing at all rather than as something unignored.
+		const clean = raw
+			.replace( /^["']|["']$/g, '' )
+			.replace( /^\.\//, '' )
+			.replace( /\/+$/, '/' );
+
+		const [ entry ] = clean.split( '/' );
+
+		// THE FIRST SEGMENT, not the whole value. Testing the whole string threw
+		// away `reports/*.xml` entirely — glob and directory together — when the
+		// directory is exactly what build-dist.sh would have refused.
+		if ( ! PATHISH.test( entry ) ) {
+			if ( via === 'upload' && ! OUTSIDE_THE_CHECKOUT.test( clean ) ) {
+				unreducible.push( `${ raw.trim() } (${ where })` );
+			}
+
+			return;
+		}
+
+		const isDir = clean.length > entry.length;
+		const seen = produced.get( entry );
+
+		arms[ via ] += 1;
+
+		produced.set( entry, {
+			isDir: isDir || ( seen ? seen.isDir : false ),
+			where: seen ? seen.where : where,
+		} );
+	};
+
+	for ( const file of fs.readdirSync( WORKFLOWS ).filter( ( n ) => /\.ya?ml$/.test( n ) ) ) {
+		// Indent of the `path:` key, while its block scalar is open. `|` alone
+		// missed `|-`, `|+` and the folded forms — and a header this did not
+		// recognise took the WHOLE block with it, silently.
+		let block = null;
+
+		read( '.github', 'workflows', file )
+			.split( '\n' )
+			.forEach( ( line, i ) => {
+				const where = `${ file }:${ i + 1 }`;
+				const opens = line.match( /^(\s*)path:\s*[|>][-+]?[0-9]*\s*$/ );
+
+				if ( opens ) {
+					block = opens[ 1 ].length;
+					return;
+				}
+
+				if ( block !== null && line.trim() !== '' ) {
+					if ( line.match( /^\s*/ )[ 0 ].length > block ) {
+						record( line.trim(), where, 'upload' );
+						return;
+					}
+
+					block = null;
+				}
+
+				// `(\S+)\s*$` refused any line with a trailing comment on it.
+				// The negative class keeps a block-scalar header out: `path: |` is
+				// a header the branch above owns, not a one-line value, and without
+				// this the two forms prop each other up when either one breaks.
+				const inline = line.match( /^\s*path:\s*([^|>#\s]\S*)\s*(?:#.*)?$/ );
+
+				if ( inline ) {
+					record( inline[ 1 ], where, 'upload' );
+				}
+
+				// A written target is a file, so it has an extension. That guard
+				// is what separates `> live.json` from `-> staging` and `tee from`.
+				const looksWritten = ( t ) => /\.[A-Za-z0-9]+$/.test( t );
+
+				for ( const m of line.matchAll( TEE ) ) {
+					for ( const target of m[ 1 ].trim().split( /\s+/ ) ) {
+						if ( ! target.startsWith( '-' ) && looksWritten( target ) ) {
+							record( target, where, 'tee' );
+						}
+					}
+				}
+
+				for ( const m of line.matchAll( REDIRECT ) ) {
+					if ( looksWritten( m[ 1 ] ) ) {
+						record( m[ 1 ], where, 'redirect' );
+					}
+				}
+
+				for ( const m of line.matchAll( FLAGS ) ) {
+					record( m[ 1 ], where, 'flag' );
+				}
+			} );
+	}
+
+	/*
+	 * A `path:` VALUE THAT COULD NOT BE REDUCED IS A FAILURE, NOT AN ABSENCE.
+	 *
+	 * Everything above is a regex over text, and the lesson from the other
+	 * static-analysis tests in this org is that an escape route you cannot
+	 * analyse needs a RULE, not a cleverer regex. Each of these dropped a real
+	 * path silently, and the arm counters stayed satisfied by other workflows:
+	 *
+	 *   path: |-            a chomping indicator — took the whole block with it
+	 *   path: reports/*.xml a glob — and `reports/` went with it
+	 *   path: out-${{ … }}  an interpolated name, which is in use in mavis today
+	 *   path: x  # comment  a trailing comment
+	 *
+	 * The first three are fixed above. This is what catches the fourth spelling,
+	 * whatever it turns out to be: an upload block names paths the job PRODUCED,
+	 * so a value here that is not a repo path is something this cannot reason
+	 * about, and it has to say so rather than skip it. `!`-exclusions and
+	 * absolute paths are the one exemption, by rule rather than by name — they
+	 * are categorically not artefacts in the checkout root.
+	 */
+	assert.deepStrictEqual(
+		unreducible,
+		[],
+		'an upload-artifact path: could not be reduced to a path in this checkout, ' +
+			'so nothing here checked it. Spell it as a literal path, or — if it is ' +
+			'genuinely variable — ignore a pattern that covers every name it can take'
+	);
+
+	// EACH ARM SEPARATELY, because a total hides the loss of any one of them.
+	// These are MATCH counts, not distinct paths, and they are lopsided — three
+	// for the flag arm against seventeen for the upload arm — so a dead arm
+	// still leaves a total that clears any floor worth setting.
+	//
+	// A dead arm is not always a missing path today: every path the flag arm
+	// finds is also uploaded, so killing it loses nothing right now. It is
+	// asserted anyway, because that was true of the junit reports until the
+	// flag regex learned the space-separated form, and the next report written
+	// by a flag and NOT uploaded is invisible the moment this stops matching.
+	const dead = Object.entries( arms ).filter( ( [ , n ] ) => n === 0 );
+
+	assert.deepStrictEqual(
+		dead.map( ( [ name ] ) => name ),
+		[],
+		`the extraction has lost an arm — ${ JSON.stringify( arms ) }. Either a workflow ` +
+			'stopped using that form, or the regex above it stopped matching'
+	);
+
+	assert.ok(
+		produced.size > 10,
+		`only ${ produced.size } CI artefacts were found, so the extraction above has stopped working`
+	);
+
+	const tracked = new Set(
+		execFileSync( 'git', [ 'ls-tree', '--name-only', 'HEAD' ], { cwd: ROOT, encoding: 'utf8' } )
+			.split( '\n' )
+			.map( ( line ) => line.trim() )
+			.filter( Boolean )
+	);
+
+	// A workflow that writes to a TRACKED path is not leaving debris — it is
+	// regenerating something the repo owns, and the first test above already
+	// decides whether that ships. Ignoring it would be actively wrong.
+	const debris = [ ...produced ].filter( ( [ entry ] ) => ! tracked.has( entry ) );
+
+	const probes = debris.map( ( [ entry, { isDir } ] ) => entry + ( isDir ? '/' : '' ) );
+
+	// git's own matcher, rather than a reimplementation of its glob rules —
+	// this test exists because a hand-written pattern was wrong twice.
+	// `--no-index` keeps the answer a property of the ignore files alone, and
+	// git exits 1 when nothing on stdin matched, which is an answer, not a
+	// failure.
+	let matched;
+
+	try {
+		matched = execFileSync( 'git', [ 'check-ignore', '--no-index', '--stdin' ], {
+			cwd: ROOT,
+			input: probes.join( '\n' ),
+			encoding: 'utf8',
+		} );
+	} catch ( err ) {
+		if ( err.status !== 1 ) {
+			throw err;
+		}
+
+		matched = err.stdout || '';
+	}
+
+	const ignored = new Set(
+		matched.split( '\n' ).map( ( line ) => line.trim() ).filter( Boolean )
+	);
+
+	const undecided = debris
+		.filter( ( [ entry, { isDir } ] ) => ! ignored.has( entry + ( isDir ? '/' : '' ) ) )
+		.map( ( [ entry, { where } ] ) => `${ entry } (${ where })` );
+
+	assert.deepStrictEqual(
+		undecided,
+		[],
+		'CI writes each of these into the checkout root, and git does not ignore ' +
+			'them — so they show up as untracked noise locally, can be committed ' +
+			'by accident, and are copied into the zip by bin/build-dist.sh. Add ' +
+			'each to .gitignore (the test above will then require .distignore too)'
+	);
+} );
+
 test( 'the minimum-characters sentence is published with its %d intact', () => {
 	/*
 	 * It was published pre-substituted — `sprintf( __( … ), MIN_QUERY_LENGTH )`

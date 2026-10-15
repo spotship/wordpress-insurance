@@ -24,10 +24,17 @@ jobs:
       # Tee'd to files and uploaded. An exit code proves a gate ran; the report
       # is what anyone reviewing the claim afterwards can actually read, and
       # `pipefail` keeps the tee from swallowing the failure.
+      # The checkstyle report is NOT called phpcs.xml. PHP_CodeSniffer reads
+      # `.phpcs.xml`, `phpcs.xml`, `.phpcs.xml.dist`, `phpcs.xml.dist` in that
+      # order (vendor/squizlabs/php_codesniffer/src/Config.php), so a report
+      # left at that name OUTRANKS the ruleset this repo actually tracks. In CI
+      # it is written after the run and the runner is thrown away; locally it
+      # silently becomes the lint config for every run after it, and gitignoring
+      # it would hide the file doing the hijacking.
       - name: PHPCS
         run: |
           set -o pipefail
-          composer exec -- phpcs --report-full --report-checkstyle=phpcs.xml | tee phpcs.txt
+          composer exec -- phpcs --report-full --report-checkstyle=phpcs-checkstyle.xml | tee phpcs.txt
       - name: PHPStan
         if: always()
         run: |
@@ -39,7 +46,7 @@ jobs:
           name: static-analysis-reports
           path: |
             phpcs.txt
-            phpcs.xml
+            phpcs-checkstyle.xml
             phpstan.txt
           if-no-files-found: warn
 

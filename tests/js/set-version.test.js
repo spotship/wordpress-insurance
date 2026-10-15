@@ -222,6 +222,47 @@ test( 'released versions are never touched', ( t ) => {
 	assert.deepStrictEqual( sections( readme ), [ '1.1.0', '1.0.0', '0.2.0', '0.1.0' ] );
 } );
 
+test( 'a released heading carrying a date is not mistaken for a prerelease', ( t ) => {
+	/*
+	 * THE PRUNE IS BOUNDED TO THE CHANGELOG, AND INSIDE IT THE PREDICATE HAS TO
+	 * BE BOUNDED TOO.
+	 *
+	 * Asking only whether the heading holds a `-` catches more than an internal
+	 * build. `= 1.0.2 - 2026-10-14 =` is a RELEASED section written the way
+	 * nearly every other changelog format writes one, and set-version.sh's own
+	 * comments invite hand-written entries — the `= 1.0.0 =` in this readme is
+	 * one. Pruning it deleted a shipped release's heading AND its bullets from
+	 * the customer's changelog, exited 0, and left assert-version.sh green:
+	 * nothing downstream inspects the sections this script did not write, so
+	 * the only symptom is a changelog that is quietly one release shorter.
+	 *
+	 * The sibling test above says released versions are never touched; it uses
+	 * bare `= X =` headings throughout, which is exactly the shape the broken
+	 * predicate got right.
+	 */
+	const dir = sandbox(
+		'\n= 1.0.2 - 2026-10-14 =\n* A hand-written entry, dated the way people date them.\n' +
+			SHIPPED
+	);
+
+	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
+
+	const readme = release( dir, '1.1.0', notesFor( '1.1.0', 'a feature landed' ) );
+
+	assert.deepStrictEqual( sections( readme ), [ '1.1.0', '1.0.2 - 2026-10-14', '1.0.0' ] );
+	assert.ok(
+		readme.includes( 'dated the way people date them' ),
+		'the dated section\'s BODY must survive with its heading'
+	);
+
+	// And the internal build underneath it still goes, so this is not just the
+	// prune switched off.
+	assert.ok(
+		! readme.includes( 'An internal build.' ),
+		'the prerelease below it must still be pruned'
+	);
+} );
+
 test( 'a `= X =` heading outside the changelog is out of reach', ( t ) => {
 	/*
 	 * The predicate matches any heading that looks like a prerelease, so the

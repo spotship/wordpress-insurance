@@ -244,7 +244,7 @@ const MUTATIONS = [
 		suite: 'js',
 		what: 'the changelog prune goes back to matching this release\'s base only',
 		file: 'bin/set-version.sh',
-		from: 'return index( v, "-" ) > 0 && v != ver',
+		from: 'return v ~ /^[0-9]+\\.[0-9]+\\.[0-9]+-[0-9A-Za-z.-]+$/ && v != ver',
 		to:
 			'return index( v, "-" ) > 0 && v != ver && ' +
 			'substr( v, 1, index( v, "-" ) ) == substr( ver "-", 1, index( ver "-", "-" ) )',
@@ -252,6 +252,21 @@ const MUTATIONS = [
 		// the next release was a minor, so nothing matched it and it would have
 		// gone to a customer — one orphaned internal build per minor, forever.
 		mustFail: [ 'a prerelease of an EARLIER base is pruned, not carried forever' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the changelog prune treats any hyphen as a prerelease again',
+		file: 'bin/set-version.sh',
+		from: 'v ~ /^[0-9]+\\.[0-9]+\\.[0-9]+-[0-9A-Za-z.-]+$/ && v != ver',
+		to: 'index( v, "-" ) > 0 && v != ver',
+		// The predicate's first shape, which reached past internal builds into
+		// RELEASED sections: `= 1.0.2 - 2026-10-14 =` is the way nearly every
+		// other changelog format writes a heading, and set-version.sh's own
+		// comments invite hand-written entries. Pruning one deleted a shipped
+		// release from the customer's changelog and exited 0, because nothing
+		// downstream inspects the sections this script did not write.
+		mustFail: [ 'a released heading carrying a date is not mistaken for a prerelease' ],
 	},
 
 	{

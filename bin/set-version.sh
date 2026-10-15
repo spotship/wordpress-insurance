@@ -333,15 +333,30 @@ export SSWI_CHANGELOG_BODY
 # invariant directly: a `-dev.N` heading never reaches a customer. Released
 # versions are never touched, and `ver` itself is kept so re-running the same
 # prerelease is still idempotent.
+#
+# "IS IT A PRERELEASE" IS A WHOLE-STRING TEST, NOT "DOES IT CONTAIN A HYPHEN".
+#
+# The first version of this predicate asked only whether the heading held a `-`.
+# That reaches further than a prerelease: `= 1.0.2 - 2026-10-14 =` is a RELEASED
+# section in the shape every other changelog format on earth writes, and the
+# comment above this one openly invites hand-written entries — `= 1.0.0 =` in
+# this readme is one. Pruning it took the heading and its bullets out of the
+# customer's changelog, exited 0, and let assert-version.sh and the read-back
+# below agree, because neither looks at the sections it did not write.
+#
+# So the heading has to BE a semver prerelease end to end: three numbers, then a
+# `-` and a prerelease identifier, and nothing else. A date, a note or anything
+# else a person might add is not that shape, and survives.
 rewrite_in_place "$README" awk \
 	-v ver="$VERSION" \
 	-v tested="$TESTED" \
 	-v have="$HAVE_SECTION" '
 	function internal( line,    v ) {
-		# "= X =" -> X. A semver prerelease carries a `-` suffix; a release
-		# does not. The section this run is writing is not its own predecessor.
+		# "= X =" -> X, matched whole: a release carries no prerelease suffix,
+		# and a heading that is not a bare version is not ours to touch. The
+		# section this run is writing is not its own predecessor.
 		v = substr( line, 3, length( line ) - 4 )
-		return index( v, "-" ) > 0 && v != ver
+		return v ~ /^[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$/ && v != ver
 	}
 
 	!st && /^Stable tag:[ \t]*[^ \t]/ {

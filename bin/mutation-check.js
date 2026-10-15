@@ -551,11 +551,22 @@ function unitCommand() {
  * @returns {Set<string>} names reported as `not ok`.
  */
 function failingJs() {
-	const result = spawnSync(
-		process.execPath,
-		[ '--test', 'tests/js/contract.test.js', 'tests/js/front-end.test.js' ],
-		{ cwd: ROOT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }
-	);
+	// THE WHOLE SUITE, NOT A LIST TO KEEP IN STEP. Naming the files here meant
+	// tests/js/release-assets.test.js was never mutation-checked at all — it was
+	// added without this line being touched, which is the same drift the ship
+	// lists and the assets list are each guarded against elsewhere. This is what
+	// package.json's `test:js` and CI run.
+	const files = fs
+		.readdirSync( path.join( ROOT, 'tests', 'js' ) )
+		.filter( ( name ) => name.endsWith( '.test.js' ) )
+		.sort()
+		.map( ( name ) => path.join( 'tests', 'js', name ) );
+
+	const result = spawnSync( process.execPath, [ '--test', ...files ], {
+		cwd: ROOT,
+		encoding: 'utf8',
+		maxBuffer: 32 * 1024 * 1024,
+	} );
 
 	const out = ( result.stdout || '' ) + ( result.stderr || '' );
 

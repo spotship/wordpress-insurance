@@ -162,6 +162,26 @@ read_back() {
 	fi
 }
 
+# Does `== Changelog ==` already hold a section for this release?
+#
+# BOUNDED TO THAT SECTION, AND THE UNBOUNDED VERSION WAS A REAL FAILURE. Both
+# callers used to grep the WHOLE readme. A WordPress readme's
+# `== Upgrade Notice ==` conventionally files its entries under headings that
+# are release versions, so one of those matched: the heading below was never
+# inserted, the verification further down was satisfied by the Upgrade Notice
+# heading, assert-version.sh agreed, and the release shipped with no changelog
+# entry at all — silently, which is what that verification exists to prevent.
+#
+# An exact string comparison rather than a pattern, so a version is never read
+# as a regular expression.
+changelog_has_section() {
+	awk -v ver="$VERSION" '
+		/^== / { inlog = ( $0 == "== Changelog ==" ); next }
+		inlog && $0 == "= " ver " =" { found = 1 }
+		END { if ( found ) exit 0; exit 1 }
+	' "$README"
+}
+
 # awk rather than sed for the writes: the catalogue header ends in a literal
 # `\n` and the replacement escaping needed to preserve it through sed differs
 # between GNU and BSD. awk substitutes the value as given.
@@ -213,16 +233,54 @@ read_back "SPOTSHIP_WI_VERSION" "$FILE" "s/^define( 'SPOTSHIP_WI_VERSION', '\(.*
 # the version that is already the heading above it, and the links go nowhere
 # useful in a plain-text file on a customer's server.
 #
-# Absent — any run that is not a release, ci.yaml's rehearsal included — it
-# falls back to the heading and a link to the GitHub release, so the assertion
-# in bin/assert-version.sh still has something true to find. An entry written by
-# hand before the release is left alone either way.
-SSWI_CHANGELOG_BODY=
-HAVE_SECTION=0
+# Absent on a RELEASE — ci.yaml's rehearsal, say — it falls back to the heading
+# and a link to the GitHub release, so the assertion in bin/assert-version.sh
+# still has something true to find. On a prerelease nothing falls back, because
+# nothing is written and nothing is asserted about a section. An entry written
+# by hand before the release is left alone in both cases.
+#
+# A PRERELEASE WRITES NO CHANGELOG SECTION AT ALL, AND THAT DELETES A BUG CLASS.
+#
+# `dev` is a prerelease branch, so every push to it runs a real release:
+# 1.1.0-dev.1, -dev.2, -dev.3, each one landing here. Every one of those used to
+# write its own `= X =` section, and the readme a customer unpacks would then
+# carry one section per internal build — the same bullets three and four times
+# over under numbers that mean nothing outside this repo.
+#
+# The previous answer was to write them and then prune them again on the next
+# run. That prune had to know which headings were internal builds, which meant a
+# predicate over human-written text. Two of those shipped, and both were wrong:
+# one matched only prereleases of the release's own base, so an older one
+# survived a minor bump; the other was switched off entirely by a hand-written
+# entry. The rule they kept breaking is the reason there is no third attempt: a
+# heading is prose, and `= 1.0.2 - 2026-10-14 =` is a RELEASED section that any
+# predicate keying on `-` calls an internal build and deletes.
+#
+# None of those bugs are reachable if the section is never written. The notes a
+# customer should read are the ones semantic-release generates for the real
+# release on `main`, which aggregate every commit since the last one — so
+# nothing is lost by staying quiet here, and `= 1.1.0 =` lands complete.
+#
+# THE `-` TEST IS SAFE ON THIS STRING AND WAS NOT SAFE ON A HEADING. $VERSION is
+# semantic-release's own output: valid semver, where a `-` means exactly one
+# thing. A changelog heading is prose someone typed, where it does not.
+case "$VERSION" in
+	*-* ) PRERELEASE=1 ;;
+	*   ) PRERELEASE=0 ;;
+esac
 
-if grep -q "^= ${VERSION} =$" "$README"; then
-	HAVE_SECTION=1
-elif [ -f "$NOTES" ]; then
+# ONE FLAG, ONE MEANING. `WRITE_SECTION` says whether the awk below inserts a
+# heading, and nothing else reads it. Its predecessor, `HAVE_SECTION`, was asked
+# to mean "the readme already has this section" AND to gate the prune, and
+# conflating those is how a hand-written entry switched the pruning off.
+SSWI_CHANGELOG_BODY=
+WRITE_SECTION=0
+
+if [ "$PRERELEASE" = 0 ] && ! changelog_has_section; then
+	WRITE_SECTION=1
+fi
+
+if [ "$WRITE_SECTION" = 1 ] && [ -f "$NOTES" ]; then
 	SSWI_CHANGELOG_BODY=$( awk '
 		/^#+[ \t]/ {
 			# The first heading is the version, which readme.txt is about to
@@ -268,7 +326,7 @@ elif [ -f "$NOTES" ]; then
 	' "$NOTES" )
 fi
 
-if [ "$HAVE_SECTION" = 0 ] && [ -z "$SSWI_CHANGELOG_BODY" ]; then
+if [ "$WRITE_SECTION" = 1 ] && [ -z "$SSWI_CHANGELOG_BODY" ]; then
 	SSWI_CHANGELOG_BODY="* See https://github.com/spotship/wordpress-insurance/releases/tag/v${VERSION}"
 fi
 
@@ -285,27 +343,24 @@ export SSWI_CHANGELOG_BODY
 # bumped, no entry under it — and tripled the number of places the atomic-rename
 # reasoning had to hold.
 #
-# A PRERELEASE SUPERSEDES ITS PREDECESSORS RATHER THAN STACKING ON THEM.
+# NO INTERNAL BUILD SECTION IS EVER WRITTEN, SO NONE HAS TO BE PRUNED.
 #
-# `dev` is a prerelease branch, so every push to it runs a real release:
-# 1.1.0-dev.1, -dev.2, -dev.3, each one landing here and each one committed back
-# by @semantic-release/git. Appending would put one section per internal build
-# into the readme a customer unpacks — the same bullets three and four times
-# over under numbers that mean nothing outside this repo — and nothing would
-# ever remove them. So a section whose version shares this one's base is
-# replaced by this one: -dev.2 supersedes -dev.1, and 1.1.0 supersedes every
-# 1.1.0-dev.N. Released versions are never touched.
+# This used to carry an `internal()` predicate and a drop rule: every prerelease
+# section below the insertion point was deleted on the way past, because `dev`
+# writes one per push and nothing else would ever remove them.
+#
+# That predicate had to classify human-written headings, and the two that
+# shipped were both wrong — one missed a prerelease of an earlier base, the
+# other was switched off entirely by a hand-written entry. Neither is reachable
+# now, and neither is anything else in their class: a prerelease does not write
+# a section, so there is nothing below to clean up. See the WRITE_SECTION
+# reasoning above.
+#
+# What is left here is the insert, gated on `write`, and the two header lines.
 rewrite_in_place "$README" awk \
 	-v ver="$VERSION" \
-	-v base="${VERSION%%-*}" \
 	-v tested="$TESTED" \
-	-v have="$HAVE_SECTION" '
-	function superseded( line,    v ) {
-		# "= X =" -> X. Shares this version base and is a prerelease of it.
-		v = substr( line, 3, length( line ) - 4 )
-		return substr( v, 1, length( base ) + 1 ) == base "-"
-	}
-
+	-v write="$WRITE_SECTION" '
 	!st && /^Stable tag:[ \t]*[^ \t]/ {
 		sub( /[^ \t]+$/, ver )
 		st = 1
@@ -320,17 +375,16 @@ rewrite_in_place "$README" awk \
 		next
 	}
 
-	/^== / {
-		# Any other section heading ends the changelog, so the supersede scan
-		# below cannot run off the end of it.
-		inlog = ( $0 == "== Changelog ==" )
-		drop = 0
+	/^== Changelog ==$/ {
 		print
 
-		if ( inlog && ! seen ) {
+		# Newest first, so the insert goes immediately under the heading. `seen`
+		# because a readme may legally say "== Changelog ==" more than once and
+		# only the first is the real one.
+		if ( ! seen ) {
 			seen = 1
 
-			if ( have != "1" ) {
+			if ( write == "1" ) {
 				print ""
 				print "= " ver " ="
 				print ENVIRON["SSWI_CHANGELOG_BODY"]
@@ -340,11 +394,7 @@ rewrite_in_place "$README" awk \
 		next
 	}
 
-	inlog && /^= .* =$/ {
-		drop = ( have != "1" && superseded( $0 ) )
-	}
-
-	{ if ( ! drop ) print }
+	{ print }
 '
 
 read_back "'Stable tag'" "$README" 's/^Stable tag:[[:space:]]*\(.*\)$/\1/p'
@@ -356,8 +406,23 @@ read_back "'Tested up to'" "$README" 's/^Tested up to:[[:space:]]*\(.*\)$/\1/p' 
 # grep further down the pipeline — which is the arrangement the comment above
 # read_back() exists to argue against. A readme that lost its literal
 # `== Changelog ==` heading would have had nothing inserted, silently.
-if ! grep -q "^= ${VERSION} =$" "$README"; then
-	echo "set-version: no '= $VERSION =' section in $README after writing it" >&2
+#
+# IT LOOKS INSIDE THE CHANGELOG, not anywhere in the file. A heading elsewhere —
+# `== Upgrade Notice ==` files its entries under release versions — would
+# otherwise satisfy this check for a section that was never written.
+#
+# BOTH DIRECTIONS ARE ASSERTED. For a release the section must be there; for a
+# prerelease it must NOT, which is the invariant that replaced the prune. An
+# absent assertion is worth as much as a present one here: a prerelease section
+# that somehow got written is exactly what used to reach a customer.
+if [ "$PRERELEASE" = 1 ]; then
+	if changelog_has_section; then
+		echo "set-version: $README carries a '= $VERSION =' section under '== Changelog =='" >&2
+		echo "set-version: this run wrote none, so it was already there; a prerelease must ship none." >&2
+		exit 1
+	fi
+elif ! changelog_has_section; then
+	echo "set-version: no '= $VERSION =' section under '== Changelog ==' in $README after writing it" >&2
 	echo "set-version: the insert is anchored to a literal '== Changelog ==' heading; $README has none." >&2
 	exit 1
 fi

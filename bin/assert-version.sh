@@ -78,7 +78,12 @@ if [ -z "$plugin_name" ]; then
 	exit 1
 fi
 
-header=$( sed -n 's/^ \* Version:[[:space:]]*\(.*\)$/\1/p' "$FILE" | head -1 | tr -d '[:space:]' )
+# THE ENDS ONLY. `tr -d '[:space:]'` used to run here, and it deletes INTERNAL
+# whitespace too — which is what turned a header someone typed as
+# `Version: 1.0.1 - WIP` into `1.0.1-WIP`, a string indistinguishable from a
+# real prerelease, on its way into the `-` test below. Trimming the ends is all
+# that was ever wanted: the same sed plugin_name above uses.
+header=$( sed -n 's/^ \* Version:[[:space:]]*\(.*\)$/\1/p' "$FILE" | head -1 | sed 's/[[:space:]]*$//' )
 constant=$( sed -n "s/^define( 'SPOTSHIP_WI_VERSION', '\(.*\)' );$/\1/p" "$FILE" | head -1 )
 
 if [ -z "$header" ] || [ -z "$constant" ]; then
@@ -88,6 +93,23 @@ fi
 
 if [ "$header" != "$constant" ]; then
 	echo "assert-version: MISMATCH — header '$header' vs SPOTSHIP_WI_VERSION '$constant'" >&2
+	exit 1
+fi
+
+# $header DECIDES WHETHER A CHANGELOG SECTION IS REQUIRED, so it has to be a
+# version. bin/set-version.sh makes the same `-` test and argues it is safe
+# there because $VERSION is semantic-release's validated output; this one is
+# scraped out of a PHP header a person edits. `1.0.1 - WIP` reaches that test
+# as a prerelease and SILENTLY SKIPS the changelog check below — and a silently
+# skipped assertion is the failure mode this whole script exists to stop.
+#
+# THE TWO HALVES ARE BOTH LOAD-BEARING. This regex alone does not catch it: by
+# the time `tr -d` had finished, `1.0.1-WIP` was valid semver and this would
+# have passed it. Keeping the interior whitespace is what gives it something to
+# reject. $header is also substituted into awk below, which this keeps free of
+# backslashes.
+if ! printf '%s' "$header" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+	echo "assert-version: '$header' in $FILE is not a version" >&2
 	exit 1
 fi
 
@@ -117,11 +139,92 @@ fi
 # 1.0.0 actually shipped in, under a `Stable tag` it had just been given.
 # bin/set-version.sh writes the heading during prepare; this refuses a tree
 # where it is missing.
-if ! grep -q "^= ${header} =$" "$README"; then
-	echo "assert-version: $README has no '= $header =' changelog section" >&2
-	echo "assert-version: bin/set-version.sh writes the heading; fill in the entry." >&2
+#
+# THE CHANGELOG HEADING ITSELF HAS TO BE THERE, AND NOTHING ELSE NOW CHECKS IT.
+#
+# Everything below is bounded to `== Changelog ==`, so a readme that has lost
+# that literal heading makes every one of them vacuous: no section is found, no
+# stray is found, and the file passes.
+#
+# bin/set-version.sh used to catch it as a side effect — it inserts under that
+# heading and reads the insert back, so a missing heading failed the read-back.
+# A prerelease no longer inserts anything, and `dev` releases a prerelease on
+# EVERY push, so that cover is gone on the path that runs most often. Asserted
+# directly here instead, where it is one grep and cannot be vacuous.
+if ! grep -q '^== Changelog ==$' "$README"; then
+	echo "assert-version: $README has no literal '== Changelog ==' heading" >&2
+	echo "assert-version: every changelog check below is anchored to it, so they would all pass vacuously." >&2
 	exit 1
 fi
+
+# NO INTERNAL BUILD MAY BE IN THE CHANGELOG, WHATEVER PUT IT THERE.
+#
+# `dev` is a prerelease branch, and bin/set-version.sh deliberately writes no
+# changelog section for one: a `= 1.1.0-dev.3 =` heading has no reader outside
+# this repo, and both mechanisms that wrote one and pruned it again later turned
+# out to be bugs.
+#
+# So the invariant is asserted here instead of enforced by an edit there. That
+# is the important difference: this predicate classifies human-written headings
+# exactly as the prune did, but a wrong answer ABORTS THE RELEASE rather than
+# silently deleting someone's text. `= 1.0.2 - 2026-10-14 =` does not match —
+# the spaces see to that — and if some future heading ever did, the symptom is
+# a loud refusal a human reads, not a changelog that is quietly one release
+# shorter.
+#
+# Bounded to `== Changelog ==` for the reason the lookup in set-version.sh is:
+# `== Upgrade Notice ==` files its own entries under release versions, and a
+# release candidate parked there is not an internal build of ours.
+stray=$( awk '
+	/^== / { inlog = ( $0 == "== Changelog ==" ); next }
+	inlog && /^= [0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+ =$/ {
+		print substr( $0, 3, length( $0 ) - 4 )
+		exit
+	}
+' "$README" )
+
+if [ -n "$stray" ]; then
+	echo "assert-version: $README carries a prerelease changelog section '= $stray ='" >&2
+	echo "assert-version: set-version.sh writes none; a customer must never unpack an internal build's notes." >&2
+	exit 1
+fi
+
+# Does `== Changelog ==` hold a section for this version?
+#
+# BOUNDED, AND NOT A PATTERN — the same two properties the lookup in
+# bin/set-version.sh needed, for the same two reasons, which is why this is
+# nearly the same eight lines. They are separate executables with no shared
+# library in bin/, and a third file to hold one awk program would cost more than
+# the duplication does; the cost is paid here, in a comment, so the next person
+# changing one knows to change the other.
+#
+# UNBOUNDED, THIS WAS THE BUG IT IS NOW GUARDING AGAINST. `== Upgrade Notice ==`
+# files its entries under headings that are release versions, so a `grep` of the
+# whole file is answered by one of those: the changelog has no entry for the
+# release, and this says it does. set-version.sh's own read-back is bounded and
+# would catch it first — but only inside set-version.sh's run. This script is
+# also run on its own, by ci.yaml's "Shipped versions agree" job and from
+# bin/build-dist.sh, where nothing precedes it.
+changelog_has_section() {
+	awk -v ver="$header" '
+		/^== / { inlog = ( $0 == "== Changelog ==" ); next }
+		inlog && $0 == "= " ver " =" { found = 1 }
+		END { if ( found ) exit 0; exit 1 }
+	' "$README"
+}
+
+# A prerelease therefore has no section of its own to find, and the rule above
+# has already proved it. Only a real release is required to have one.
+case "$header" in
+	*-* ) ;;
+	* )
+		if ! changelog_has_section; then
+			echo "assert-version: $README has no '= $header =' changelog section" >&2
+			echo "assert-version: bin/set-version.sh writes the heading; fill in the entry." >&2
+			exit 1
+		fi
+		;;
+esac
 
 # THE SUPPORT CLAIMS ARE DUPLICATED TOO, AND DUPLICATED IS DRIFTED.
 #

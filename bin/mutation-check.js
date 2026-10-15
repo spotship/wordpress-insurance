@@ -272,6 +272,24 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: 'the changelog lookup goes back to grepping the whole readme',
+		file: 'bin/set-version.sh',
+		from: '\t\tinlog && $0 == "= " ver " =" { found = 1 }',
+		to: '\t\t$0 == "= " ver " =" { found = 1 }',
+		// The shipped state: `== Upgrade Notice ==` files its entries under
+		// release versions, and one of those answered for the changelog. No
+		// heading was inserted, the read-back was satisfied by the Upgrade
+		// Notice, and the release shipped with no changelog entry.
+		// It also drifts the two copies apart, which is the other thing that
+		// guards this boundary now that there are two of them.
+		mustFail: [
+			'a heading elsewhere in the readme does not stand in for the changelog entry',
+			'both scripts bound the changelog lookup with the same awk',
+		],
+	},
+
+	{
+		suite: 'js',
 		what: 'the combobox hint id goes back into text-field.php\'s hint TEXT variable',
 		file: 'templates/partials/combobox.php',
 		from: "$sswi_hint_id = $sswi_id . '-hint';",
@@ -282,6 +300,108 @@ const MUTATIONS = [
 		// sentence, where an unset input would at least raise a notice.
 		mustFail: [ 'no partial writes a variable another partial takes as an input' ],
 	},
+
+	{
+		suite: 'js',
+		what: 'a prerelease writes a changelog section again',
+		file: 'bin/set-version.sh',
+		from: 'if [ "$PRERELEASE" = 0 ] && ! changelog_has_section; then',
+		to: 'if ! changelog_has_section; then',
+		// The design this replaced. `dev` runs a real release per push, so every
+		// internal build wrote its own `= X =` section and each run then had to
+		// prune the previous ones — a predicate over human-written headings,
+		// which shipped wrong twice.
+		mustFail: [
+			'a prerelease writes no changelog section at all',
+			'the whole prerelease chain leaves one section, written by the release',
+		],
+	},
+
+	{
+		suite: 'js',
+		what: 'the `== Changelog ==` heading itself stops being asserted',
+		file: 'bin/assert-version.sh',
+		from: "if ! grep -q '^== Changelog ==$' \"$README\"; then",
+		to: 'if false; then',
+		// Every changelog check in this script is bounded to that heading, so a
+		// readme without it passes all of them vacuously. set-version.sh used to
+		// catch it by reading its own insert back; a prerelease inserts nothing,
+		// and `dev` releases a prerelease on every push.
+		mustFail: [ 'a readme that has lost its `== Changelog ==` heading is refused' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the plugin header is whitespace-stripped down the middle again',
+		file: 'bin/assert-version.sh',
+		from: "header=$( sed -n 's/^ \\* Version:[[:space:]]*\\(.*\\)$/\\1/p' \"$FILE\" | head -1 | sed 's/[[:space:]]*$//' )",
+		to: "header=$( sed -n 's/^ \\* Version:[[:space:]]*\\(.*\\)$/\\1/p' \"$FILE\" | head -1 | tr -d '[:space:]' )",
+		// Deleting interior whitespace turns `1.0.1 - WIP` into `1.0.1-WIP`, which
+		// is valid semver — so the guard below passes it, the `-` test reads it as
+		// a prerelease, and the changelog assertion is skipped silently.
+		mustFail: [
+			'a plugin header that is prose, not a version, is refused',
+			'a plugin version that is prose everywhere is still refused',
+		],
+	},
+
+	{
+		suite: 'js',
+		what: 'the plugin header stops having to be a version',
+		file: 'bin/assert-version.sh',
+		from: "if ! printf '%s' \"$header\" | grep -Eq '^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then",
+		to: 'if false; then',
+		// $header decides whether a changelog section is required, by testing it
+		// for a `-`, so a value that is not a version must never reach it. Only
+		// the consistent spelling proves this one: where the header and the
+		// constant disagree, the MISMATCH check above refuses it first.
+		mustFail: [ 'a plugin version that is prose everywhere is still refused' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'assert-version.sh greps the whole readme for the changelog entry again',
+		file: 'bin/assert-version.sh',
+		from: '\t\tif ! changelog_has_section; then',
+		to: '\t\tif ! grep -q "^= ${header} =$" "$README"; then',
+		// The shipped state, and the same defect as the set-version.sh lookup
+		// one file over. `== Upgrade Notice ==` files its entries under release
+		// versions, so one of those answered for the changelog and a tree with
+		// no entry for the shipped version passed. set-version.sh's bounded
+		// read-back hides it there; ci.yaml's "Shipped versions agree" job and
+		// bin/build-dist.sh run this script alone.
+		mustFail: [ 'an Upgrade Notice heading does not satisfy the changelog check' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the stray-prerelease assertion stops recognising one',
+		file: 'bin/assert-version.sh',
+		from: '\tinlog && /^= [0-9]+\\.[0-9]+\\.[0-9]+-[0-9A-Za-z.-]+ =$/ {',
+		to: '\tinlog && /^= nothing matches this =$/ {',
+		// Nothing writes a prerelease section any more, but something still has
+		// to notice one that arrives by another route — a hand edit, a revert, a
+		// long-lived branch. This is where that invariant lives now, and a
+		// refusal is the whole difference from the prune that preceded it.
+		mustFail: [ 'a prerelease section is refused, not deleted, wherever it came from' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the stray-prerelease assertion is let loose outside == Changelog ==',
+		file: 'bin/assert-version.sh',
+		// NEWLINE-PREFIXED, BECAUSE THE BARE LINE IS NOT UNIQUE. The same awk
+		// bound appears in changelog_has_section() one indent deeper, so
+		// `\t/^== /` is a substring of `\t\t/^== /`. The leading \n pins the
+		// indent to this one.
+		from: '\n\t/^== / { inlog = ( $0 == "== Changelog ==" ); next }',
+		to: '\n\t/^== / { inlog = 1; next }',
+		// `== Upgrade Notice ==` files its entries under release versions, and a
+		// release candidate parked there is not an internal build of ours.
+		// Unbounded, this aborts every release of a readme that has one.
+		mustFail: [ 'a `= X =` heading outside the changelog is out of reach' ],
+	},
+
 
 	{
 		suite: 'js',

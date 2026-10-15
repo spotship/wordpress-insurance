@@ -105,11 +105,6 @@ directly and are answered from there.
 
 == Changelog ==
 
-= 1.0.1-dev.1 =
-
-Bug Fixes
-* **release:** ENG-6582 write and assert every shipped version string
-
 = 1.0.0 =
 * First production release.
 * War hull and war cargo quote forms, as shortcodes and as blocks.

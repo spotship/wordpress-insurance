@@ -1,20 +1,34 @@
 /**
  * bin/set-version.sh — the changelog it hands a customer.
  *
- * THIS MECHANISM HAS NOW BEEN WRONG THREE TIMES AND HAD NO TEST FOR ANY OF IT.
+ * THE PRUNE WAS WRONG THREE TIMES, SO THERE IS NO PRUNE ANY MORE.
  *
- * It was appending a section per internal build; then it pruned only the
- * prereleases sharing the release's own base, so `= 1.0.1-dev.1 =` survived a
- * minor bump and would have shipped — it was sitting in readme.txt on `dev`
- * when this was written; and the same flag that said "this run writes a
- * heading" also switched the pruning off, so a hand-written entry kept every
- * `-dev.N` stacked underneath it.
+ * `dev` is a prerelease branch and every push to it ran a real release, so the
+ * script wrote a `= 1.1.0-dev.N =` section per internal build and then had to
+ * remove the previous ones again on the next run. Removing them meant deciding
+ * which headings were internal builds, over text a person may have typed, and
+ * that decision was wrong three times:
  *
- * Each of those was found by reading the script, and each was verified by
- * running it by hand against a readme built for the occasion. The CI rehearsal
- * in ci.yaml's `release-config` job runs it once, at 99.98.97, against a
- * changelog with no prerelease sections in it at all — so it could not have
- * caught any of the three.
+ *   1. It matched only prereleases sharing the release's own base, so
+ *      `= 1.0.1-dev.1 =` survived a minor bump — it was sitting in readme.txt
+ *      on `dev` when this file was first written.
+ *   2. The same flag that said "this run writes a heading" also switched the
+ *      pruning off, so a hand-written entry kept every `-dev.N` under it.
+ *   3. Broadened to "does the heading contain a `-`", it deleted
+ *      `= 1.0.2 - 2026-10-14 =` — a RELEASED section — and exited 0.
+ *
+ * None of those are reachable now: a prerelease writes no section at all, so
+ * there is nothing below it to clean up. The notes a customer should read are
+ * the ones semantic-release generates for the real release, which aggregate
+ * every commit since the last one. What remains of the invariant lives in
+ * bin/assert-version.sh, which REFUSES a tree carrying a prerelease section
+ * rather than editing one out — same classification, but a wrong answer stops
+ * the release in front of a human instead of rewriting a changelog.
+ *
+ * Each of the three was found by reading the script, never by running it. The
+ * CI rehearsal in ci.yaml's `release-config` job runs it once, at 99.98.97,
+ * against a changelog with no prerelease sections in it at all — so it could
+ * not have caught any of them.
  *
  * These drive the real script, in a copy of the real tree, through the release
  * sequences the branch config actually produces. bin/set-version.sh calls
@@ -124,121 +138,152 @@ function sections( readme ) {
 	return [ ...log.matchAll( /^= (.+) =$/gm ) ].map( ( m ) => m[ 1 ] );
 }
 
-const SHIPPED = '\n= 1.0.1-dev.1 =\n* An internal build.\n\n= 1.0.0 =\n* First production release.\n';
+/**
+ * A changelog in the state the invariant says it is always in: releases only.
+ *
+ * It used to carry `= 1.0.1-dev.1 =`, because the script used to write one per
+ * internal build and prune them again later. Nothing writes one now, so a
+ * fixture that had one would be describing a state the release pipeline cannot
+ * produce — and `one is refused rather than deleted` below covers the case where
+ * something puts one there anyway.
+ */
+const SHIPPED = '\n= 1.0.0 =\n* First production release.\n';
 
-test( 'a prerelease of an EARLIER base is pruned, not carried forever', ( t ) => {
+/**
+ * A run that must FAIL, and the stderr it failed with.
+ *
+ * bin/set-version.sh calls bin/assert-version.sh as its last act, so a refusal
+ * can come from either; the caller asserts on the message, not on which.
+ *
+ * @param {string} dir     A sandbox.
+ * @param {string} version The version being released.
+ * @returns {string} stderr.
+ */
+function releaseFails( dir, version ) {
+	try {
+		execFileSync( 'bash', [ 'bin/set-version.sh', version ], {
+			cwd: dir,
+			encoding: 'utf8',
+			stdio: [ 'ignore', 'pipe', 'pipe' ],
+		} );
+	} catch ( e ) {
+		return String( e.stderr );
+	}
+
+	assert.fail( `bin/set-version.sh ${ version } was expected to refuse, and exited 0` );
+}
+
+/** The `Stable tag:` the run wrote. */
+function stableTag( readme ) {
+	return /^Stable tag:[ \t]*(.*)$/m.exec( readme )[ 1 ].trim();
+}
+
+
+test( 'a prerelease writes no changelog section at all', ( t ) => {
 	/*
-	 * THE ONE THAT WAS LIVE. `dev` released v1.0.1-dev.1, then the next change
-	 * to land was a feature — so the release was 1.1.0, the base was 1.1.0, and
-	 * a predicate anchored to that base could not see `1.0.1-dev.1` at all.
-	 * Nothing else ever removed it, so the customer zip would have carried one
-	 * orphaned internal build per minor, growing without bound.
+	 * THE WHOLE REDESIGN, IN ONE ASSERTION.
+	 *
+	 * `dev` is a prerelease branch, so every push to it runs a real release:
+	 * 1.1.0-dev.1, -dev.2, -dev.3. Each one used to write its own `= X =`
+	 * section, and the readme a customer unpacks would carry one per internal
+	 * build — so each run also had to prune the previous ones, which meant a
+	 * predicate over human-written headings, which was wrong three times. The
+	 * last of those deleted a RELEASED section.
+	 *
+	 * None of that is reachable if the section is never written. The version
+	 * strings still move, because the zip and the update checker read those.
 	 */
 	const dir = sandbox( SHIPPED );
 
 	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
 
-	const readme = release( dir, '1.1.0', notesFor( '1.1.0', 'a feature landed' ) );
+	const readme = release( dir, '1.1.0-dev.1', notesFor( '1.1.0-dev.1', 'an internal build' ) );
 
-	assert.deepStrictEqual( sections( readme ), [ '1.1.0', '1.0.0' ] );
+	assert.deepStrictEqual( sections( readme ), [ '1.0.0' ] );
 	assert.ok(
-		! readme.includes( 'An internal build.' ),
-		'the superseded section\'s BODY must go with its heading'
+		! readme.includes( 'an internal build' ),
+		"the release notes of an internal build must not reach the customer's changelog"
 	);
+
+	// NON-VACUITY: the run must still have done its actual job.
+	assert.equal( stableTag( readme ), '1.1.0-dev.1', 'Stable tag must still be written' );
 } );
 
-test( 'a prerelease is pruned even when the section for this release already exists', ( t ) => {
+test( 'the whole prerelease chain leaves one section, written by the release', ( t ) => {
 	/*
-	 * `have` says whether this run writes a heading. It used to gate the
-	 * pruning too, so hand-writing the entry — which set-version.sh's own
-	 * comments invite, and which is how the 1.0.0 entry in this readme was
-	 * written — left every internal build sitting underneath it, with
-	 * assert-version.sh green because the heading it looks for was there.
+	 * The sequence the branch config actually produces: three pushes to `dev`,
+	 * then the merge to `main` that cuts 1.1.0. The three write nothing; the
+	 * release writes one complete entry, because semantic-release's notes for
+	 * it aggregate every commit since 1.0.0. Nothing is lost by staying quiet.
 	 */
-	const dir = sandbox(
-		'\n= 1.1.0 =\n* Written for a site administrator, not from commit subjects.\n' + SHIPPED
-	);
-
-	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
-
-	const readme = release( dir, '1.1.0', notesFor( '1.1.0', 'a feature landed' ) );
-
-	assert.deepStrictEqual( sections( readme ), [ '1.1.0', '1.0.0' ] );
-	assert.ok(
-		readme.includes( 'Written for a site administrator' ),
-		'a hand-written entry is still left alone — only the internal builds go'
-	);
-	assert.ok(
-		! readme.includes( 'a feature landed' ),
-		'and it is not duplicated by a second section generated from the notes'
-	);
-} );
-
-test( 'the prerelease being written survives its own run, and re-running changes nothing', ( t ) => {
-	const dir = sandbox( SHIPPED );
-
-	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
-
-	const first = release( dir, '1.1.0-dev.1', notesFor( '1.1.0-dev.1', 'the internal build' ) );
-
-	assert.deepStrictEqual( sections( first ), [ '1.1.0-dev.1', '1.0.0' ] );
-
-	// A re-run of the same release — a retried workflow — must be a no-op, not
-	// a second copy and not a pruning of the section it just wrote.
-	const again = release( dir, '1.1.0-dev.1', notesFor( '1.1.0-dev.1', 'the internal build' ) );
-
-	assert.equal( again, first, 'bin/set-version.sh must be idempotent for a given version' );
-} );
-
-test( 'the whole prerelease chain collapses to one section', ( t ) => {
 	const dir = sandbox( SHIPPED );
 
 	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
 
 	let readme;
 
-	for ( const v of [ '1.1.0-dev.1', '1.1.0-dev.2', '1.1.0-dev.3', '1.1.0' ] ) {
-		readme = release( dir, v, notesFor( v, 'the same work, four times' ) );
+	for ( const v of [ '1.1.0-dev.1', '1.1.0-dev.2', '1.1.0-dev.3' ] ) {
+		readme = release( dir, v, notesFor( v, 'the same work, three times' ) );
+		assert.deepStrictEqual( sections( readme ), [ '1.0.0' ], `${ v } must add nothing` );
 	}
+
+	readme = release( dir, '1.1.0', notesFor( '1.1.0', 'the same work, once' ) );
 
 	assert.deepStrictEqual( sections( readme ), [ '1.1.0', '1.0.0' ] );
 	assert.equal(
-		[ ...readme.matchAll( /the same work, four times/g ) ].length,
+		[ ...readme.matchAll( /the same work, once/g ) ].length,
 		1,
-		'four releases of one change must leave one set of bullets, not four'
+		'the release must leave exactly one set of bullets'
+	);
+	assert.ok(
+		! readme.includes( 'the same work, three times' ),
+		'and none of the internal builds may have left bullets behind'
 	);
 } );
 
-test( 'released versions are never touched', ( t ) => {
-	const dir = sandbox(
-		'\n= 1.0.1-dev.1 =\n* An internal build.\n\n= 1.0.0 =\n* First production release.\n' +
-			'\n= 0.2.0 =\n* Second.\n\n= 0.1.0 =\n* Initial release.\n'
-	);
+test( 'a prerelease section is refused, not deleted, wherever it came from', ( t ) => {
+	/*
+	 * THE INVARIANT MOVED FROM AN EDIT TO AN ASSERTION, AND THAT IS THE POINT.
+	 *
+	 * Something still has to notice a `-dev.N` heading that reaches readme.txt
+	 * by another route — a hand edit, a revert, a long-lived branch. The old
+	 * answer silently deleted whatever its predicate matched, and its predicate
+	 * matched a released section. bin/assert-version.sh now refuses the tree
+	 * instead: same classification, but a wrong answer stops the release in
+	 * front of a human rather than quietly rewriting the changelog.
+	 */
+	const dir = sandbox( '\n= 1.1.0-dev.2 =\n* Should never have been written.\n' + SHIPPED );
 
 	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
 
-	const readme = release( dir, '1.1.0', notesFor( '1.1.0', 'a feature landed' ) );
+	const stderr = releaseFails( dir, '1.1.0' );
 
-	assert.deepStrictEqual( sections( readme ), [ '1.1.0', '1.0.0', '0.2.0', '0.1.0' ] );
+	assert.match( stderr, /prerelease changelog section '= 1\.1\.0-dev\.2 ='/ );
+
+	// AND IT MUST STILL BE THERE. A refusal that deleted the thing it objected
+	// to would be the original defect wearing a different hat.
+	const readme = fs.readFileSync( path.join( dir, 'readme.txt' ), 'utf8' );
+
+	assert.ok(
+		readme.includes( 'Should never have been written.' ),
+		'the offending section must be left for a human to deal with'
+	);
 } );
 
-test( 'a released heading carrying a date is not mistaken for a prerelease', ( t ) => {
+test( 'a released heading carrying a date is left alone', ( t ) => {
 	/*
-	 * THE PRUNE IS BOUNDED TO THE CHANGELOG, AND INSIDE IT THE PREDICATE HAS TO
-	 * BE BOUNDED TOO.
+	 * THE DEFECT THAT ENDED THE PRUNE. Its predicate asked only whether a
+	 * heading held a `-`, which is true of `= 1.0.2 - 2026-10-14 =` — a
+	 * RELEASED section in the shape nearly every other changelog format writes,
+	 * and set-version.sh's own comments invite hand-written entries. The
+	 * heading and its bullets were deleted, the script exited 0, and
+	 * assert-version.sh agreed, because nothing inspects the sections it did
+	 * not write.
 	 *
-	 * Asking only whether the heading holds a `-` catches more than an internal
-	 * build. `= 1.0.2 - 2026-10-14 =` is a RELEASED section written the way
-	 * nearly every other changelog format writes one, and set-version.sh's own
-	 * comments invite hand-written entries — the `= 1.0.0 =` in this readme is
-	 * one. Pruning it deleted a shipped release's heading AND its bullets from
-	 * the customer's changelog, exited 0, and left assert-version.sh green:
-	 * nothing downstream inspects the sections this script did not write, so
-	 * the only symptom is a changelog that is quietly one release shorter.
-	 *
-	 * The sibling test above says released versions are never touched; it uses
-	 * bare `= X =` headings throughout, which is exactly the shape the broken
-	 * predicate got right.
+	 * Kept after the prune was deleted, because it is the regression that
+	 * would come back with any future attempt to classify these headings for
+	 * removal. The matching assertion in assert-version.sh must not match it
+	 * either, which is what makes this more than a test of nothing.
 	 */
 	const dir = sandbox(
 		'\n= 1.0.2 - 2026-10-14 =\n* A hand-written entry, dated the way people date them.\n' +
@@ -252,24 +297,70 @@ test( 'a released heading carrying a date is not mistaken for a prerelease', ( t
 	assert.deepStrictEqual( sections( readme ), [ '1.1.0', '1.0.2 - 2026-10-14', '1.0.0' ] );
 	assert.ok(
 		readme.includes( 'dated the way people date them' ),
-		'the dated section\'s BODY must survive with its heading'
+		"the dated section's BODY must survive with its heading"
+	);
+} );
+
+test( 'released versions are never touched', ( t ) => {
+	const dir = sandbox(
+		'\n= 1.0.0 =\n* First production release.\n\n= 0.2.0 =\n* Second.\n\n= 0.1.0 =\n* Initial release.\n'
 	);
 
-	// And the internal build underneath it still goes, so this is not just the
-	// prune switched off.
-	assert.ok(
-		! readme.includes( 'An internal build.' ),
-		'the prerelease below it must still be pruned'
+	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
+
+	const readme = release( dir, '1.1.0', notesFor( '1.1.0', 'a feature landed' ) );
+
+	assert.deepStrictEqual( sections( readme ), [ '1.1.0', '1.0.0', '0.2.0', '0.1.0' ] );
+} );
+
+test( 'a hand-written entry is left alone and not duplicated', ( t ) => {
+	/*
+	 * set-version.sh's own comments invite writing the entry by hand before the
+	 * release — the `= 1.0.0 =` in this readme is one. A run that found one and
+	 * appended its own generated copy underneath would publish the same release
+	 * twice.
+	 */
+	const dir = sandbox(
+		'\n= 1.1.0 =\n* Written for a site administrator, not from commit subjects.\n' + SHIPPED
 	);
+
+	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
+
+	const readme = release( dir, '1.1.0', notesFor( '1.1.0', 'a feature landed' ) );
+
+	assert.deepStrictEqual( sections( readme ), [ '1.1.0', '1.0.0' ] );
+	assert.ok( readme.includes( 'Written for a site administrator' ) );
+	assert.ok(
+		! readme.includes( 'a feature landed' ),
+		'and it is not duplicated by a second section generated from the notes'
+	);
+} );
+
+test( 'bin/set-version.sh is idempotent, for a release and for a prerelease', ( t ) => {
+	const dir = sandbox( SHIPPED );
+
+	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
+
+	// A retried workflow must not append a second copy.
+	const first = release( dir, '1.1.0', notesFor( '1.1.0', 'a feature landed' ) );
+	const again = release( dir, '1.1.0', notesFor( '1.1.0', 'a feature landed' ) );
+
+	assert.equal( again, first, 'a release re-run must change nothing' );
+
+	const pre = release( dir, '1.2.0-dev.1', notesFor( '1.2.0-dev.1', 'an internal build' ) );
+	const preAgain = release( dir, '1.2.0-dev.1', notesFor( '1.2.0-dev.1', 'an internal build' ) );
+
+	assert.equal( preAgain, pre, 'a prerelease re-run must change nothing either' );
+	assert.deepStrictEqual( sections( preAgain ), [ '1.1.0', '1.0.0' ] );
 } );
 
 test( 'a `= X =` heading outside the changelog is out of reach', ( t ) => {
 	/*
-	 * The predicate matches any heading that looks like a prerelease, so the
-	 * `inlog` bound is what stops it reaching prose. `= … =` is legal in a
-	 * WordPress readme's Description, FAQ and Upgrade Notice sections, and
-	 * rewriting someone's documentation while passing every version check is
-	 * the failure this guards.
+	 * `= … =` is legal prose in a WordPress readme's Description, FAQ and
+	 * Upgrade Notice. Both the lookup in set-version.sh and the prerelease
+	 * assertion in assert-version.sh are bounded to `== Changelog ==`, and a
+	 * release candidate parked in an Upgrade Notice is not an internal build of
+	 * ours — unbounded, that fixture alone would abort every release.
 	 */
 	const dir = sandbox(
 		SHIPPED + '\n== Upgrade Notice ==\n\n= 1.0.0-rc.1 =\n* Not a changelog entry.\n'
@@ -288,20 +379,13 @@ test( 'a `= X =` heading outside the changelog is out of reach', ( t ) => {
 
 test( 'a heading elsewhere in the readme does not stand in for the changelog entry', ( t ) => {
 	/*
-	 * THE PRUNE WAS BOUNDED TO THE CHANGELOG AND THE TWO LOOKUPS WERE NOT.
-	 *
 	 * `== Upgrade Notice ==` files its entries under headings that are release
-	 * versions — that is the section's documented shape, and the sibling test
-	 * above already puts one in the fixture. Both the "has this release got a
-	 * section?" test and the read-back that proves one was written used to grep
-	 * the whole file, so an Upgrade Notice heading for the version being
-	 * released answered yes to both: no heading was inserted, the read-back was
-	 * satisfied by the Upgrade Notice, assert-version.sh agreed, and the
-	 * customer's changelog skipped the release entirely.
-	 *
-	 * The superseded prerelease is still pruned, which is what makes the
-	 * shipped state so quiet: the section count goes DOWN by one and nothing
-	 * anywhere exits non-zero.
+	 * versions. Both the "has this release got a section?" test and the
+	 * read-back that proves one was written used to grep the whole file, so an
+	 * Upgrade Notice heading for the version being released answered yes to
+	 * both: no heading was inserted, the read-back was satisfied by the Upgrade
+	 * Notice, assert-version.sh agreed, and the customer's changelog skipped the
+	 * release entirely.
 	 */
 	const dir = sandbox(
 		SHIPPED + '\n== Upgrade Notice ==\n\n= 1.1.0 =\n* Re-save your settings after upgrading.\n'
@@ -325,8 +409,7 @@ test( 'a heading elsewhere in the readme does not stand in for the changelog ent
 test( 'every link conventional-changelog adds is stripped from a bullet', ( t ) => {
 	/*
 	 * readme.txt is plain text on a customer's server, so a 60-character commit
-	 * URL is noise. Kept here because the stripping and the pruning read the
-	 * same bullets, and the awk that does both is one program.
+	 * URL is noise.
 	 */
 	const dir = sandbox( SHIPPED );
 

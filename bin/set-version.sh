@@ -237,12 +237,46 @@ read_back "SPOTSHIP_WI_VERSION" "$FILE" "s/^define( 'SPOTSHIP_WI_VERSION', '\(.*
 # falls back to the heading and a link to the GitHub release, so the assertion
 # in bin/assert-version.sh still has something true to find. An entry written by
 # hand before the release is left alone either way.
-SSWI_CHANGELOG_BODY=
-HAVE_SECTION=0
+# A PRERELEASE WRITES NO CHANGELOG SECTION AT ALL, AND THAT DELETES A BUG CLASS.
+#
+# `dev` is a prerelease branch, so every push to it runs a real release:
+# 1.1.0-dev.1, -dev.2, -dev.3, each one landing here. Every one of those used to
+# write its own `= X =` section, and the readme a customer unpacks would then
+# carry one section per internal build — the same bullets three and four times
+# over under numbers that mean nothing outside this repo.
+#
+# The previous answer was to write them and then prune them again on the next
+# run. That prune had to know which headings were internal builds, which meant a
+# predicate over human-written text, and that predicate was wrong three times:
+# it missed a prerelease of an earlier base, it was switched off entirely by a
+# hand-written entry, and it reached past internal builds into a RELEASED
+# section whose heading happened to carry a date.
+#
+# None of those bugs are reachable if the section is never written. The notes a
+# customer should read are the ones semantic-release generates for the real
+# release on `main`, which aggregate every commit since the last one — so
+# nothing is lost by staying quiet here, and `= 1.1.0 =` lands complete.
+#
+# THE `-` TEST IS SAFE ON THIS STRING AND WAS NOT SAFE ON A HEADING. $VERSION is
+# semantic-release's own output: valid semver, where a `-` means exactly one
+# thing. A changelog heading is prose someone typed, where it does not.
+case "$VERSION" in
+	*-* ) PRERELEASE=1 ;;
+	*   ) PRERELEASE=0 ;;
+esac
 
-if changelog_has_section; then
-	HAVE_SECTION=1
-elif [ -f "$NOTES" ]; then
+# ONE FLAG, ONE MEANING. `WRITE_SECTION` says whether the awk below inserts a
+# heading, and nothing else reads it. Its predecessor, `HAVE_SECTION`, was asked
+# to mean "the readme already has this section" AND to gate the prune, and
+# conflating those is how a hand-written entry switched the pruning off.
+SSWI_CHANGELOG_BODY=
+WRITE_SECTION=0
+
+if [ "$PRERELEASE" = 0 ] && ! changelog_has_section; then
+	WRITE_SECTION=1
+fi
+
+if [ "$WRITE_SECTION" = 1 ] && [ -f "$NOTES" ]; then
 	SSWI_CHANGELOG_BODY=$( awk '
 		/^#+[ \t]/ {
 			# The first heading is the version, which readme.txt is about to
@@ -288,7 +322,7 @@ elif [ -f "$NOTES" ]; then
 	' "$NOTES" )
 fi
 
-if [ "$HAVE_SECTION" = 0 ] && [ -z "$SSWI_CHANGELOG_BODY" ]; then
+if [ "$WRITE_SECTION" = 1 ] && [ -z "$SSWI_CHANGELOG_BODY" ]; then
 	SSWI_CHANGELOG_BODY="* See https://github.com/spotship/wordpress-insurance/releases/tag/v${VERSION}"
 fi
 
@@ -305,60 +339,24 @@ export SSWI_CHANGELOG_BODY
 # bumped, no entry under it — and tripled the number of places the atomic-rename
 # reasoning had to hold.
 #
-# NO INTERNAL BUILD SECTION SURVIVES EXCEPT THE ONE BEING WRITTEN.
+# NO INTERNAL BUILD SECTION IS EVER WRITTEN, SO NONE HAS TO BE PRUNED.
 #
-# `dev` is a prerelease branch, so every push to it runs a real release:
-# 1.1.0-dev.1, -dev.2, -dev.3, each one landing here and each one committed back
-# by @semantic-release/git. Appending would put one section per internal build
-# into the readme a customer unpacks — the same bullets three and four times
-# over under numbers that mean nothing outside this repo — and nothing would
-# ever remove them.
+# This used to carry an `internal()` predicate and a drop rule: every prerelease
+# section below the insertion point was deleted on the way past, because `dev`
+# writes one per push and nothing else would ever remove them.
 #
-# THE TEST IS "IS IT A PRERELEASE", NOT "DOES IT SHARE THIS VERSION'S BASE".
+# That predicate had to classify human-written headings, and it was wrong three
+# times — it missed a prerelease of an earlier base, a hand-written entry
+# switched it off entirely, and it reached past internal builds into a RELEASED
+# section whose heading carried a date. All three are unreachable now: a
+# prerelease does not write a section, so there is nothing below to clean up.
+# See the WRITE_SECTION reasoning above.
 #
-# Anchoring on the base left two holes, and the first of them was live on `dev`:
-#
-#   * A prerelease of an EARLIER base was invisible. `= 1.0.1-dev.1 =` sat in
-#     readme.txt while the next release was a minor bump, so `base` was 1.1.0
-#     and nothing matched it — one orphaned internal build per minor, kept
-#     forever.
-#   * A section that already existed turned the scan off entirely, because the
-#     same `have` flag gated both the insert and the drop. Hand-writing the
-#     entry — which the comment above this one invites, and which is how the
-#     1.0.0 entry was written — left every -dev.N stacked underneath it.
-#
-# The changelog is newest-first and set-version.sh only ever moves forward, so
-# every prerelease section below the insertion point is one this release
-# supersedes. Dropping all of them needs no version comparison and states the
-# invariant directly: a `-dev.N` heading never reaches a customer. Released
-# versions are never touched, and `ver` itself is kept so re-running the same
-# prerelease is still idempotent.
-#
-# "IS IT A PRERELEASE" IS A WHOLE-STRING TEST, NOT "DOES IT CONTAIN A HYPHEN".
-#
-# The first version of this predicate asked only whether the heading held a `-`.
-# That reaches further than a prerelease: `= 1.0.2 - 2026-10-14 =` is a RELEASED
-# section in the shape every other changelog format on earth writes, and the
-# comment above this one openly invites hand-written entries — `= 1.0.0 =` in
-# this readme is one. Pruning it took the heading and its bullets out of the
-# customer's changelog, exited 0, and let assert-version.sh and the read-back
-# below agree, because neither looks at the sections it did not write.
-#
-# So the heading has to BE a semver prerelease end to end: three numbers, then a
-# `-` and a prerelease identifier, and nothing else. A date, a note or anything
-# else a person might add is not that shape, and survives.
+# What is left here is the insert, gated on `write`, and the two header lines.
 rewrite_in_place "$README" awk \
 	-v ver="$VERSION" \
 	-v tested="$TESTED" \
-	-v have="$HAVE_SECTION" '
-	function internal( line,    v ) {
-		# "= X =" -> X, matched whole: a release carries no prerelease suffix,
-		# and a heading that is not a bare version is not ours to touch. The
-		# section this run is writing is not its own predecessor.
-		v = substr( line, 3, length( line ) - 4 )
-		return v ~ /^[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$/ && v != ver
-	}
-
+	-v write="$WRITE_SECTION" '
 	!st && /^Stable tag:[ \t]*[^ \t]/ {
 		sub( /[^ \t]+$/, ver )
 		st = 1
@@ -373,17 +371,16 @@ rewrite_in_place "$README" awk \
 		next
 	}
 
-	/^== / {
-		# Any other section heading ends the changelog, so the prune scan
-		# below cannot run off the end of it.
-		inlog = ( $0 == "== Changelog ==" )
-		drop = 0
+	/^== Changelog ==$/ {
 		print
 
-		if ( inlog && ! seen ) {
+		# Newest first, so the insert goes immediately under the heading. `seen`
+		# because a readme may legally say "== Changelog ==" more than once and
+		# only the first is the real one.
+		if ( ! seen ) {
 			seen = 1
 
-			if ( have != "1" ) {
+			if ( write == "1" ) {
 				print ""
 				print "= " ver " ="
 				print ENVIRON["SSWI_CHANGELOG_BODY"]
@@ -393,14 +390,7 @@ rewrite_in_place "$README" awk \
 		next
 	}
 
-	# NOT GATED ON `have`. That flag says whether this run writes a heading; it
-	# says nothing about whether the internal builds below it should go, and
-	# conflating the two is what let a hand-written entry keep all of them.
-	inlog && /^= .* =$/ {
-		drop = internal( $0 )
-	}
-
-	{ if ( ! drop ) print }
+	{ print }
 '
 
 read_back "'Stable tag'" "$README" 's/^Stable tag:[[:space:]]*\(.*\)$/\1/p'
@@ -416,7 +406,18 @@ read_back "'Tested up to'" "$README" 's/^Tested up to:[[:space:]]*\(.*\)$/\1/p' 
 # IT LOOKS INSIDE THE CHANGELOG, not anywhere in the file. A heading elsewhere —
 # `== Upgrade Notice ==` files its entries under release versions — would
 # otherwise satisfy this check for a section that was never written.
-if ! changelog_has_section; then
+#
+# BOTH DIRECTIONS ARE ASSERTED. For a release the section must be there; for a
+# prerelease it must NOT, which is the invariant that replaced the prune. An
+# absent assertion is worth as much as a present one here: a prerelease section
+# that somehow got written is exactly what used to reach a customer.
+if [ "$PRERELEASE" = 1 ]; then
+	if changelog_has_section; then
+		echo "set-version: '= $VERSION =' was written under '== Changelog ==' in $README" >&2
+		echo "set-version: a prerelease must write no changelog section — see WRITE_SECTION above." >&2
+		exit 1
+	fi
+elif ! changelog_has_section; then
 	echo "set-version: no '= $VERSION =' section under '== Changelog ==' in $README after writing it" >&2
 	echo "set-version: the insert is anchored to a literal '== Changelog ==' heading; $README has none." >&2
 	exit 1

@@ -242,57 +242,45 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
-		what: 'the changelog prune goes back to matching this release\'s base only',
+		what: 'a prerelease writes a changelog section again',
 		file: 'bin/set-version.sh',
-		from: 'return v ~ /^[0-9]+\\.[0-9]+\\.[0-9]+-[0-9A-Za-z.-]+$/ && v != ver',
-		to:
-			'return index( v, "-" ) > 0 && v != ver && ' +
-			'substr( v, 1, index( v, "-" ) ) == substr( ver "-", 1, index( ver "-", "-" ) )',
-		// The shipped state: `= 1.0.1-dev.1 =` was in readme.txt on `dev` and
-		// the next release was a minor, so nothing matched it and it would have
-		// gone to a customer — one orphaned internal build per minor, forever.
-		mustFail: [ 'a prerelease of an EARLIER base is pruned, not carried forever' ],
-	},
-
-	{
-		suite: 'js',
-		what: 'the changelog prune treats any hyphen as a prerelease again',
-		file: 'bin/set-version.sh',
-		from: 'v ~ /^[0-9]+\\.[0-9]+\\.[0-9]+-[0-9A-Za-z.-]+$/ && v != ver',
-		to: 'index( v, "-" ) > 0 && v != ver',
-		// The predicate's first shape, which reached past internal builds into
-		// RELEASED sections: `= 1.0.2 - 2026-10-14 =` is the way nearly every
-		// other changelog format writes a heading, and set-version.sh's own
-		// comments invite hand-written entries. Pruning one deleted a shipped
-		// release from the customer's changelog and exited 0, because nothing
-		// downstream inspects the sections this script did not write.
-		mustFail: [ 'a released heading carrying a date is not mistaken for a prerelease' ],
-	},
-
-	{
-		suite: 'js',
-		what: 'an existing section switches the changelog prune off again',
-		file: 'bin/set-version.sh',
-		from: '\t\tdrop = internal( $0 )',
-		to: '\t\tdrop = ( have != "1" && internal( $0 ) )',
-		// The shipped state: `have` gated the prune as well as the insert, so a
-		// hand-written entry kept every -dev.N stacked underneath it.
+		from: 'if [ "$PRERELEASE" = 0 ] && ! changelog_has_section; then',
+		to: 'if ! changelog_has_section; then',
+		// The design this replaced. `dev` runs a real release per push, so every
+		// internal build wrote its own `= X =` section and each run then had to
+		// prune the previous ones — a predicate over human-written headings that
+		// was wrong three times, the last of them deleting a RELEASED section.
 		mustFail: [
-			'a prerelease is pruned even when the section for this release already exists',
+			'a prerelease writes no changelog section at all',
+			'the whole prerelease chain leaves one section, written by the release',
 		],
 	},
 
 	{
 		suite: 'js',
-		what: 'the changelog prune is let loose outside == Changelog ==',
-		file: 'bin/set-version.sh',
-		from: '\tinlog && /^= .* =$/ {',
-		to: '\t/^= .* =$/ {',
-		// `= … =` is legal prose in a WordPress readme's Description, FAQ and
-		// Upgrade Notice. Unbounded, the prune eats it while every version
-		// check stays green.
+		what: 'the stray-prerelease assertion stops recognising one',
+		file: 'bin/assert-version.sh',
+		from: '\tinlog && /^= [0-9]+\\.[0-9]+\\.[0-9]+-[0-9A-Za-z.-]+ =$/ {',
+		to: '\tinlog && /^= nothing matches this =$/ {',
+		// Nothing writes a prerelease section any more, but something still has
+		// to notice one that arrives by another route — a hand edit, a revert, a
+		// long-lived branch. This is where that invariant lives now, and a
+		// refusal is the whole difference from the prune that preceded it.
+		mustFail: [ 'a prerelease section is refused, not deleted, wherever it came from' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the stray-prerelease assertion is let loose outside == Changelog ==',
+		file: 'bin/assert-version.sh',
+		from: '\t/^== / { inlog = ( $0 == "== Changelog ==" ); next }',
+		to: '\t/^== / { inlog = 1; next }',
+		// `== Upgrade Notice ==` files its entries under release versions, and a
+		// release candidate parked there is not an internal build of ours.
+		// Unbounded, this aborts every release of a readme that has one.
 		mustFail: [ 'a `= X =` heading outside the changelog is out of reach' ],
 	},
+
 
 	{
 		suite: 'js',

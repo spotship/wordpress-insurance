@@ -117,11 +117,52 @@ fi
 # 1.0.0 actually shipped in, under a `Stable tag` it had just been given.
 # bin/set-version.sh writes the heading during prepare; this refuses a tree
 # where it is missing.
-if ! grep -q "^= ${header} =$" "$README"; then
-	echo "assert-version: $README has no '= $header =' changelog section" >&2
-	echo "assert-version: bin/set-version.sh writes the heading; fill in the entry." >&2
+#
+# NO INTERNAL BUILD MAY BE IN THE CHANGELOG, WHATEVER PUT IT THERE.
+#
+# `dev` is a prerelease branch, and bin/set-version.sh deliberately writes no
+# changelog section for one: a `= 1.1.0-dev.3 =` heading has no reader outside
+# this repo, and every mechanism that wrote one and pruned it again later turned
+# out to be a bug — three of them, the last deleting a RELEASED section whose
+# heading carried a date.
+#
+# So the invariant is asserted here instead of enforced by an edit there. That
+# is the important difference: this predicate classifies human-written headings
+# exactly as the prune did, but a wrong answer ABORTS THE RELEASE rather than
+# silently deleting someone's text. `= 1.0.2 - 2026-10-14 =` does not match —
+# the spaces see to that — and if some future heading ever did, the symptom is
+# a loud refusal a human reads, not a changelog that is quietly one release
+# shorter.
+#
+# Bounded to `== Changelog ==` for the reason the lookup in set-version.sh is:
+# `== Upgrade Notice ==` files its own entries under release versions, and a
+# release candidate parked there is not an internal build of ours.
+stray=$( awk '
+	/^== / { inlog = ( $0 == "== Changelog ==" ); next }
+	inlog && /^= [0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+ =$/ {
+		print substr( $0, 3, length( $0 ) - 4 )
+		exit
+	}
+' "$README" )
+
+if [ -n "$stray" ]; then
+	echo "assert-version: $README carries a prerelease changelog section '= $stray ='" >&2
+	echo "assert-version: set-version.sh writes none; a customer must never unpack an internal build's notes." >&2
 	exit 1
 fi
+
+# A prerelease therefore has no section of its own to find, and the rule above
+# has already proved it. Only a real release is required to have one.
+case "$header" in
+	*-* ) ;;
+	* )
+		if ! grep -q "^= ${header} =$" "$README"; then
+			echo "assert-version: $README has no '= $header =' changelog section" >&2
+			echo "assert-version: bin/set-version.sh writes the heading; fill in the entry." >&2
+			exit 1
+		fi
+		;;
+esac
 
 # THE SUPPORT CLAIMS ARE DUPLICATED TOO, AND DUPLICATED IS DRIFTED.
 #

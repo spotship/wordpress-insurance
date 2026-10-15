@@ -245,6 +245,42 @@ test( 'a `= X =` heading outside the changelog is out of reach', ( t ) => {
 	);
 } );
 
+test( 'a heading elsewhere in the readme does not stand in for the changelog entry', ( t ) => {
+	/*
+	 * THE PRUNE WAS BOUNDED TO THE CHANGELOG AND THE TWO LOOKUPS WERE NOT.
+	 *
+	 * `== Upgrade Notice ==` files its entries under headings that are release
+	 * versions — that is the section's documented shape, and the sibling test
+	 * above already puts one in the fixture. Both the "has this release got a
+	 * section?" test and the read-back that proves one was written used to grep
+	 * the whole file, so an Upgrade Notice heading for the version being
+	 * released answered yes to both: no heading was inserted, the read-back was
+	 * satisfied by the Upgrade Notice, assert-version.sh agreed, and the
+	 * customer's changelog skipped the release entirely.
+	 *
+	 * The superseded prerelease is still pruned, which is what makes the
+	 * shipped state so quiet: the section count goes DOWN by one and nothing
+	 * anywhere exits non-zero.
+	 */
+	const dir = sandbox(
+		SHIPPED + '\n== Upgrade Notice ==\n\n= 1.1.0 =\n* Re-save your settings after upgrading.\n'
+	);
+
+	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
+
+	const readme = release( dir, '1.1.0', notesFor( '1.1.0', 'a feature landed' ) );
+
+	assert.deepStrictEqual( sections( readme ), [ '1.1.0', '1.0.0' ] );
+	assert.ok(
+		readme.includes( 'a feature landed' ),
+		'the release notes must reach the changelog, not be suppressed by a heading in another section'
+	);
+	assert.ok(
+		readme.includes( '= 1.1.0 =\n* Re-save your settings after upgrading.' ),
+		'and the Upgrade Notice entry it collided with must survive untouched'
+	);
+} );
+
 test( 'every link conventional-changelog adds is stripped from a bullet', ( t ) => {
 	/*
 	 * readme.txt is plain text on a customer's server, so a 60-character commit

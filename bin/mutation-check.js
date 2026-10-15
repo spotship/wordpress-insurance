@@ -227,6 +227,21 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: 'the changelog lookup goes back to grepping the whole readme',
+		file: 'bin/set-version.sh',
+		from: '\t\tinlog && $0 == "= " ver " =" { found = 1 }',
+		to: '\t\t$0 == "= " ver " =" { found = 1 }',
+		// The shipped state: `== Upgrade Notice ==` files its entries under
+		// release versions, and one of those answered for the changelog. No
+		// heading was inserted, the read-back was satisfied by the Upgrade
+		// Notice, and the release shipped with no changelog entry.
+		mustFail: [
+			'a heading elsewhere in the readme does not stand in for the changelog entry',
+		],
+	},
+
+	{
+		suite: 'js',
 		what: 'the changelog prune goes back to matching this release\'s base only',
 		file: 'bin/set-version.sh',
 		from: 'return index( v, "-" ) > 0 && v != ver',

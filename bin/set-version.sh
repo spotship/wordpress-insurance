@@ -162,6 +162,26 @@ read_back() {
 	fi
 }
 
+# Does `== Changelog ==` already hold a section for this release?
+#
+# BOUNDED TO THAT SECTION, AND THE UNBOUNDED VERSION WAS A REAL FAILURE. Both
+# callers used to grep the WHOLE readme. A WordPress readme's
+# `== Upgrade Notice ==` conventionally files its entries under headings that
+# are release versions, so one of those matched: the heading below was never
+# inserted, the verification further down was satisfied by the Upgrade Notice
+# heading, assert-version.sh agreed, and the release shipped with no changelog
+# entry at all — silently, which is what that verification exists to prevent.
+#
+# An exact string comparison rather than a pattern, so a version is never read
+# as a regular expression.
+changelog_has_section() {
+	awk -v ver="$VERSION" '
+		/^== / { inlog = ( $0 == "== Changelog ==" ); next }
+		inlog && $0 == "= " ver " =" { found = 1 }
+		END { if ( found ) exit 0; exit 1 }
+	' "$README"
+}
+
 # awk rather than sed for the writes: the catalogue header ends in a literal
 # `\n` and the replacement escaping needed to preserve it through sed differs
 # between GNU and BSD. awk substitutes the value as given.
@@ -220,7 +240,7 @@ read_back "SPOTSHIP_WI_VERSION" "$FILE" "s/^define( 'SPOTSHIP_WI_VERSION', '\(.*
 SSWI_CHANGELOG_BODY=
 HAVE_SECTION=0
 
-if grep -q "^= ${VERSION} =$" "$README"; then
+if changelog_has_section; then
 	HAVE_SECTION=1
 elif [ -f "$NOTES" ]; then
 	SSWI_CHANGELOG_BODY=$( awk '
@@ -377,8 +397,12 @@ read_back "'Tested up to'" "$README" 's/^Tested up to:[[:space:]]*\(.*\)$/\1/p' 
 # grep further down the pipeline — which is the arrangement the comment above
 # read_back() exists to argue against. A readme that lost its literal
 # `== Changelog ==` heading would have had nothing inserted, silently.
-if ! grep -q "^= ${VERSION} =$" "$README"; then
-	echo "set-version: no '= $VERSION =' section in $README after writing it" >&2
+#
+# IT LOOKS INSIDE THE CHANGELOG, not anywhere in the file. A heading elsewhere —
+# `== Upgrade Notice ==` files its entries under release versions — would
+# otherwise satisfy this check for a section that was never written.
+if ! changelog_has_section; then
+	echo "set-version: no '= $VERSION =' section under '== Changelog ==' in $README after writing it" >&2
 	echo "set-version: the insert is anchored to a literal '== Changelog ==' heading; $README has none." >&2
 	exit 1
 fi

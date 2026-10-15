@@ -19,7 +19,7 @@ dist/
 # when this line named one, and a second suite arrived without this line being
 # touched -- which is how the third one ships.
 mutation-junit.xml
-mutation-check-*.txt
+mutation-check*.txt
 
 # PHPUnit writes these next to the config it was given; local runs only.
 .phpunit.result.cache

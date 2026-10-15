@@ -4,7 +4,7 @@ Tags: insurance, shipping, maritime, quotes
 Requires at least: 6.4
 Tested up to: 6.8
 Requires PHP: 8.1
-Stable tag: 1.0.1-dev.1
+Stable tag: 1.1.0-dev.1
 License: Proprietary
 
 War hull and war cargo insurance quote capture for Spot Ship customers. The API

@@ -1,23 +1,25 @@
 /**
  * bin/set-version.sh — the changelog it hands a customer.
  *
- * THE PRUNE WAS WRONG THREE TIMES, SO THERE IS NO PRUNE ANY MORE.
+ * THE PRUNE CLASSIFIED PROSE, SO THERE IS NO PRUNE ANY MORE.
  *
  * `dev` is a prerelease branch and every push to it ran a real release, so the
  * script wrote a `= 1.1.0-dev.N =` section per internal build and then had to
  * remove the previous ones again on the next run. Removing them meant deciding
  * which headings were internal builds, over text a person may have typed, and
- * that decision was wrong three times:
+ * that decision shipped wrong twice:
  *
  *   1. It matched only prereleases sharing the release's own base, so
  *      `= 1.0.1-dev.1 =` survived a minor bump — it was sitting in readme.txt
  *      on `dev` when this file was first written.
  *   2. The same flag that said "this run writes a heading" also switched the
  *      pruning off, so a hand-written entry kept every `-dev.N` under it.
- *   3. Broadened to "does the heading contain a `-`", it deleted
- *      `= 1.0.2 - 2026-10-14 =` — a RELEASED section — and exited 0.
  *
- * None of those are reachable now: a prerelease writes no section at all, so
+ * The rule underneath both is what the tests below pin, and it is why there is
+ * no third attempt: a changelog heading is prose, so a predicate keying on `-`
+ * reads `= 1.0.2 - 2026-10-14 =` — a RELEASED section — as an internal build.
+ *
+ * Neither bug is reachable now: a prerelease writes no section at all, so
  * there is nothing below it to clean up. The notes a customer should read are
  * the ones semantic-release generates for the real release, which aggregate
  * every commit since the last one. What remains of the invariant lives in
@@ -46,12 +48,16 @@ const { execFileSync } = require( 'child_process' );
 
 const ROOT = path.join( __dirname, '..', '..' );
 
+/** The two files that carry a version and are not readme.txt. */
+const PLUGIN = 'spotship-war-insurance.php';
+const POT = 'languages/spotship-war-insurance.pot';
+
 /** Everything bin/set-version.sh, and the bin/assert-version.sh it calls, read. */
 const NEEDED = [
 	'bin/set-version.sh',
 	'bin/assert-version.sh',
-	'spotship-war-insurance.php',
-	'languages/spotship-war-insurance.pot',
+	PLUGIN,
+	POT,
 	'readme.txt',
 	'.wp-env.json',
 	'composer.json',
@@ -212,8 +218,8 @@ test( 'a prerelease writes no changelog section at all', ( t ) => {
 	 * 1.1.0-dev.1, -dev.2, -dev.3. Each one used to write its own `= X =`
 	 * section, and the readme a customer unpacks would carry one per internal
 	 * build — so each run also had to prune the previous ones, which meant a
-	 * predicate over human-written headings, which was wrong three times. The
-	 * last of those deleted a RELEASED section.
+	 * predicate over human-written headings. Two shipped and both were wrong,
+	 * and the class is worse than either: a heading is prose.
 	 *
 	 * None of that is reachable if the section is never written. The version
 	 * strings still move, because the zip and the update checker read those.
@@ -492,6 +498,88 @@ test( 'an Upgrade Notice heading does not satisfy the changelog check', ( t ) =>
 	fs.writeFileSync( readme, moved );
 
 	assert.match( assertVersionFails( dir ), /no '= 1\.1\.0 =' changelog section/ );
+} );
+
+/**
+ * A tree whose four versions all read as `want`, with the plugin header and the
+ * SPOTSHIP_WI_VERSION constant spelled independently.
+ *
+ * @param {string} dir      A sandbox that has already been released at 1.1.0.
+ * @param {string} inHeader What the `Version:` header says.
+ * @param {string} inDefine What the constant says.
+ */
+function spellVersions( dir, inHeader, inDefine ) {
+	// Exactly one match, or the line moved and the test proves nothing. The
+	// `Version:` header is column-aligned, so its padding is matched, not typed.
+	const edit = ( file, pattern, to ) => {
+		const before = fs.readFileSync( file, 'utf8' );
+		const hits = before.match( pattern );
+
+		assert.equal( hits ? hits.length : 0, 1, `the fixture must carry exactly one ${ pattern }` );
+		fs.writeFileSync( file, before.replace( pattern, to ) );
+	};
+
+	edit( path.join( dir, PLUGIN ), /^( \* Version:[ \t]+)1\.1\.0$/gm, ( _, pad ) => pad + inHeader );
+	edit( path.join( dir, PLUGIN ), /'SPOTSHIP_WI_VERSION', '1\.1\.0'/g, `'SPOTSHIP_WI_VERSION', '${ inDefine }'` );
+	edit( path.join( dir, 'readme.txt' ), /^Stable tag: 1\.1\.0$/gm, `Stable tag: ${ inHeader }` );
+	edit( path.join( dir, POT ), /1\.1\.0\\n/g, `${ inHeader }\\n` );
+}
+
+test( 'a plugin header that is prose, not a version, is refused', ( t ) => {
+	/*
+	 * THE WHITESPACE STRIP MANUFACTURED A PRERELEASE OUT OF PROSE.
+	 *
+	 * bin/assert-version.sh decides whether a changelog section is REQUIRED by
+	 * testing `$header` for a `-`. bin/set-version.sh makes the same test and
+	 * argues in a comment that it is safe there because $VERSION is
+	 * semantic-release's validated output. This one is scraped out of a PHP
+	 * header a person edits, and `tr -d '[:space:]'` used to run on it — which
+	 * deletes INTERNAL whitespace, so `Version: 1.0.1 - WIP` arrived here as
+	 * `1.0.1-WIP` and the changelog check was skipped.
+	 *
+	 * TWO SPELLINGS, BECAUSE THE TWO HALVES OF THE FIX CATCH DIFFERENT TREES.
+	 * A semver guard alone would not have closed this: `1.0.1-WIP` IS valid
+	 * semver, prerelease `WIP`. Keeping the interior whitespace is what gives
+	 * anything downstream a reason to object.
+	 */
+	const dir = sandbox( SHIPPED );
+
+	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
+
+	release( dir, '1.1.0', notesFor( '1.1.0', 'a feature landed' ) );
+
+	/*
+	 * THE TREE THAT USED TO PASS SILENTLY. The constant is spelled without the
+	 * spaces, so `tr -d` normalised all four versions to the same `1.0.1-WIP`:
+	 * every MISMATCH check agreed, the `-` test read a prerelease, the changelog
+	 * assertion was skipped, and the script exited 0 having asserted nothing.
+	 * Verified against the old strip — it printed `assert-version: 1.0.1-WIP`.
+	 */
+	spellVersions( dir, '1.0.1 - WIP', '1.0.1-WIP' );
+
+	assert.match(
+		assertVersionFails( dir ),
+		/MISMATCH — header '1\.0\.1 - WIP'/,
+		'the prose header must reach the comparison intact'
+	);
+} );
+
+test( 'a plugin version that is prose everywhere is still refused', ( t ) => {
+	/*
+	 * THE SAME PROSE, SPELLED CONSISTENTLY. Here the constant carries the spaces
+	 * too, so the header and the constant agree and the MISMATCH check above has
+	 * nothing to say. What is left is the shape: `1.0.1 - WIP` is not a version,
+	 * and the `-` test must not be handed it.
+	 */
+	const dir = sandbox( SHIPPED );
+
+	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
+
+	release( dir, '1.1.0', notesFor( '1.1.0', 'a feature landed' ) );
+
+	spellVersions( dir, '1.0.1 - WIP', '1.0.1 - WIP' );
+
+	assert.match( assertVersionFails( dir ), /'1\.0\.1 - WIP' in .* is not a version/ );
 } );
 
 test( 'both scripts bound the changelog lookup with the same awk', () => {

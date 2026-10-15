@@ -78,7 +78,12 @@ if [ -z "$plugin_name" ]; then
 	exit 1
 fi
 
-header=$( sed -n 's/^ \* Version:[[:space:]]*\(.*\)$/\1/p' "$FILE" | head -1 | tr -d '[:space:]' )
+# THE ENDS ONLY. `tr -d '[:space:]'` used to run here, and it deletes INTERNAL
+# whitespace too — which is what turned a header someone typed as
+# `Version: 1.0.1 - WIP` into `1.0.1-WIP`, a string indistinguishable from a
+# real prerelease, on its way into the `-` test below. Trimming the ends is all
+# that was ever wanted: the same sed plugin_name above uses.
+header=$( sed -n 's/^ \* Version:[[:space:]]*\(.*\)$/\1/p' "$FILE" | head -1 | sed 's/[[:space:]]*$//' )
 constant=$( sed -n "s/^define( 'SPOTSHIP_WI_VERSION', '\(.*\)' );$/\1/p" "$FILE" | head -1 )
 
 if [ -z "$header" ] || [ -z "$constant" ]; then
@@ -88,6 +93,23 @@ fi
 
 if [ "$header" != "$constant" ]; then
 	echo "assert-version: MISMATCH — header '$header' vs SPOTSHIP_WI_VERSION '$constant'" >&2
+	exit 1
+fi
+
+# $header DECIDES WHETHER A CHANGELOG SECTION IS REQUIRED, so it has to be a
+# version. bin/set-version.sh makes the same `-` test and argues it is safe
+# there because $VERSION is semantic-release's validated output; this one is
+# scraped out of a PHP header a person edits. `1.0.1 - WIP` reaches that test
+# as a prerelease and SILENTLY SKIPS the changelog check below — and a silently
+# skipped assertion is the failure mode this whole script exists to stop.
+#
+# THE TWO HALVES ARE BOTH LOAD-BEARING. This regex alone does not catch it: by
+# the time `tr -d` had finished, `1.0.1-WIP` was valid semver and this would
+# have passed it. Keeping the interior whitespace is what gives it something to
+# reject. $header is also substituted into awk below, which this keeps free of
+# backslashes.
+if ! printf '%s' "$header" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+	echo "assert-version: '$header' in $FILE is not a version" >&2
 	exit 1
 fi
 
@@ -139,9 +161,8 @@ fi
 #
 # `dev` is a prerelease branch, and bin/set-version.sh deliberately writes no
 # changelog section for one: a `= 1.1.0-dev.3 =` heading has no reader outside
-# this repo, and every mechanism that wrote one and pruned it again later turned
-# out to be a bug — three of them, the last deleting a RELEASED section whose
-# heading carried a date.
+# this repo, and both mechanisms that wrote one and pruned it again later turned
+# out to be bugs.
 #
 # So the invariant is asserted here instead of enforced by an edit there. That
 # is the important difference: this predicate classifies human-written headings

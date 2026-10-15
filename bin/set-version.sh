@@ -233,10 +233,12 @@ read_back "SPOTSHIP_WI_VERSION" "$FILE" "s/^define( 'SPOTSHIP_WI_VERSION', '\(.*
 # the version that is already the heading above it, and the links go nowhere
 # useful in a plain-text file on a customer's server.
 #
-# Absent — any run that is not a release, ci.yaml's rehearsal included — it
-# falls back to the heading and a link to the GitHub release, so the assertion
-# in bin/assert-version.sh still has something true to find. An entry written by
-# hand before the release is left alone either way.
+# Absent on a RELEASE — ci.yaml's rehearsal, say — it falls back to the heading
+# and a link to the GitHub release, so the assertion in bin/assert-version.sh
+# still has something true to find. On a prerelease nothing falls back, because
+# nothing is written and nothing is asserted about a section. An entry written
+# by hand before the release is left alone in both cases.
+#
 # A PRERELEASE WRITES NO CHANGELOG SECTION AT ALL, AND THAT DELETES A BUG CLASS.
 #
 # `dev` is a prerelease branch, so every push to it runs a real release:
@@ -247,10 +249,12 @@ read_back "SPOTSHIP_WI_VERSION" "$FILE" "s/^define( 'SPOTSHIP_WI_VERSION', '\(.*
 #
 # The previous answer was to write them and then prune them again on the next
 # run. That prune had to know which headings were internal builds, which meant a
-# predicate over human-written text, and that predicate was wrong three times:
-# it missed a prerelease of an earlier base, it was switched off entirely by a
-# hand-written entry, and it reached past internal builds into a RELEASED
-# section whose heading happened to carry a date.
+# predicate over human-written text. Two of those shipped, and both were wrong:
+# one matched only prereleases of the release's own base, so an older one
+# survived a minor bump; the other was switched off entirely by a hand-written
+# entry. The rule they kept breaking is the reason there is no third attempt: a
+# heading is prose, and `= 1.0.2 - 2026-10-14 =` is a RELEASED section that any
+# predicate keying on `-` calls an internal build and deletes.
 #
 # None of those bugs are reachable if the section is never written. The notes a
 # customer should read are the ones semantic-release generates for the real
@@ -345,12 +349,12 @@ export SSWI_CHANGELOG_BODY
 # section below the insertion point was deleted on the way past, because `dev`
 # writes one per push and nothing else would ever remove them.
 #
-# That predicate had to classify human-written headings, and it was wrong three
-# times — it missed a prerelease of an earlier base, a hand-written entry
-# switched it off entirely, and it reached past internal builds into a RELEASED
-# section whose heading carried a date. All three are unreachable now: a
-# prerelease does not write a section, so there is nothing below to clean up.
-# See the WRITE_SECTION reasoning above.
+# That predicate had to classify human-written headings, and the two that
+# shipped were both wrong — one missed a prerelease of an earlier base, the
+# other was switched off entirely by a hand-written entry. Neither is reachable
+# now, and neither is anything else in their class: a prerelease does not write
+# a section, so there is nothing below to clean up. See the WRITE_SECTION
+# reasoning above.
 #
 # What is left here is the insert, gated on `write`, and the two header lines.
 rewrite_in_place "$README" awk \
@@ -413,8 +417,8 @@ read_back "'Tested up to'" "$README" 's/^Tested up to:[[:space:]]*\(.*\)$/\1/p' 
 # that somehow got written is exactly what used to reach a customer.
 if [ "$PRERELEASE" = 1 ]; then
 	if changelog_has_section; then
-		echo "set-version: '= $VERSION =' was written under '== Changelog ==' in $README" >&2
-		echo "set-version: a prerelease must write no changelog section — see WRITE_SECTION above." >&2
+		echo "set-version: $README carries a '= $VERSION =' section under '== Changelog =='" >&2
+		echo "set-version: this run wrote none, so it was already there; a prerelease must ship none." >&2
 		exit 1
 	fi
 elif ! changelog_has_section; then

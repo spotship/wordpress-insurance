@@ -998,8 +998,9 @@ test( 'every path CI writes into the checkout is on the ignore list', () => {
 	 * the honest limit of deriving names from text.
 	 */
 	const PATHISH = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
-	const WRITES = /(?:\btee\b\s+(?:-a\s+)?|(?<!-)>>?\s*)([A-Za-z0-9][A-Za-z0-9._/-]*)/g;
-	const FLAGS = /--[a-z-]*(?:report|output|out|log)[a-z-]*=([A-Za-z0-9][A-Za-z0-9._/-]*)/g;
+	const WRITES =
+		/(?:\btee\b\s+(?:-{1,2}[A-Za-z][A-Za-z0-9-]*\s+)*|(?<!-)>>?\s*)["']?([A-Za-z0-9][A-Za-z0-9._/-]*)/g;
+	const FLAGS = /--[a-z-]*(?:report|output|out|log)[a-z-]*=["']?([A-Za-z0-9][A-Za-z0-9._/-]*)/g;
 
 	// What build-dist.sh's allow-list sees is the top-level entry, so that is
 	// the unit here too. A path with anything after that entry names a
@@ -1008,8 +1009,16 @@ test( 'every path CI writes into the checkout is on the ignore list', () => {
 	// about a directory, so the distinction has to survive to the probe.
 	const produced = new Map();
 
-	const record = ( raw, where ) => {
-		const clean = raw.replace( /^\.\//, '' ).replace( /\/+$/, '/' );
+	const arms = { redirect: 0, flag: 0, upload: 0 };
+
+	const record = ( raw, where, via ) => {
+		// Quotes are shell and YAML syntax, not part of the name. `tee "x.txt"`
+		// and `path: "x/"` are ordinary spellings, and without this they read as
+		// nothing at all rather than as something unignored.
+		const clean = raw
+			.replace( /^["']|["']$/g, '' )
+			.replace( /^\.\//, '' )
+			.replace( /\/+$/, '/' );
 
 		if ( ! PATHISH.test( clean.replace( /\/$/, '' ) ) ) {
 			return;
@@ -1018,6 +1027,8 @@ test( 'every path CI writes into the checkout is on the ignore list', () => {
 		const [ entry ] = clean.split( '/' );
 		const isDir = clean.length > entry.length;
 		const seen = produced.get( entry );
+
+		arms[ via ] += 1;
 
 		produced.set( entry, {
 			isDir: isDir || ( seen ? seen.isDir : false ),
@@ -1042,7 +1053,7 @@ test( 'every path CI writes into the checkout is on the ignore list', () => {
 
 				if ( block !== null && line.trim() !== '' ) {
 					if ( line.match( /^\s*/ )[ 0 ].length > block ) {
-						record( line.trim(), where );
+						record( line.trim(), where, 'upload' );
 						return;
 					}
 
@@ -1052,22 +1063,36 @@ test( 'every path CI writes into the checkout is on the ignore list', () => {
 				const inline = line.match( /^\s*path:\s*(\S+)\s*$/ );
 
 				if ( inline ) {
-					record( inline[ 1 ], where );
+					record( inline[ 1 ], where, 'upload' );
 				}
 
 				for ( const m of line.matchAll( WRITES ) ) {
 					// A redirect target is a file, so it has an extension. The
 					// guard is what separates `> live.json` from `-> staging`.
 					if ( /\.[A-Za-z0-9]+$/.test( m[ 1 ] ) ) {
-						record( m[ 1 ], where );
+						record( m[ 1 ], where, 'redirect' );
 					}
 				}
 
 				for ( const m of line.matchAll( FLAGS ) ) {
-					record( m[ 1 ], where );
+					record( m[ 1 ], where, 'flag' );
 				}
 			} );
 	}
+
+	// EACH OF THE THREE SEPARATELY, because a total hides the loss of any one of
+	// them. The upload arm contributes six paths no shell line names, and the
+	// flag arm contributes exactly one — so a dead redirect regex would still
+	// leave a total that clears any floor worth setting, and this would go green
+	// over thirteen unchecked paths.
+	const dead = Object.entries( arms ).filter( ( [ , n ] ) => n === 0 );
+
+	assert.deepStrictEqual(
+		dead.map( ( [ name ] ) => name ),
+		[],
+		`the extraction has lost an arm — ${ JSON.stringify( arms ) }. Either a workflow ` +
+			'stopped using that form, or the regex above it stopped matching'
+	);
 
 	assert.ok(
 		produced.size > 10,

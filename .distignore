@@ -4,6 +4,7 @@
 .git
 .github
 .gitignore
+.sswi-release-notes.md
 .gitattributes
 .editorconfig
 .distignore
@@ -12,6 +13,59 @@
 .ship
 .idea
 .DS_Store
+
+# LOCAL ARTEFACTS — EVERYTHING .gitignore KEEPS OUT OF THE INDEX.
+#
+# build-dist.sh rsyncs the WORKING TREE, not the index, so .gitignore buys
+# nothing here: a file git is told to ignore is still sitting on disk and still
+# gets copied. The sibling of this list in tests/js/contract.test.js asserts the
+# two files agree, because every one of these was found the same way — by a
+# local build failing on something a normal day's work had left behind.
+#
+# The phpunit caches and the zips are matched by SHAPE rather than by name, for
+# the same reason the playwright configs further down are: there are two cache
+# files today, and naming them is how the third one ships.
+#
+# Those shapes are deliberately not quoted here. bin/mutation-check.js finds the
+# line it edits by first occurrence, so a comment repeating a pattern verbatim
+# mutates the comment and leaves the pattern armed — which is precisely how this
+# block, on its first draft, silently disarmed the playwright mutation.
+.env
+dist
+*.zip
+.phpunit*.result.cache
+mutation-junit.xml
+mutation-check*.txt
+# bin/set-version.sh's atomic-rewrite scratch files. Its EXIT trap does not run
+# on SIGKILL or a cancelled runner, and one surviving a killed release would go
+# to a customer.
+*.set-version.tmp
+
+# The reports and scratch files the workflows leave in the checkout root. Named
+# rather than shaped, and kept honest the same way their .gitignore twins are:
+# tests/js/contract.test.js derives the set from .github/workflows/ and fails
+# until each one is on both lists. A shape would be wrong here anyway: these sit
+# at the repo root beside tracked files and one that ships, sharing their
+# extensions, so any glob wide enough to cover them would take those too.
+#
+# None of these names is repeated in a comment, for the first-occurrence
+# reason already given above.
+phpcs.txt
+phpcs-checkstyle.xml
+phpstan.txt
+junit-unit.xml
+junit-integration.xml
+jsdom.txt
+dry-run.log
+payload.json
+live.json
+expected.json
+actual.json
+drift.diff
+playwright-report
+test-results
+real-backend-report
+real-backend-evidence
 
 tests
 bin

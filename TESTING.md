@@ -19,13 +19,13 @@ it must not acquire a browser or a Docker dependency.
 |---|---|---|
 | PHPCS (WPCS + PHPCompatibilityWP) | whole tree | clean |
 | PHPStan level 6 | plugin + templates + uninstall | clean |
-| PHPUnit unit | 38 tests × PHP 8.1 / 8.2 / 8.3 | pass |
-| PHPUnit integration | 47 methods × PHP {8.1,8.2,8.3} × WP {6.4,latest} | pass |
-| jsdom (`npm run test:js`) | 36 tests | pass, every guard mutation-checked |
-| Playwright + axe | desktop + narrow projects, incl. the block editor | pass |
+| PHPUnit unit | 59 tests × PHP 8.1 / 8.2 / 8.3 | pass, Elementor registration mutation-checked |
+| PHPUnit integration | 63 methods × PHP {8.1,8.2,8.3} × WP {6.4,6.8,latest} | pass |
+| jsdom (`npm run test:js`) | 79 tests | pass, every guard mutation-checked |
+| Playwright + axe | desktop + narrow projects, incl. the block and Elementor editors | pass |
 | Plugin Check (WP.org scanner) | built plugin | pass |
 | Translation catalogue freshness | regenerate + diff | pass |
-| Version header vs constant | `bin/assert-version.sh` | pass |
+| Shipped versions agree | `bin/assert-version.sh` | pass |
 
 axe runs with **no rules disabled**, on both products, including with the
 listbox open, at 320px and at 200% zoom.
@@ -496,6 +496,23 @@ its own, which is how all three drifted.
 The same reasoning covers the release artifact: `.distignore` is a blocklist and
 fails open, so `bin/build-dist.sh` checks the built zip against an allow-list of
 what may appear and fails the release on anything else.
+
+That allow-list is reached by a chain of three, because the first two links were
+once checked only against each other:
+
+| Link | Enforced by |
+|---|---|
+| a path CI writes → `.gitignore` | *every path CI writes into the checkout is on the ignore list* |
+| `.gitignore` → `.distignore` or `ALLOWED` | *no IGNORED local artefact reaches the customer zip either* |
+| tracked tree → `.distignore` or `ALLOWED` | *no tracked file reaches the customer zip without a decision* |
+
+Only the middle one existed at first, and it compares **a list with a list**:
+both files carried a mutation-report glob requiring an infix hyphen that one of
+the three reports is written without, so the test agreed with itself over two
+copies of one mistake. The first link closes that by **deriving** the names —
+it reads `.github/workflows/` for what each step redirects and what each
+`upload-artifact` declares, so a third hand-maintained list cannot drift the
+same way. Sixteen artefacts were unaccounted for when it was first run.
 
 ## Fixtures must be derived, never written
 

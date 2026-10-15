@@ -72,6 +72,67 @@ final class RenderInstancesTest extends WP_UnitTestCase {
 		);
 	}
 
+	/**
+	 * THE NAMESPACE MUST NOT BE DERIVED FROM RENDER ORDER.
+	 *
+	 * The sibling tests above prove two forms in ONE process differ, and a
+	 * counter satisfies that perfectly — which is why it survived here for so
+	 * long. The shape it does not survive is Elementor's editor, which renders
+	 * each widget in its own `render_widget` AJAX request: a per-request static
+	 * restarts at zero every time, so every widget came out as `sswi-1` and two
+	 * on a page collided on every id.
+	 *
+	 * ASSERT THE DERIVATION, NOT THE ABSENCE OF DIGITS. The first version of this
+	 * test asserted that no id matched `sswi-\d+-`, on the reasoning that nothing
+	 * this renderer could legitimately produce looks like a counter. That was
+	 * wrong, and CI found it: the prefix is the first eight hex characters of the
+	 * form uuid, and roughly one render in forty-three draws eight characters that
+	 * are all digits. It failed on two of the nine integration jobs and passed on
+	 * the other seven — a test that is red 2% of the time, which is worse than no
+	 * test at all because it teaches whoever sees it to re-run the job.
+	 *
+	 * Comparing the prefix to the uuid the SAME render emitted is deterministic
+	 * and strictly stronger: a counter cannot satisfy it for any value, and
+	 * neither can a prefix derived from anything else.
+	 */
+	public function test_the_id_namespace_is_not_derived_from_render_order(): void {
+		$renders  = array( Spotship_WI_Renderer::render( 'hull' ), Spotship_WI_Renderer::render( 'hull' ) );
+		$prefixes = array();
+
+		foreach ( $renders as $index => $html ) {
+			$this->assertSame(
+				1,
+				preg_match( '/name="_sswi_form_id" value="([0-9a-f-]{36})"/', $html, $form ),
+				sprintf( 'render %d must carry the form uuid its ids are derived from', $index + 1 )
+			);
+
+			$this->assertSame(
+				1,
+				preg_match( '/id="(sswi-[^"-]+)-/', $html, $id ),
+				sprintf( 'render %d must namespace its ids', $index + 1 )
+			);
+
+			$this->assertSame(
+				'sswi-' . substr( str_replace( '-', '', $form[1] ), 0, 8 ),
+				$id[1],
+				sprintf(
+					'render %d namespaced its ids with something other than its own form uuid; a ' .
+						'counter restarts at zero in every process and collides across Elementor\'s ' .
+						'per-widget AJAX renders',
+					$index + 1
+				)
+			);
+
+			$prefixes[] = $id[1];
+		}
+
+		$this->assertNotSame(
+			$prefixes[0],
+			$prefixes[1],
+			'two renders in one process must not share an id namespace'
+		);
+	}
+
 	public function test_the_same_form_twice_shares_no_ids(): void {
 		$page = Spotship_WI_Renderer::render( 'hull' ) . Spotship_WI_Renderer::render( 'hull' );
 

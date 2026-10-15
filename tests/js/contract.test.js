@@ -673,12 +673,28 @@ test( 'every partial derives its element ids from the instance prefix', () => {
 	} );
 } );
 
-test( 'the renderer namespaces ids per instance', () => {
-	// The counter is the mechanism the templates depend on. If it goes away,
-	// every id above silently becomes constant again.
-	assert.match( RENDERER, /private static int \$instances = 0;/, 'the per-instance counter must exist' );
-	assert.match( RENDERER, /\+\+self::\$instances;/, 'and be advanced on every render' );
-	assert.match( RENDERER, /'uid'\s*=>\s*'sswi-' \. self::\$instances,/, 'and be published to the templates' );
+test( 'the renderer namespaces ids per render, from the form uuid', () => {
+	/*
+	 * The namespace is the mechanism every template id depends on. If it goes
+	 * away, every id silently becomes constant again.
+	 *
+	 * IT ALSO MUST NOT COME FROM A COUNTER. A per-request static restarts at
+	 * zero in every PHP process, and Elementor's editor renders each widget in
+	 * its own AJAX request — so a counter handed every form `sswi-1` and two
+	 * widgets on a page collided on every id. The form uuid is minted per
+	 * render, so it cannot depend on how often this process has been called.
+	 */
+	assert.match(
+		RENDERER,
+		/\$uid\s*=\s*'sswi-' \. substr\( str_replace\( '-', '', \$form_id \), 0, 8 \);/,
+		'the id namespace must be derived from the per-render form uuid'
+	);
+	assert.match( RENDERER, /'uid'\s*=>\s*\$uid,/, 'and be published to the templates' );
+	assert.ok(
+		! /static int \$instances/.test( RENDERER ),
+		'the id namespace must not return to a per-request counter: it restarts at zero ' +
+			'in every process, and Elementor renders each widget in a process of its own'
+	);
 } );
 
 test( 'assets are registered no earlier than init', () => {
@@ -705,6 +721,91 @@ test( 'assets are registered no earlier than init', () => {
 		! /add_action\(\s*'plugins_loaded'/.test( plugin ),
 		'nothing here may hook plugins_loaded: it is before init, and registering ' +
 			'a script there prints a notice that breaks cookie-setting site-wide'
+	);
+} );
+
+test( 'the Elementor widgets depend on a script handle that is actually registered', () => {
+	/*
+	 * A HANDLE THAT IS NOT REGISTERED IS ENQUEUED AS NOTHING, SILENTLY.
+	 *
+	 * get_script_depends() returns handles; WordPress drops any it does not
+	 * know, with no notice and no error. The symptom would be a form that works
+	 * on a published page and is inert the moment Elementor injects one — which
+	 * is the exact defect this script was added to fix, restored by a typo.
+	 *
+	 * Nothing else would catch it. PHPStan sees two strings; PHPCS sees two
+	 * strings; the front-end e2e never injects anything.
+	 */
+	const widget = read( 'includes/class-elementor-widget.php' );
+	const elementor = read( 'includes/class-elementor.php' );
+	const plugin = read( 'spotship-war-insurance.php' );
+
+	const depends = /get_script_depends\(\): array \{\s*return array\( ([^)]+) \);/.exec( widget );
+
+	assert.ok( depends, 'the widget base must declare get_script_depends()' );
+	assert.equal(
+		depends[ 1 ].trim(),
+		'Spotship_WI_Elementor::HANDLER_SCRIPT',
+		'the handle must come from the constant, not a repeated literal'
+	);
+
+	const handle = /HANDLER_SCRIPT = '([^']+)';/.exec( elementor );
+
+	assert.ok( handle, 'Spotship_WI_Elementor must define HANDLER_SCRIPT' );
+	assert.match(
+		plugin,
+		new RegExp( 'wp_register_script\\(\\s*Spotship_WI_Elementor::HANDLER_SCRIPT' ),
+		`${ handle[ 1 ] } is depended on but never registered`
+	);
+
+	// And the file it points at has to exist, for the same reason.
+	const src = /HANDLER_SCRIPT,\s*SPOTSHIP_WI_URL \. '([^']+)'/.exec( plugin );
+
+	assert.ok( src, 'the registration must name a file' );
+	assert.ok(
+		fs.existsSync( path.join( ROOT, src[ 1 ] ) ),
+		`${ src[ 1 ] } is registered but not in the tree`
+	);
+} );
+
+test( 'the Elementor widgets depend on a style handle that is actually registered', () => {
+	/*
+	 * THE STYLESHEET NEEDS DECLARING FOR THE SAME REASON THE SCRIPT DOES, AND
+	 * IT WAS THE HALF THAT GOT MISSED.
+	 *
+	 * Spotship_WI_Renderer::render() enqueues the stylesheet, which carries a
+	 * published page — WordPress prints a late enqueue through
+	 * print_late_styles(). In the editor that render happens inside Elementor's
+	 * `render_widget` AJAX request, which returns markup and nothing else, so
+	 * the enqueue is thrown away. Only a declared handle reaches the preview,
+	 * through Preview::enqueue_styles -> Widgets_Manager::enqueue_widgets_styles.
+	 *
+	 * The symptom is not a dead form, which is why no existing guard saw it: the
+	 * form came up live and UNSTYLED, and war-insurance.css is the only thing
+	 * visually hiding `.sswi-sr` and `.sswi-hp` — so the screen-reader hints
+	 * rendered as body copy and the anti-bot honeypot rendered as a visible
+	 * input. The editor e2e cannot catch it either: it seeds a page that already
+	 * carries a widget, whose server-side render has already put the stylesheet
+	 * in the preview before the injected one arrives.
+	 */
+	const widget = read( 'includes/class-elementor-widget.php' );
+	const plugin = read( 'spotship-war-insurance.php' );
+
+	const depends = /get_style_depends\(\): array \{\s*return array\( '([^']+)' \);/.exec( widget );
+
+	assert.ok( depends, 'the widget base must declare get_style_depends()' );
+
+	// The literal, not a constant, because that is how every other call site
+	// spells this handle — class-renderer.php enqueues it the same way.
+	const handle = depends[ 1 ];
+	const registered = new RegExp(
+		`wp_register_style\\(\\s*'${ handle }',\\s*SPOTSHIP_WI_URL \\. '([^']+)'`
+	).exec( plugin );
+
+	assert.ok( registered, `${ handle } is depended on but never registered` );
+	assert.ok(
+		fs.existsSync( path.join( ROOT, registered[ 1 ] ) ),
+		`${ registered[ 1 ] } is registered but not in the tree`
 	);
 } );
 
@@ -804,4 +905,466 @@ test( 'no tracked file reaches the customer zip without a decision', () => {
 		'each of these would be unpacked onto a customer\'s public web server. ' +
 			'Add it to .distignore, or to ALLOWED in bin/build-dist.sh if it genuinely ships'
 	);
+} );
+
+test( 'no IGNORED local artefact reaches the customer zip either', () => {
+	/*
+	 * The sibling above reads `git ls-tree`, so it sees only TRACKED files —
+	 * and is therefore blind to the half of the problem that actually bites.
+	 *
+	 * bin/build-dist.sh rsyncs the WORKING TREE, not the index. A file git is
+	 * told to ignore is still sitting on disk and still gets copied, so
+	 * .gitignore buys nothing at all here. Run the unit suite and build:
+	 * `.phpunit.result.cache` fails the ship-list check. The allow-list means
+	 * it fails CLOSED, which is why this is an annoyance rather than a leak —
+	 * but the annoyance is a release-time one, and `.env` is on the same list.
+	 *
+	 * So every .gitignore pattern must also be a .distignore pattern, or be
+	 * something that genuinely ships. Those are the only two answers, and this
+	 * is where the next entry added to one list is forced into the other.
+	 */
+	const lines = ( file ) =>
+		read( file )
+			.split( '\n' )
+			.map( ( line ) => line.trim() )
+			.filter( ( line ) => line && ! line.startsWith( '#' ) );
+
+	// `vendor/` and `vendor` are the same instruction to both tools.
+	const bare = ( pattern ) => pattern.replace( /\/$/, '' );
+
+	const blocked = lines( '.distignore' ).map( bare );
+	const declared = ( read( 'bin/build-dist.sh' ).match( /^ALLOWED="([^"]*)"/m ) || [] )[ 1 ];
+	const ships = new Set( declared.split( /\s+/ ).filter( Boolean ) );
+
+	const covered = ( name ) =>
+		blocked.some( ( pattern ) =>
+			new RegExp(
+				`^${ pattern.replace( /[.+^${}()|[\]\\]/g, '\\$&' ).replace( /\*/g, '[^/]*' ) }$`
+			).test( name )
+		);
+
+	const undecided = lines( '.gitignore' )
+		.map( bare )
+		.filter( ( name ) => ! covered( name ) && ! ships.has( name ) );
+
+	assert.deepStrictEqual(
+		undecided,
+		[],
+		'git ignores these, so they sit untracked in the working tree that ' +
+			'bin/build-dist.sh copies. Add each to .distignore, or to ALLOWED ' +
+			'in bin/build-dist.sh if it genuinely ships'
+	);
+} );
+
+test( 'every path CI writes into the checkout is on the ignore list', () => {
+	/*
+	 * THE TWO TESTS ABOVE COMPARE A LIST WITH A LIST. Neither compares either
+	 * list with the filenames CI actually produces, so a pattern can be wrong
+	 * in both files at once and both tests still agree with each other.
+	 *
+	 * That is not hypothetical. Both files carried a mutation-report glob that
+	 * required an infix hyphen, and one of the three reports is written without
+	 * one. The pair above passed over it — satisfied by two copies of a single
+	 * mistake — and the artefact that escaped would abort the next release
+	 * build, because bin/build-dist.sh rsyncs the WORKING TREE and checks what
+	 * comes out against an allow-list.
+	 *
+	 * So this reads the workflows. A third hand-maintained list would have
+	 * exactly the failure mode of the first two; these names are DERIVED, from
+	 * the two places a workflow commits to a filename:
+	 *
+	 *   - what a step writes — `| tee x`, `> x`, `--report-…=x`
+	 *   - what upload-artifact declares the job produced
+	 *
+	 * The second is not redundant with the first. A reporter can take its output
+	 * directory from a config file rather than a command, and three do:
+	 * playwright-report/, real-backend-report/ and test-results/ are named on no
+	 * shell line in any workflow, and the upload blocks are the only place CI
+	 * admits they exist. Reading only the shell lines reaches 16 of the 19.
+	 *
+	 * This asserts only that git ignores each one. The sibling above carries it
+	 * from there to .distignore and ALLOWED, so the chain is workflow →
+	 * .gitignore → .distignore, with a test on each link and no link held by
+	 * memory.
+	 */
+	const WORKFLOWS = path.join( ROOT, '.github', 'workflows' );
+
+	/*
+	 * Deliberately narrow. It takes a name only if the name could be a path in
+	 * this repo, which drops `2>&1`, `/dev/null`, YAML's own `>-` folded-scalar
+	 * marker, the `->` in prose, and the `>` inside a sed expression. The cost
+	 * is that a redirect through a variable — `> "$OUT"` — is invisible here.
+	 * Nothing in the workflows does that today; if something starts to, this
+	 * reads as a test that passes rather than one that failed to look, which is
+	 * the honest limit of deriving names from text.
+	 */
+	const PATHISH = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+	// `tee` takes a LIST of files. Capturing one target read `tee a.txt b.txt`
+	// as a.txt alone, so the tail is captured whole and split below.
+	const TEE = /\btee\b((?:\s+(?:-{1,2}[A-Za-z][A-Za-z0-9-]*|["']?[A-Za-z0-9][A-Za-z0-9._/-]*["']?))+)/g;
+	const REDIRECT = /(?<!-)>>?\s*["']?([A-Za-z0-9][A-Za-z0-9._/-]*)/g;
+
+	// `=` OR A SPACE. ci.yaml:67 writes `--log-junit junit-unit.xml` space-
+	// separated, and with `=` alone that report was reachable only because it
+	// also happens to be uploaded. The stems cover the report flags a PHP/JS
+	// toolchain emits, not just the two this repo uses today.
+	const FLAGS =
+		/--[a-z-]*(?:report|output|out|log|coverage|junit|testdox)[a-z-]*[= ]["']?([A-Za-z0-9][A-Za-z0-9._/-]*)/g;
+
+	// A `path:` value this cannot reduce to a repo path, which is NOT the same
+	// as one it did not look at. See the assertion on `unreducible` below.
+	const OUTSIDE_THE_CHECKOUT = /^[!/~]/;
+
+	// What build-dist.sh's allow-list sees is the top-level entry, so that is
+	// the unit here too. A path with anything after that entry names a
+	// DIRECTORY, and a .gitignore rule may legitimately say so with a trailing
+	// slash — `git check-ignore` will not match such a rule unless it is asked
+	// about a directory, so the distinction has to survive to the probe.
+	const produced = new Map();
+
+	const arms = { tee: 0, redirect: 0, flag: 0, upload: 0 };
+	const unreducible = [];
+
+	const record = ( raw, where, via ) => {
+		// Quotes are shell and YAML syntax, not part of the name. `tee "x.txt"`
+		// and `path: "x/"` are ordinary spellings, and without this they read as
+		// nothing at all rather than as something unignored.
+		const clean = raw
+			.replace( /^["']|["']$/g, '' )
+			.replace( /^\.\//, '' )
+			.replace( /\/+$/, '/' );
+
+		const [ entry ] = clean.split( '/' );
+
+		// THE FIRST SEGMENT, not the whole value. Testing the whole string threw
+		// away `reports/*.xml` entirely — glob and directory together — when the
+		// directory is exactly what build-dist.sh would have refused.
+		if ( ! PATHISH.test( entry ) ) {
+			if ( via === 'upload' && ! OUTSIDE_THE_CHECKOUT.test( clean ) ) {
+				unreducible.push( `${ raw.trim() } (${ where })` );
+			}
+
+			return;
+		}
+
+		const isDir = clean.length > entry.length;
+		const seen = produced.get( entry );
+
+		arms[ via ] += 1;
+
+		produced.set( entry, {
+			isDir: isDir || ( seen ? seen.isDir : false ),
+			where: seen ? seen.where : where,
+		} );
+	};
+
+	for ( const file of fs.readdirSync( WORKFLOWS ).filter( ( n ) => /\.ya?ml$/.test( n ) ) ) {
+		// Indent of the `path:` key, while its block scalar is open. `|` alone
+		// missed `|-`, `|+` and the folded forms — and a header this did not
+		// recognise took the WHOLE block with it, silently.
+		let block = null;
+
+		read( '.github', 'workflows', file )
+			.split( '\n' )
+			.forEach( ( line, i ) => {
+				const where = `${ file }:${ i + 1 }`;
+				const opens = line.match( /^(\s*)path:\s*[|>][-+]?[0-9]*\s*$/ );
+
+				if ( opens ) {
+					block = opens[ 1 ].length;
+					return;
+				}
+
+				if ( block !== null && line.trim() !== '' ) {
+					if ( line.match( /^\s*/ )[ 0 ].length > block ) {
+						record( line.trim(), where, 'upload' );
+						return;
+					}
+
+					block = null;
+				}
+
+				// `(\S+)\s*$` refused any line with a trailing comment on it.
+				// The negative class keeps a block-scalar header out: `path: |` is
+				// a header the branch above owns, not a one-line value, and without
+				// this the two forms prop each other up when either one breaks.
+				const inline = line.match( /^\s*path:\s*([^|>#\s]\S*)\s*(?:#.*)?$/ );
+
+				if ( inline ) {
+					record( inline[ 1 ], where, 'upload' );
+				}
+
+				// A written target is a file, so it has an extension. That guard
+				// is what separates `> live.json` from `-> staging` and `tee from`.
+				const looksWritten = ( t ) => /\.[A-Za-z0-9]+$/.test( t );
+
+				for ( const m of line.matchAll( TEE ) ) {
+					for ( const target of m[ 1 ].trim().split( /\s+/ ) ) {
+						if ( ! target.startsWith( '-' ) && looksWritten( target ) ) {
+							record( target, where, 'tee' );
+						}
+					}
+				}
+
+				for ( const m of line.matchAll( REDIRECT ) ) {
+					if ( looksWritten( m[ 1 ] ) ) {
+						record( m[ 1 ], where, 'redirect' );
+					}
+				}
+
+				for ( const m of line.matchAll( FLAGS ) ) {
+					record( m[ 1 ], where, 'flag' );
+				}
+			} );
+	}
+
+	/*
+	 * A `path:` VALUE THAT COULD NOT BE REDUCED IS A FAILURE, NOT AN ABSENCE.
+	 *
+	 * Everything above is a regex over text, and the lesson from the other
+	 * static-analysis tests in this org is that an escape route you cannot
+	 * analyse needs a RULE, not a cleverer regex. Each of these dropped a real
+	 * path silently, and the arm counters stayed satisfied by other workflows:
+	 *
+	 *   path: |-            a chomping indicator — took the whole block with it
+	 *   path: reports/*.xml a glob — and `reports/` went with it
+	 *   path: out-${{ … }}  an interpolated name, which is in use in mavis today
+	 *   path: x  # comment  a trailing comment
+	 *
+	 * The first three are fixed above. This is what catches the fourth spelling,
+	 * whatever it turns out to be: an upload block names paths the job PRODUCED,
+	 * so a value here that is not a repo path is something this cannot reason
+	 * about, and it has to say so rather than skip it. `!`-exclusions and
+	 * absolute paths are the one exemption, by rule rather than by name — they
+	 * are categorically not artefacts in the checkout root.
+	 */
+	assert.deepStrictEqual(
+		unreducible,
+		[],
+		'an upload-artifact path: could not be reduced to a path in this checkout, ' +
+			'so nothing here checked it. Spell it as a literal path, or — if it is ' +
+			'genuinely variable — ignore a pattern that covers every name it can take'
+	);
+
+	// EACH ARM SEPARATELY, because a total hides the loss of any one of them.
+	// These are MATCH counts, not distinct paths, and they are lopsided — three
+	// for the flag arm against seventeen for the upload arm — so a dead arm
+	// still leaves a total that clears any floor worth setting.
+	//
+	// A dead arm is not always a missing path today: every path the flag arm
+	// finds is also uploaded, so killing it loses nothing right now. It is
+	// asserted anyway, because that was true of the junit reports until the
+	// flag regex learned the space-separated form, and the next report written
+	// by a flag and NOT uploaded is invisible the moment this stops matching.
+	const dead = Object.entries( arms ).filter( ( [ , n ] ) => n === 0 );
+
+	assert.deepStrictEqual(
+		dead.map( ( [ name ] ) => name ),
+		[],
+		`the extraction has lost an arm — ${ JSON.stringify( arms ) }. Either a workflow ` +
+			'stopped using that form, or the regex above it stopped matching'
+	);
+
+	assert.ok(
+		produced.size > 10,
+		`only ${ produced.size } CI artefacts were found, so the extraction above has stopped working`
+	);
+
+	const tracked = new Set(
+		execFileSync( 'git', [ 'ls-tree', '--name-only', 'HEAD' ], { cwd: ROOT, encoding: 'utf8' } )
+			.split( '\n' )
+			.map( ( line ) => line.trim() )
+			.filter( Boolean )
+	);
+
+	// A workflow that writes to a TRACKED path is not leaving debris — it is
+	// regenerating something the repo owns, and the first test above already
+	// decides whether that ships. Ignoring it would be actively wrong.
+	const debris = [ ...produced ].filter( ( [ entry ] ) => ! tracked.has( entry ) );
+
+	const probes = debris.map( ( [ entry, { isDir } ] ) => entry + ( isDir ? '/' : '' ) );
+
+	// git's own matcher, rather than a reimplementation of its glob rules —
+	// this test exists because a hand-written pattern was wrong twice.
+	// `--no-index` keeps the answer a property of the ignore files alone, and
+	// git exits 1 when nothing on stdin matched, which is an answer, not a
+	// failure.
+	let matched;
+
+	try {
+		matched = execFileSync( 'git', [ 'check-ignore', '--no-index', '--stdin' ], {
+			cwd: ROOT,
+			input: probes.join( '\n' ),
+			encoding: 'utf8',
+		} );
+	} catch ( err ) {
+		if ( err.status !== 1 ) {
+			throw err;
+		}
+
+		matched = err.stdout || '';
+	}
+
+	const ignored = new Set(
+		matched.split( '\n' ).map( ( line ) => line.trim() ).filter( Boolean )
+	);
+
+	const undecided = debris
+		.filter( ( [ entry, { isDir } ] ) => ! ignored.has( entry + ( isDir ? '/' : '' ) ) )
+		.map( ( [ entry, { where } ] ) => `${ entry } (${ where })` );
+
+	assert.deepStrictEqual(
+		undecided,
+		[],
+		'CI writes each of these into the checkout root, and git does not ignore ' +
+			'them — so they show up as untracked noise locally, can be committed ' +
+			'by accident, and are copied into the zip by bin/build-dist.sh. Add ' +
+			'each to .gitignore (the test above will then require .distignore too)'
+	);
+} );
+
+test( 'the minimum-characters sentence is published with its %d intact', () => {
+	/*
+	 * It was published pre-substituted — `sprintf( __( … ), MIN_QUERY_LENGTH )`
+	 * — so the browser got a finished sentence and minCharsMessage()'s
+	 * `.replace( '%d', … )` was dead code. The two behaviour tests covering it
+	 * passed only because tests/js/harness.js supplies a template with a `%d`
+	 * in it, which is a shape the server never actually sent: the path that
+	 * ran in production had no test, and the path under test never ran.
+	 *
+	 * It also made the number a render-time constant while the script reads
+	 * `minQueryLength` from the config, so a cached page could announce one
+	 * number and enforce another.
+	 *
+	 * A source assertion because no runtime test can see it: both values render
+	 * the same string today, and they diverge only once something changes.
+	 */
+	const entry = RENDERER.match( /'minChars'\s*=>\s*([^\n]*)/ );
+
+	assert.ok( entry, "config() publishes no 'minChars' entry" );
+	assert.ok(
+		! /sprintf/.test( entry[ 1 ] ),
+		`'minChars' is substituted before it is published, so the script cannot substitute it: ${ entry[ 1 ].trim() }`
+	);
+	const template = RENDERER.match(
+		/function min_chars_template\(\)[^{]*\{\s*(?:\/\*[^*]*\*\/\s*)?return __\( '([^']*)'/
+	);
+
+	assert.ok( template, 'min_chars_template() does not return a single gettext string' );
+	assert.match(
+		template[ 1 ],
+		/%d/,
+		'the published sentence has no %d for the script to replace'
+	);
+} );
+
+test( 'no partial writes a variable another partial takes as an input', () => {
+	/*
+	 * THE PARTIALS SHARE ONE VARIABLE SCOPE, AND NOTHING ENFORCED THAT.
+	 *
+	 * hull.php and cargo.php `require` these files in sequence, into the scope
+	 * they are themselves included in. So a name one partial ASSIGNS is still
+	 * set when the next one READS it — and a partial that reads a name without
+	 * assigning it is declaring that name an input, which the caller is
+	 * supposed to supply.
+	 *
+	 * combobox.php assigned `$sswi_hint` — the id of its hint element — while
+	 * text-field.php reads `$sswi_hint` as the visible hint TEXT. Every
+	 * text-field.php call site happens to assign it first, so nothing broke;
+	 * had one not, a DOM id would have been rendered to the visitor as a
+	 * sentence, silently, where an unset input raises a notice. A comment
+	 * cannot hold two templates apart across a rename. This can.
+	 */
+	const PARTIALS = [
+		'templates/partials/combobox.php',
+		'templates/partials/text-field.php',
+		'templates/partials/consent.php',
+		'templates/partials/rates-table.php',
+	];
+
+	// `$x = …` at the start of a line, which is where these templates set up.
+	const assigns = ( src ) =>
+		new Set( [ ...src.matchAll( /^(\$sswi_\w+)\s*=[^=]/gm ) ].map( ( m ) => m[ 1 ] ) );
+
+	// Read but never assigned: what the docblock calls "Expects".
+	const inputs = ( src ) => {
+		const written = assigns( src );
+		const seen = new Set( [ ...src.matchAll( /\$sswi_\w+/g ) ].map( ( m ) => m[ 0 ] ) );
+
+		return [ ...seen ].filter( ( name ) => ! written.has( name ) );
+	};
+
+	const read_ = PARTIALS.map( ( file ) => [ file, read( file ) ] );
+
+	// Non-vacuity: the extraction must find something in both directions, or
+	// every assertion below passes over an empty set.
+	assert.ok(
+		read_.every( ( [ , src ] ) => assigns( src ).size > 0 ),
+		'the assignment pattern matched nothing, so this test proves nothing'
+	);
+	assert.ok(
+		read_.some( ( [ , src ] ) => inputs( src ).length > 0 ),
+		'the input pattern matched nothing, so this test proves nothing'
+	);
+
+	const clashes = [];
+
+	for ( const [ file, src ] of read_ ) {
+		const written = assigns( src );
+
+		for ( const [ other, otherSrc ] of read_ ) {
+			if ( other === file ) {
+				continue;
+			}
+
+			for ( const name of inputs( otherSrc ) ) {
+				if ( written.has( name ) ) {
+					clashes.push(
+						`${ file } assigns ${ name }, which ${ other } reads as an input it ` +
+							'is handed — a stale value from one survives into the other'
+					);
+				}
+			}
+		}
+	}
+
+	assert.deepStrictEqual( clashes, [] );
+} );
+
+test( 'every combobox states the minimum through aria-describedby', () => {
+	/*
+	 * THE LIVE REGION IS NOT A SUBSTITUTE FOR A DESCRIPTION.
+	 *
+	 * The static hint was dropped from `aria-describedby` on the reasoning that
+	 * the threshold is announced through `role="status"` instead. That region
+	 * is written from the `input` handler, so it says nothing to someone who
+	 * focuses the control and waits, and nothing on a re-read through a virtual
+	 * buffer or braille display — the same silence the change set out to fix,
+	 * one keystroke earlier.
+	 *
+	 * Both comboboxes are checked: templates/cargo.php writes the destinations
+	 * one inline rather than through the partial, which is how it came to be
+	 * the only one missing the live-region announcement in the first place.
+	 */
+	[
+		[ 'templates/partials/combobox.php', '$sswi_hint_id' ],
+		[ 'templates/cargo.php', '$sswi_dest_hint' ],
+	].forEach( ( [ file, variable ] ) => {
+		const src = read( file );
+		const described = [ ...src.matchAll( /aria-describedby="([^"]*)"/g ) ];
+
+		assert.ok(
+			src.includes( `id="<?php echo esc_attr( ${ variable } ); ?>"` ),
+			`${ file } renders no element with the ${ variable } id to describe the combobox`
+		);
+		assert.ok(
+			described.some( ( m ) => m[ 1 ].includes( variable ) ),
+			`${ file }: the combobox aria-describedby omits ${ variable }, so the threshold is never read on focus`
+		);
+		assert.ok(
+			src.includes( 'Spotship_WI_Renderer::min_chars_hint()' ),
+			`${ file }: the hint text is not the shared one, so it can state a different number`
+		);
+	} );
 } );

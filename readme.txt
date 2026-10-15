@@ -2,9 +2,9 @@
 Contributors: spotship
 Tags: insurance, shipping, maritime, quotes
 Requires at least: 6.4
-Tested up to: 6.7
+Tested up to: 6.8
 Requires PHP: 8.1
-Stable tag: 0.1.0
+Stable tag: 1.1.0-dev.1
 License: Proprietary
 
 War hull and war cargo insurance quote capture for Spot Ship customers. The API
@@ -16,10 +16,18 @@ Adds two forms to your site — war hull and war cargo — that capture insuranc
 quote requests and send them to Spot Ship's insurance desk. Visitors do not need
 an account.
 
-Both forms are available as shortcodes and as blocks:
+Both forms are available three ways — as shortcodes, as blocks in the WordPress
+editor, and as native Elementor widgets. All three render the same form.
 
 * `[spotship_war_hull]`
 * `[spotship_war_cargo]`
+
+In the WordPress editor, search the inserter for "War Hull Quote" or "War Cargo
+Quote". In Elementor, the same two names appear in the panel under "Spot Ship".
+
+The Elementor widgets need **Elementor 3.5 or later** (December 2021). On an
+older Elementor they will not appear in the panel, with no error shown; the
+shortcodes and the blocks are unaffected and still work.
 
 An indicative rate table is served from Spot Ship and rendered above the form,
 always showing the date the rates were published.
@@ -47,7 +55,9 @@ submission, so configure the privacy notice URL in settings.
 2. Go to Settings -> Spot Ship War Insurance.
 3. Enter the API base URL and your API key, then use "Test connection".
 4. Set your privacy notice URL.
-5. Add `[spotship_war_hull]` or `[spotship_war_cargo]` to a page.
+5. Add a form to a page: insert the "War Hull Quote" or "War Cargo Quote" block,
+   drag the matching widget from Elementor's "Spot Ship" panel category, or put
+   `[spotship_war_hull]` / `[spotship_war_cargo]` anywhere a shortcode runs.
 
 Enabling automatic updates for this plugin is recommended: it runs on your
 server against an API we version, and auto-update is the simplest way to avoid
@@ -94,6 +104,16 @@ submitted enquiry does not use it — those reach the Spot Ship insurance desk
 directly and are answered from there.
 
 == Changelog ==
+
+= 1.0.0 =
+* First production release.
+* War hull and war cargo quote forms, as shortcodes and as blocks.
+* Indicative rate table served from Spot Ship, with a bundled fallback used when
+  the endpoint cannot be reached.
+* Submissions proxied server-side; the API credential never reaches the browser.
+* Binds to the site URL it was configured on, so a cloned staging copy cannot
+  submit.
+* Settings screen with a connection test and copyable diagnostics.
 
 = 0.1.0 =
 * Initial release.

@@ -3,7 +3,7 @@
  * Plugin Name:       Spot Ship War Insurance
  * Plugin URI:        https://github.com/spotship/wordpress-insurance
  * Description:       War hull and war cargo insurance quote capture, proxied server-side to Spot Ship. The API credential never reaches the browser.
- * Version:           1.0.0
+ * Version:           1.1.0-dev.1
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            Spot Ship
@@ -21,12 +21,18 @@ defined( 'ABSPATH' ) || exit;
 /**
  * SPOTSHIP_WI_VERSION must match the `Version:` header above.
  *
- * These are the only two places a version number appears, and CI asserts they
- * agree. The update checker reads the header; `X-Plugin-Version` on every
- * outbound request reports the constant. If they drift, the fleet reports one
- * version while updating against another, and stale-version alerting lies.
+ * These two are what the CODE reads: the update checker reads the header;
+ * `X-Plugin-Version` on every outbound request reports the constant. If they
+ * drift, the fleet reports one version while updating against another, and
+ * stale-version alerting lies.
+ *
+ * They are not the only two. readme.txt's `Stable tag` and the catalogue's
+ * `Project-Id-Version` ship in the same zip, and this comment claimed there
+ * were two for as long as both of those sat at 0.1.0 under a 1.0.0 plugin.
+ * bin/set-version.sh writes all four and bin/assert-version.sh asserts them;
+ * edit none of them by hand.
  */
-define( 'SPOTSHIP_WI_VERSION', '1.0.0' );
+define( 'SPOTSHIP_WI_VERSION', '1.1.0-dev.1' );
 define( 'SPOTSHIP_WI_FILE', __FILE__ );
 define( 'SPOTSHIP_WI_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SPOTSHIP_WI_URL', plugin_dir_url( __FILE__ ) );
@@ -109,6 +115,32 @@ function spotship_wi_boot(): void {
 		)
 	);
 
+	/*
+	 * The page-builder handler, registered here and enqueued only by the
+	 * Elementor widgets through get_script_depends(). Nothing on a site without
+	 * Elementor ever asks for it, so registering it unconditionally costs a row
+	 * in WP_Scripts and nothing else.
+	 *
+	 * THE `spotship-wi` DEPENDENCY IS LOAD-BEARING, NOT TIDINESS. In the editor
+	 * Elementor enqueues every registered widget's script dependencies up front
+	 * (Preview::enqueue_scripts -> Widgets_Manager::enqueue_widgets_scripts),
+	 * before any widget is on the page. On an empty page the renderer has
+	 * therefore never run, so nothing has enqueued `spotship-wi` — and this
+	 * handler would load with no window.spotshipWI to call. Declaring the
+	 * dependency is what drags the real script into the preview, which is why
+	 * the very first widget dropped onto a blank page comes up live.
+	 */
+	wp_register_script(
+		Spotship_WI_Elementor::HANDLER_SCRIPT,
+		SPOTSHIP_WI_URL . 'assets/js/elementor.js',
+		array( 'spotship-wi' ),
+		SPOTSHIP_WI_VERSION,
+		array(
+			'in_footer' => true,
+			'strategy'  => 'defer',
+		)
+	);
+
 	wp_register_style(
 		'spotship-wi',
 		SPOTSHIP_WI_URL . 'assets/css/war-insurance.css',
@@ -164,6 +196,19 @@ add_action(
 );
 
 add_action( 'init', array( 'Spotship_WI_Shortcodes', 'register_blocks' ) );
+
+/*
+ * Elementor's own hooks, added unconditionally. They cost nothing on a site
+ * without Elementor, because nothing fires them there — and crucially this
+ * call loads no Elementor class, so it is safe at file scope. The widget
+ * subclasses, which DO extend an Elementor class, are reached only through the
+ * autoloader from inside the registration callback.
+ *
+ * Not deferred to spotship_wi_boot(): that runs on `init`, Elementor builds
+ * its widget registry during `init` as well, and losing that race would mean
+ * the widgets quietly never appear in the panel.
+ */
+Spotship_WI_Elementor::register();
 
 if ( is_admin() ) {
 	Spotship_WI_Admin::register();

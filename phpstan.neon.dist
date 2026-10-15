@@ -15,6 +15,11 @@ parameters:
   bootstrapFiles:
     - tests/phpstan-bootstrap.php
 
+  # Symbols Elementor supplies at runtime on sites that have it. scanFiles
+  # registers them without analysing the file, which is what a stub wants.
+  scanFiles:
+    - tests/stubs/elementor.php
+
   ignoreErrors:
     # WP_REST_Request::get_json_params() is stubbed as returning `array`, so
     # PHPStan calls the is_array() guard dead. The stub is optimistic — the

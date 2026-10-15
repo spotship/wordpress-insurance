@@ -220,3 +220,34 @@ for ( const product of [ 'hull', 'cargo' ] ) {
 		expect( results.violations ).toEqual( [] );
 	} );
 }
+
+for ( const product of [ 'hull', 'cargo' ] ) {
+	test( `Elementor (${ product }): the native widget renders and axe is clean`, async ( { page } ) => {
+		/*
+		 * The widget is a DIFFERENT PATH from the shortcode page above, and the
+		 * one that regresses silently. Elementor resolves the stored widget type
+		 * through its registry, instantiates the class and calls render(); if
+		 * registration never ran, or the autoloader could not find the class, or
+		 * get_name() stopped matching what is stored, Elementor draws a
+		 * missing-widget placeholder and the page still returns 200. So the
+		 * assertion has to be on the form, never on the response.
+		 */
+		const response = await page.goto( `/insurance-elementor-widget-${ product }/` );
+
+		test.skip(
+			! response || 404 === response.status() || ! page.url().includes( 'insurance-elementor-widget' ),
+			'Elementor page absent; see the warning from seed-e2e.sh'
+		);
+
+		await page.waitForLoadState( 'networkidle' );
+
+		await expect( page.locator( '[data-sswi-root]' ) ).toHaveCount( 1 );
+		await expect( page.locator( `[data-sswi-form="${ product }"]` ) ).toBeVisible();
+		await expect( page.locator( '.sswi-submit' ) ).toBeEnabled();
+
+		const results = await axeOf( page )
+			.analyze();
+
+		expect( results.violations ).toEqual( [] );
+	} );
+}

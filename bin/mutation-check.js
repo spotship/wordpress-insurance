@@ -12,14 +12,20 @@
  * mutation leaves the suite green, the test has stopped earning its place and
  * this exits non-zero.
  *
- * TWO SUITES. `--suite=js` (the default) mutates source the jsdom tests cover
- * and needs nothing but Node. `--suite=php` mutates source the PHPUnit
- * integration tests cover and needs wp-env, so it runs in the integration job
- * instead. Splitting them is not cosmetic: without the php suite the
- * integration tests had no fail-before-fix evidence at all, which is the same
- * unverifiable claim this file exists to replace.
+ * THREE SUITES, SPLIT BY WHAT THEY NEED TO RUN, NOT BY TASTE.
  *
- * Usage: node bin/mutation-check.js [--suite=js|php]
+ *   --suite=js    (the default) mutates source the jsdom tests cover and needs
+ *                 nothing but Node.
+ *   --suite=unit  mutates source the PHPUnit UNIT tests cover and needs only
+ *                 PHP and composer, so it rides along in the unit job.
+ *   --suite=php   mutates source the PHPUnit INTEGRATION tests cover and needs
+ *                 wp-env, so it runs in the integration job instead.
+ *
+ * Splitting them is not cosmetic: without the php suite the integration tests
+ * had no fail-before-fix evidence at all, and without the unit suite neither
+ * did the unit tests — the same unverifiable claim this file exists to replace.
+ *
+ * Usage: node bin/mutation-check.js [--suite=js|unit|php]
  */
 'use strict';
 
@@ -63,9 +69,34 @@ const MUTATIONS = [
 		suite: 'js',
 		what: 'the renderer stops namespacing instances',
 		file: 'includes/class-renderer.php',
-		from: "'uid'       => 'sswi-' . self::$instances,",
+		from: "'uid'       => $uid,",
 		to: "'uid'       => 'sswi',",
-		mustFail: [ 'the renderer namespaces ids per instance' ],
+		mustFail: [ 'the renderer namespaces ids per render, from the form uuid' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'mounting the same root twice binds a second set of listeners',
+		file: 'assets/js/war-insurance.js',
+		from: 'if ( ! root || mounted.has( root ) ) {',
+		to: 'if ( ! root ) {',
+		// Elementor re-runs element_ready on every re-render, and its editor
+		// re-renders freely, so a root reaching init() twice is routine rather
+		// than exotic. Two submit handlers on one form is one visitor action and
+		// two quote requests, which the backend cannot tell apart.
+		mustFail: [ 'mounting twice does not bind a second set of listeners' ],
+	},
+	{
+		suite: 'js',
+		what: 'mountAll stops looking inside the scope it is given',
+		file: 'assets/js/war-insurance.js',
+		from: "within.querySelectorAll( '[data-sswi-root]' ).forEach( mount );",
+		to: '',
+		// Elementor passes the widget wrapper, never the root: our markup is a
+		// descendant, inside .elementor-widget-container. Dropping the descendant
+		// sweep leaves every builder-injected form dead, which is the defect this
+		// whole mechanism exists to fix.
+		mustFail: [ 'mountAll reaches a root nested inside the scope Elementor passes' ],
 	},
 
 	{
@@ -83,8 +114,8 @@ const MUTATIONS = [
 		suite: 'js',
 		what: 'the decoy threshold goes back into the page source',
 		file: 'includes/class-renderer.php',
-		from: "'minQueryLength'  => 2,",
-		to: "'minAgeSeconds'   => Spotship_WI_Request_Guard::MIN_AGE,\n\t\t\t'minQueryLength'  => 2,",
+		from: "'minQueryLength'  => self::MIN_QUERY_LENGTH,",
+		to: "'minAgeSeconds'   => Spotship_WI_Request_Guard::MIN_AGE,\n\t\t\t'minQueryLength'  => self::MIN_QUERY_LENGTH,",
 		// The shipped state. It was published for the whole life of the file,
 		// read by no JavaScript, and told a bot author exactly how long to
 		// sleep to walk past the timing trap.
@@ -104,10 +135,72 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: '.distignore names one phpunit cache instead of the shape',
+		file: '.distignore',
+		from: '.phpunit*.result.cache',
+		to: '.phpunit.result.cache',
+		// Same defect as the playwright one above, on the half of the ship list
+		// that covers UNTRACKED files: there are two cache files, and build-dist
+		// copies the working tree, so naming one ships the other.
+		mustFail: [ 'no IGNORED local artefact reaches the customer zip either' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the mutation reports go back to requiring an infix hyphen',
+		file: '.gitignore',
+		from: 'mutation-check*.txt',
+		to: 'mutation-check-*.txt',
+		// THE SHIPPED DEFECT, AND THE REASON THE TEST BELOW EXISTS. Both ignore
+		// files carried this glob; one of the three reports is written without the
+		// hyphen, so it was ignored by neither and would abort the next release
+		// build. Only ONE test names this mutation: with .distignore left alone the
+		// two tests that compare the files to each other still agree, which is
+		// exactly how the gap survived review.
+		mustFail: [ 'every path CI writes into the checkout is on the ignore list' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'a workflow writes a report under a name nothing ignores',
+		file: '.github/workflows/ci.yaml',
+		from: '| tee jsdom.txt',
+		to: '| tee jsdom-report.txt',
+		// Proves the names are READ FROM THE WORKFLOWS and not listed a third time
+		// in the test. Renaming the target here must break the test without any
+		// ignore file being touched; if it does not, the test has a frozen copy of
+		// the list and is the very thing it was written to replace.
+		mustFail: [ 'every path CI writes into the checkout is on the ignore list' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'an uploaded report directory is renamed',
+		file: '.github/workflows/real-backend-e2e.yaml',
+		from: 'real-backend-report/',
+		to: 'coverage-report/',
+		// The same proof for the OTHER half of the extraction. This directory is
+		// named by playwright's reporter config, never by a shell line, so the
+		// upload block is the only place CI admits it exists — and reading only
+		// redirects would miss it and five others.
+		mustFail: [ 'every path CI writes into the checkout is on the ignore list' ],
+	},
+
+	{
+		suite: 'js',
 		what: 'the rate table goes back to reading a top-level columns list',
 		file: 'templates/partials/rates-table.php',
-		from: "$sswi_section['columns']",
-		to: "$sswi_rates['columns']",
+		// THE WHOLE ASSIGNMENT, because `$sswi_section['columns']` appears three
+		// times in two lines and `from` must identify exactly one edit. Named
+		// by the single expression, this mutated only the `isset()` and left
+		// the two below it reading the right place — a mutation that was not
+		// the one described. The AMBIG guard below refuses that now.
+		from:
+			"$sswi_columns = isset( $sswi_section['columns'] ) && is_array( $sswi_section['columns'] )\n" +
+			"\t? $sswi_section['columns']",
+		to:
+			"$sswi_columns = isset( $sswi_rates['columns'] ) && is_array( $sswi_rates['columns'] )\n" +
+			"\t? $sswi_rates['columns']",
 		// The shipped state. The endpoint nests columns under the product, so this
 		// rendered a table with no header cells at all against the real backend.
 		mustFail: [ 'the rate table reads the payload the rates endpoint actually returns' ],
@@ -151,6 +244,208 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: 'a sub-threshold term goes back to announcing nothing at all',
+		file: 'assets/js/war-insurance.js',
+		from: 'text( live, minCharsMessage( minimum ) );',
+		to: "text( live, '' );",
+		// The shipped state after the hint paragraph was deleted: the live
+		// region is written only from render(), which a term shorter than the
+		// minimum never reaches.
+		mustFail: [ 'a term below the minimum says so rather than going silent' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the destinations combobox goes silent below the minimum',
+		file: 'assets/js/war-insurance.js',
+		from: 'announce( minCharsMessage( minimum ) );',
+		to: "announce( '' );",
+		mustFail: [ 'the destinations combobox announces the minimum too' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the minimum sentence is substituted before the script ever sees it',
+		file: 'includes/class-renderer.php',
+		from: "'minChars'     => self::min_chars_template(),",
+		to: "'minChars'     => sprintf( self::min_chars_template(), self::MIN_QUERY_LENGTH ),",
+		// The shipped state: the browser received a finished sentence, so
+		// minCharsMessage()'s `.replace( '%d', … )` never replaced anything.
+		// Both behaviour tests stayed green, because the harness supplies a
+		// template the server was not sending.
+		mustFail: [ 'the minimum-characters sentence is published with its %d intact' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the combobox stops stating the minimum on focus',
+		file: 'templates/partials/combobox.php',
+		from: "esc_attr( $sswi_hint_id . ' ' . $sswi_err )",
+		to: 'esc_attr( $sswi_err )',
+		// The shipped state: the threshold left the accessibility tree, so a
+		// user who focused the field and typed nothing was told nothing. The
+		// live region only speaks on `input`.
+		mustFail: [ 'every combobox states the minimum through aria-describedby' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the destinations combobox stops stating the minimum on focus',
+		file: 'templates/cargo.php',
+		from: "esc_attr( $sswi_dest_hint . ' ' . $sswi_dest_err )",
+		to: 'esc_attr( $sswi_dest_err )',
+		mustFail: [ 'every combobox states the minimum through aria-describedby' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the Elementor widgets stop declaring a stylesheet',
+		file: 'includes/class-elementor-widget.php',
+		from: "return array( 'spotship-wi' );",
+		to: 'return array();',
+		// The shipped state. The renderer's own enqueue is discarded inside
+		// Elementor's render_widget AJAX request, so only a declared handle
+		// reaches the preview. Without it the first widget dropped onto a page
+		// came up live and unstyled — screen-reader hints as body copy, and the
+		// anti-bot honeypot as a visible input.
+		mustFail: [ 'the Elementor widgets depend on a style handle that is actually registered' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the changelog lookup goes back to grepping the whole readme',
+		file: 'bin/set-version.sh',
+		from: '\t\tinlog && $0 == "= " ver " =" { found = 1 }',
+		to: '\t\t$0 == "= " ver " =" { found = 1 }',
+		// The shipped state: `== Upgrade Notice ==` files its entries under
+		// release versions, and one of those answered for the changelog. No
+		// heading was inserted, the read-back was satisfied by the Upgrade
+		// Notice, and the release shipped with no changelog entry.
+		// It also drifts the two copies apart, which is the other thing that
+		// guards this boundary now that there are two of them.
+		mustFail: [
+			'a heading elsewhere in the readme does not stand in for the changelog entry',
+			'both scripts bound the changelog lookup with the same awk',
+		],
+	},
+
+	{
+		suite: 'js',
+		what: 'the combobox hint id goes back into text-field.php\'s hint TEXT variable',
+		file: 'templates/partials/combobox.php',
+		from: "$sswi_hint_id = $sswi_id . '-hint';",
+		to: "$sswi_hint = $sswi_id . '-hint';",
+		// The shipped state. hull.php and cargo.php require both partials into
+		// one scope, and text-field.php reads `$sswi_hint` as the hint TEXT it
+		// is handed. A DOM id left in that name renders to the visitor as a
+		// sentence, where an unset input would at least raise a notice.
+		mustFail: [ 'no partial writes a variable another partial takes as an input' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'a prerelease writes a changelog section again',
+		file: 'bin/set-version.sh',
+		from: 'if [ "$PRERELEASE" = 0 ] && ! changelog_has_section; then',
+		to: 'if ! changelog_has_section; then',
+		// The design this replaced. `dev` runs a real release per push, so every
+		// internal build wrote its own `= X =` section and each run then had to
+		// prune the previous ones — a predicate over human-written headings,
+		// which shipped wrong twice.
+		mustFail: [
+			'a prerelease writes no changelog section at all',
+			'the whole prerelease chain leaves one section, written by the release',
+		],
+	},
+
+	{
+		suite: 'js',
+		what: 'the `== Changelog ==` heading itself stops being asserted',
+		file: 'bin/assert-version.sh',
+		from: "if ! grep -q '^== Changelog ==$' \"$README\"; then",
+		to: 'if false; then',
+		// Every changelog check in this script is bounded to that heading, so a
+		// readme without it passes all of them vacuously. set-version.sh used to
+		// catch it by reading its own insert back; a prerelease inserts nothing,
+		// and `dev` releases a prerelease on every push.
+		mustFail: [ 'a readme that has lost its `== Changelog ==` heading is refused' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the plugin header is whitespace-stripped down the middle again',
+		file: 'bin/assert-version.sh',
+		from: "header=$( sed -n 's/^ \\* Version:[[:space:]]*\\(.*\\)$/\\1/p' \"$FILE\" | head -1 | sed 's/[[:space:]]*$//' )",
+		to: "header=$( sed -n 's/^ \\* Version:[[:space:]]*\\(.*\\)$/\\1/p' \"$FILE\" | head -1 | tr -d '[:space:]' )",
+		// Deleting interior whitespace turns `1.0.1 - WIP` into `1.0.1-WIP`, which
+		// is valid semver — so the guard below passes it, the `-` test reads it as
+		// a prerelease, and the changelog assertion is skipped silently.
+		mustFail: [
+			'a plugin header that is prose, not a version, is refused',
+			'a plugin version that is prose everywhere is still refused',
+		],
+	},
+
+	{
+		suite: 'js',
+		what: 'the plugin header stops having to be a version',
+		file: 'bin/assert-version.sh',
+		from: "if ! printf '%s' \"$header\" | grep -Eq '^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then",
+		to: 'if false; then',
+		// $header decides whether a changelog section is required, by testing it
+		// for a `-`, so a value that is not a version must never reach it. Only
+		// the consistent spelling proves this one: where the header and the
+		// constant disagree, the MISMATCH check above refuses it first.
+		mustFail: [ 'a plugin version that is prose everywhere is still refused' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'assert-version.sh greps the whole readme for the changelog entry again',
+		file: 'bin/assert-version.sh',
+		from: '\t\tif ! changelog_has_section; then',
+		to: '\t\tif ! grep -q "^= ${header} =$" "$README"; then',
+		// The shipped state, and the same defect as the set-version.sh lookup
+		// one file over. `== Upgrade Notice ==` files its entries under release
+		// versions, so one of those answered for the changelog and a tree with
+		// no entry for the shipped version passed. set-version.sh's bounded
+		// read-back hides it there; ci.yaml's "Shipped versions agree" job and
+		// bin/build-dist.sh run this script alone.
+		mustFail: [ 'an Upgrade Notice heading does not satisfy the changelog check' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the stray-prerelease assertion stops recognising one',
+		file: 'bin/assert-version.sh',
+		from: '\tinlog && /^= [0-9]+\\.[0-9]+\\.[0-9]+-[0-9A-Za-z.-]+ =$/ {',
+		to: '\tinlog && /^= nothing matches this =$/ {',
+		// Nothing writes a prerelease section any more, but something still has
+		// to notice one that arrives by another route — a hand edit, a revert, a
+		// long-lived branch. This is where that invariant lives now, and a
+		// refusal is the whole difference from the prune that preceded it.
+		mustFail: [ 'a prerelease section is refused, not deleted, wherever it came from' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'the stray-prerelease assertion is let loose outside == Changelog ==',
+		file: 'bin/assert-version.sh',
+		// NEWLINE-PREFIXED, BECAUSE THE BARE LINE IS NOT UNIQUE. The same awk
+		// bound appears in changelog_has_section() one indent deeper, so
+		// `\t/^== /` is a substring of `\t\t/^== /`. The leading \n pins the
+		// indent to this one.
+		from: '\n\t/^== / { inlog = ( $0 == "== Changelog ==" ); next }',
+		to: '\n\t/^== / { inlog = 1; next }',
+		// `== Upgrade Notice ==` files its entries under release versions, and a
+		// release candidate parked there is not an internal build of ours.
+		// Unbounded, this aborts every release of a readme that has one.
+		mustFail: [ 'a `= X =` heading outside the changelog is out of reach' ],
+	},
+
+
+	{
+		suite: 'js',
 		what: 'a test helper takes a name PHPUnit already owns',
 		file: 'tests/integration/RateLimiterTest.php',
 		from: 'private function window_count(): int {',
@@ -171,13 +466,43 @@ const MUTATIONS = [
 		mustFail: [ 'every named input can be reached by a field error' ],
 	},
 
+	// --- unit: driven by the PHPUnit unit suite, needs only PHP ---
+
+	{
+		suite: 'unit',
+		what: 'the widgets manager is called without checking it can be',
+		file: 'includes/class-elementor.php',
+		from: "if ( ! is_object( $widgets_manager ) || ! method_exists( $widgets_manager, 'register' ) ) {",
+		to: 'if ( false ) {',
+		// Elementor has renamed this hook before and passed a different object
+		// to it. Calling a method that is not there is an Error — a white
+		// screen on every page of a site that merely has this plugin
+		// installed. The integration suite cannot see this: it runs without
+		// Elementor, so the class_exists() guard above returns first and
+		// nothing below it is ever reached, whichever manager is passed.
+		mustFail: [ 'test_a_manager_of_the_wrong_shape_is_refused_rather_than_fatal' ],
+	},
+
+	{
+		suite: 'unit',
+		what: 'a widget is registered under the other product\'s stored name',
+		file: 'includes/class-elementor-cargo.php',
+		from: "return 'spotship-war-cargo';",
+		to: "return 'spotship-war-hull';",
+		// Elementor persists get_name() in `_elementor_data` on every page
+		// using the widget, so this string is a compatibility surface: a page
+		// whose stored type no longer resolves draws a missing-widget
+		// placeholder and still returns 200.
+		mustFail: [ 'test_both_widgets_are_registered_under_the_names_pages_store' ],
+	},
+
 	// --- php: driven by the PHPUnit integration suite, needs wp-env ---
 
 	{
 		suite: 'php',
 		what: 'the renderer stops namespacing instances (rendered output)',
 		file: 'includes/class-renderer.php',
-		from: "'uid'       => 'sswi-' . self::$instances,",
+		from: "'uid'       => $uid,",
 		to: "'uid'       => 'sswi',",
 		// The js mutation above proves the TEMPLATES read the prefix. This one
 		// proves the rendered markup of two real forms on one page actually
@@ -250,8 +575,17 @@ const MUTATIONS = [
 		suite: 'php',
 		what: 'the rate table reads columns from the top level again',
 		file: 'templates/partials/rates-table.php',
-		from: "$sswi_section['columns']",
-		to: "$sswi_rates['columns']",
+		// THE WHOLE ASSIGNMENT, because `$sswi_section['columns']` appears three
+		// times in two lines and `from` must identify exactly one edit. Named
+		// by the single expression, this mutated only the `isset()` and left
+		// the two below it reading the right place — a mutation that was not
+		// the one described. The AMBIG guard below refuses that now.
+		from:
+			"$sswi_columns = isset( $sswi_section['columns'] ) && is_array( $sswi_section['columns'] )\n" +
+			"\t? $sswi_section['columns']",
+		to:
+			"$sswi_columns = isset( $sswi_rates['columns'] ) && is_array( $sswi_rates['columns'] )\n" +
+			"\t? $sswi_rates['columns']",
 		// The shipped state: the endpoint nests columns under the product, so
 		// this rendered a header row with only the risk-zone cell in it.
 		mustFail: [ 'test_the_header_row_is_the_products_own_columns' ],
@@ -260,8 +594,21 @@ const MUTATIONS = [
 		suite: 'php',
 		what: 'the disclaimers are read from the top level again',
 		file: 'templates/partials/rates-table.php',
-		from: "$sswi_section['disclaimers']",
-		to: "$sswi_rates['disclaimers']",
+		// THE WHOLE ASSIGNMENT, because the section expression appears three
+		// times across its two lines and `from` must identify exactly one edit.
+		// Named by the single expression, this mutated only the `isset()` and
+		// left the two reads below it pointing at the right place — a mutation
+		// that was not the one described. The AMBIG guard below refuses that.
+		//
+		// NOTE THE TWO TABS on the continuation. Unlike the columns assignment
+		// above, this one is nested inside an indented <?php block, so a
+		// one-tab copy of that entry matches nothing and fails as STALE.
+		from:
+			"$sswi_disclaimers = isset( $sswi_section['disclaimers'] ) && is_array( $sswi_section['disclaimers'] )\n" +
+			"\t\t? $sswi_section['disclaimers']",
+		to:
+			"$sswi_disclaimers = isset( $sswi_rates['disclaimers'] ) && is_array( $sswi_rates['disclaimers'] )\n" +
+			"\t\t? $sswi_rates['disclaimers']",
 		// The shipped state, and the one with a compliance consequence: the
 		// block is simply never reached, on every install.
 		mustFail: [ 'test_the_disclaimers_are_rendered' ],
@@ -322,8 +669,8 @@ const MUTATIONS = [
 const SUITE = ( process.argv.slice( 2 ).find( ( a ) => a.startsWith( '--suite=' ) ) || '--suite=js' )
 	.slice( '--suite='.length );
 
-if ( ! [ 'js', 'php' ].includes( SUITE ) ) {
-	process.stdout.write( `unknown suite "${ SUITE }" — expected js or php\n` );
+if ( ! [ 'js', 'unit', 'php' ].includes( SUITE ) ) {
+	process.stdout.write( `unknown suite "${ SUITE }" — expected js, unit or php\n` );
 	process.exit( 1 );
 }
 
@@ -346,16 +693,41 @@ function phpunitCommand() {
 }
 
 /**
+ * How to run the unit suite. No container: Brain Monkey, no WordPress, so this
+ * is the same command a developer runs. Overridable for the same reason as
+ * above.
+ *
+ * @returns {string} shell command.
+ */
+function unitCommand() {
+	return (
+		process.env.MUTATION_UNIT_CMD ||
+		`vendor/bin/phpunit -c phpunit.xml.dist --log-junit ${ JUNIT }`
+	);
+}
+
+/**
  * Run the jsdom suite and return the set of failing test names.
  *
  * @returns {Set<string>} names reported as `not ok`.
  */
 function failingJs() {
-	const result = spawnSync(
-		process.execPath,
-		[ '--test', 'tests/js/contract.test.js', 'tests/js/front-end.test.js' ],
-		{ cwd: ROOT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }
-	);
+	// THE WHOLE SUITE, NOT A LIST TO KEEP IN STEP. Naming the files here meant
+	// tests/js/release-assets.test.js was never mutation-checked at all — it was
+	// added without this line being touched, which is the same drift the ship
+	// lists and the assets list are each guarded against elsewhere. This is what
+	// package.json's `test:js` and CI run.
+	const files = fs
+		.readdirSync( path.join( ROOT, 'tests', 'js' ) )
+		.filter( ( name ) => name.endsWith( '.test.js' ) )
+		.sort()
+		.map( ( name ) => path.join( 'tests', 'js', name ) );
+
+	const result = spawnSync( process.execPath, [ '--test', ...files ], {
+		cwd: ROOT,
+		encoding: 'utf8',
+		maxBuffer: 32 * 1024 * 1024,
+	} );
 
 	const out = ( result.stdout || '' ) + ( result.stderr || '' );
 
@@ -365,22 +737,23 @@ function failingJs() {
 }
 
 /**
- * Run the PHPUnit integration suite and return the set of failing test names.
+ * Run a PHPUnit suite and return the set of failing test names.
  *
  * Read from the JUnit report rather than the console output: PHPUnit's
  * human-readable format prints a dot per test and names a failure only in a
  * summary block, so scraping it is guesswork. The report is a contract.
  *
+ * @param {string} command How to run it — see phpunitCommand()/unitCommand().
  * @returns {Set<string>|null} names, or null if the run produced no report.
  */
-function failingPhp() {
+function failingPhpunit( command ) {
 	const report = path.join( ROOT, JUNIT );
 
 	if ( fs.existsSync( report ) ) {
 		fs.unlinkSync( report );
 	}
 
-	spawnSync( phpunitCommand(), {
+	spawnSync( command, {
 		cwd: ROOT,
 		shell: true,
 		encoding: 'utf8',
@@ -417,7 +790,15 @@ function failingPhp() {
  * @returns {Set<string>|null} failing test names for the selected suite.
  */
 function failingTests() {
-	return 'php' === SUITE ? failingPhp() : failingJs();
+	if ( 'php' === SUITE ) {
+		return failingPhpunit( phpunitCommand() );
+	}
+
+	if ( 'unit' === SUITE ) {
+		return failingPhpunit( unitCommand() );
+	}
+
+	return failingJs();
 }
 
 /**
@@ -462,6 +843,27 @@ for ( const mutation of SELECTED ) {
 		process.stdout.write(
 			`STALE  ${ mutation.what }\n       ${ mutation.file } no longer contains the line this mutation edits.\n` +
 				'       Update bin/mutation-check.js alongside the refactor.\n\n'
+		);
+		broken += 1;
+		continue;
+	}
+
+	// AMBIGUOUS IS NOT APPLIED, BECAUSE A MUTATION THAT LANDS ON THE WRONG
+	// OCCURRENCE IS WORSE THAN NO MUTATION.
+	//
+	// String.replace() with a string pattern edits the FIRST occurrence. So a
+	// `from` that also appears in a comment above the line mutates the comment,
+	// leaves the code untouched, and reports UNDETECTED — which reads as a weak
+	// test rather than as a mutation that never happened, and sends you to fix
+	// the wrong file. A comment added to .distignore disarmed the playwright
+	// glob mutation exactly this way, in the same change that was adding a
+	// second one beside it.
+	const hits = original.split( mutation.from ).length - 1;
+
+	if ( hits > 1 ) {
+		process.stdout.write(
+			`AMBIG  ${ mutation.what }\n       ${ mutation.file } contains this text ${ hits } times, so only the first would be edited.\n` +
+				'       Make `from` unique — add surrounding context, or stop repeating it verbatim in a comment.\n\n'
 		);
 		broken += 1;
 		continue;

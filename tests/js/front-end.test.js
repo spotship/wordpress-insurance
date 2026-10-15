@@ -8,7 +8,7 @@
 
 const test = require( 'node:test' );
 const assert = require( 'node:assert' );
-const { boot } = require( './harness.js' );
+const { boot, CONFIG, rootHtml } = require( './harness.js' );
 
 const PORTS = [
 	{ id: 11, name: 'Rotterdam', locode: 'NLRTM' },
@@ -92,6 +92,38 @@ test( 'aria-activedescendant names the option that is actually rendered', async 
 	assert.ok( target, `aria-activedescendant "${ active }" must reference a rendered option` );
 	assert.equal( target.getAttribute( 'aria-selected' ), 'true' );
 	assert.equal( target, options[ 0 ] );
+} );
+
+test( 'a term below the minimum says so rather than going silent', async () => {
+	const h = boot( { fetch: router() } );
+	await h.ready();
+
+	// The hint paragraph that used to state the minimum was removed on the
+	// reasoning that the live region announces every search. A sub-threshold
+	// term never searches, so before this the user got nothing at all: no list,
+	// no announcement, and no statement anywhere that a minimum exists.
+	await typeInto( h, '#sswi-fromPort', 'r' );
+
+	const live = h.document.querySelector( '#sswi-fromPort-live' );
+
+	assert.equal( live.textContent, 'TYPE AT LEAST 2 CHARACTERS' );
+	assert.equal( h.document.querySelector( '#sswi-fromPort-list' ).hidden, true );
+
+	// And it gives way to the real result count as soon as one is available.
+	await typeInto( h, '#sswi-fromPort', 'rot' );
+
+	assert.equal( live.textContent, '2 results available.' );
+} );
+
+test( 'the destinations combobox announces the minimum too', async () => {
+	const h = boot( { product: 'cargo', fetch: router() } );
+	await h.ready();
+
+	await typeInto( h, '#sswi-destinations', 'r' );
+
+	const live = h.document.querySelector( '[data-sswi-chip-live]' );
+
+	assert.equal( live.textContent, 'TYPE AT LEAST 2 CHARACTERS' );
 } );
 
 test( 'choosing an option submits the id of the option that was displayed', async () => {
@@ -550,4 +582,139 @@ test( 'a throttled submission falls back to the Retry-After header when the body
 		'WAIT 12 SECONDS',
 		'the header is the fallback when the body has no retry'
 	);
+} );
+
+/*
+ * FORMS THAT ARRIVE AFTER LOAD.
+ *
+ * war-insurance.js swept the document once, on DOMContentLoaded. Elementor's
+ * editor renders a widget through its own AJAX action and injects the markup
+ * into a preview that loaded long ago, so the form a site builder had just
+ * dragged in was never initialised: controls disabled, "needs JavaScript"
+ * notice still showing. The first thing anyone saw of the Elementor surface was
+ * a form announcing itself as broken.
+ *
+ * These drive the real injection shape — append a root to a live document, then
+ * mount it the way assets/js/elementor.js does from Elementor's hook.
+ */
+
+/**
+ * Append a second root to an already-loaded document.
+ *
+ * @param {object} h       A booted harness.
+ * @param {string} product hull or cargo.
+ */
+function inject( h, product ) {
+	const holder = h.document.createElement( 'div' );
+
+	holder.innerHTML = rootHtml( product, Object.assign( {}, CONFIG, { product } ) );
+	h.document.body.appendChild( holder );
+
+	return holder.querySelector( '[data-sswi-root]' );
+}
+
+test( 'a form injected after load is dead until it is mounted', async () => {
+	const h = boot();
+	await h.ready();
+
+	const late = inject( h, 'hull' );
+
+	// NON-VACUITY: if this were already live, the test below would pass without
+	// the mount doing anything, which is exactly how this defect stayed hidden.
+	assert.equal(
+		late.querySelector( '.sswi-submit' ).disabled,
+		true,
+		'the once-at-load sweep must not have reached an element that did not exist yet'
+	);
+	assert.ok(
+		late.querySelector( '[data-sswi-noscript]' ),
+		'and its notice must still be up'
+	);
+} );
+
+test( 'mounting an injected form enables it and removes the notice, scope being the root', async () => {
+	const h = boot();
+	await h.ready();
+
+	const late = inject( h, 'hull' );
+
+	h.window.spotshipWI.mountAll( late );
+	await h.settle( 0 );
+
+	assert.equal(
+		late.querySelector( '.sswi-submit' ).disabled,
+		false,
+		'the injected form must become submittable'
+	);
+	assert.equal(
+		late.querySelector( '[data-sswi-noscript]' ),
+		null,
+		'and stop telling the visitor JavaScript is required'
+	);
+} );
+
+test( 'mountAll reaches a root nested inside the scope Elementor passes', async () => {
+	/*
+	 * THE REAL SHAPE. Elementor hands a handler `.elementor-element...`, and our
+	 * markup sits inside `.elementor-widget-container` within it — the root is a
+	 * DESCENDANT of the scope, never the scope. The sibling test above covers
+	 * the scope BEING the root, which is what happens when mount() is handed one
+	 * directly; between them the two branches of mountAll() are both exercised.
+	 */
+	const h = boot();
+	await h.ready();
+
+	const scope = h.document.createElement( 'div' );
+	scope.className = 'elementor-element elementor-widget-spotship-war-hull';
+
+	const container = h.document.createElement( 'div' );
+	container.className = 'elementor-widget-container';
+	container.innerHTML = rootHtml( 'hull', Object.assign( {}, CONFIG, { product: 'hull' } ) );
+
+	scope.appendChild( container );
+	h.document.body.appendChild( scope );
+
+	const late = scope.querySelector( '[data-sswi-root]' );
+	assert.equal( late.querySelector( '.sswi-submit' ).disabled, true, 'non-vacuity' );
+
+	h.window.spotshipWI.mountAll( scope );
+	await h.settle( 0 );
+
+	assert.equal(
+		late.querySelector( '.sswi-submit' ).disabled,
+		false,
+		'a root nested in the scope must be found'
+	);
+} );
+
+test( 'mounting twice does not bind a second set of listeners', async () => {
+	/*
+	 * Elementor re-runs element_ready on every re-render, and the editor
+	 * re-renders freely. A second init() over the same root would leave two
+	 * submit handlers on one form: one visitor action, two quote requests, and
+	 * the backend has no way to tell them apart.
+	 */
+	let submits = 0;
+
+	const h = boot( {
+		fetch: ( url ) => {
+			if ( url.includes( '/quote' ) || url.includes( '/submit' ) ) {
+				submits += 1;
+			}
+
+			return { status: 200, body: { success: true } };
+		},
+	} );
+
+	await h.ready();
+
+	// The root booted at load is already mounted; mounting it again must be a
+	// no-op rather than a second binding.
+	h.window.spotshipWI.mount( h.root );
+	h.window.spotshipWI.mountAll( h.document );
+
+	h.form.dispatchEvent( new h.window.Event( 'submit', { bubbles: true, cancelable: true } ) );
+	await h.settle( 10 );
+
+	assert.ok( submits <= 1, `one submit event must produce at most one request, got ${ submits }` );
 } );

@@ -60,6 +60,27 @@ if ( ! defined( 'WEEK_IN_SECONDS' ) ) {
 	define( 'WEEK_IN_SECONDS', 604800 );
 }
 
+/*
+ * A THIRD THING THE SUITE NEEDS: A PARENT CLASS FOR THE ELEMENTOR WIDGETS.
+ *
+ * Spotship_WI_Elementor::register_widgets() returns at its
+ * `class_exists( '\Elementor\Widget_Base' )` guard on any install without
+ * Elementor, which is every install the INTEGRATION suite runs on — by design,
+ * because what that suite exists to prove is that the widget classes stay
+ * unloaded there. The consequence is that nothing past that guard, including
+ * the duck-type check on the manager, could be reached by a test at all.
+ *
+ * So the unit suite runs the other configuration. Declaring the parent here is
+ * what lets a test construct a widget and drive registration, and it makes PHP
+ * check the subclasses against the stub's signatures on every run rather than
+ * leaving PHPStan as the only thing that ever does.
+ *
+ * tests/stubs/elementor.php is the same file PHPStan scans, so the contract the
+ * unit suite runs against and the contract static analysis checks cannot drift
+ * apart.
+ */
+require_once __DIR__ . '/stubs/elementor.php';
+
 /**
  * See (2) above. Mirrors the mapping in spotship-war-insurance.php:
  * `Spotship_WI_Rest_Proxy` -> includes/class-rest-proxy.php.

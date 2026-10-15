@@ -89,7 +89,7 @@ msgstr ""
 msgid "Hull & machinery value"
 msgstr ""
 
-msgid "I consent to Spot Ship storing and processing the details above in order to respond to this enquiry."
+msgid "I consent to Spot Ship storing and processing the details above, and passing them to its insurance partners, in order to respond to this enquiry."
 msgstr ""
 
 msgid "Increased value"

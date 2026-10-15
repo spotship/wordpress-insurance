@@ -118,6 +118,23 @@ fi
 # bin/set-version.sh writes the heading during prepare; this refuses a tree
 # where it is missing.
 #
+# THE CHANGELOG HEADING ITSELF HAS TO BE THERE, AND NOTHING ELSE NOW CHECKS IT.
+#
+# Everything below is bounded to `== Changelog ==`, so a readme that has lost
+# that literal heading makes every one of them vacuous: no section is found, no
+# stray is found, and the file passes.
+#
+# bin/set-version.sh used to catch it as a side effect — it inserts under that
+# heading and reads the insert back, so a missing heading failed the read-back.
+# A prerelease no longer inserts anything, and `dev` releases a prerelease on
+# EVERY push, so that cover is gone on the path that runs most often. Asserted
+# directly here instead, where it is one grep and cannot be vacuous.
+if ! grep -q '^== Changelog ==$' "$README"; then
+	echo "assert-version: $README has no literal '== Changelog ==' heading" >&2
+	echo "assert-version: every changelog check below is anchored to it, so they would all pass vacuously." >&2
+	exit 1
+fi
+
 # NO INTERNAL BUILD MAY BE IN THE CHANGELOG, WHATEVER PUT IT THERE.
 #
 # `dev` is a prerelease branch, and bin/set-version.sh deliberately writes no
@@ -151,12 +168,36 @@ if [ -n "$stray" ]; then
 	exit 1
 fi
 
+# Does `== Changelog ==` hold a section for this version?
+#
+# BOUNDED, AND NOT A PATTERN — the same two properties the lookup in
+# bin/set-version.sh needed, for the same two reasons, which is why this is
+# nearly the same eight lines. They are separate executables with no shared
+# library in bin/, and a third file to hold one awk program would cost more than
+# the duplication does; the cost is paid here, in a comment, so the next person
+# changing one knows to change the other.
+#
+# UNBOUNDED, THIS WAS THE BUG IT IS NOW GUARDING AGAINST. `== Upgrade Notice ==`
+# files its entries under headings that are release versions, so a `grep` of the
+# whole file is answered by one of those: the changelog has no entry for the
+# release, and this says it does. set-version.sh's own read-back is bounded and
+# would catch it first — but only inside set-version.sh's run. This script is
+# also run on its own, by ci.yaml's "Shipped versions agree" job and from
+# bin/build-dist.sh, where nothing precedes it.
+changelog_has_section() {
+	awk -v ver="$header" '
+		/^== / { inlog = ( $0 == "== Changelog ==" ); next }
+		inlog && $0 == "= " ver " =" { found = 1 }
+		END { if ( found ) exit 0; exit 1 }
+	' "$README"
+}
+
 # A prerelease therefore has no section of its own to find, and the rule above
 # has already proved it. Only a real release is required to have one.
 case "$header" in
 	*-* ) ;;
 	* )
-		if ! grep -q "^= ${header} =$" "$README"; then
+		if ! changelog_has_section; then
 			echo "assert-version: $README has no '= $header =' changelog section" >&2
 			echo "assert-version: bin/set-version.sh writes the heading; fill in the entry." >&2
 			exit 1

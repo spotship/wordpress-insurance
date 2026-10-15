@@ -173,6 +173,31 @@ function releaseFails( dir, version ) {
 	assert.fail( `bin/set-version.sh ${ version } was expected to refuse, and exited 0` );
 }
 
+/**
+ * bin/assert-version.sh on its own, and the stderr it refused with.
+ *
+ * STANDALONE IS A REAL CALL SITE, NOT A CONVENIENCE. ci.yaml's "Shipped
+ * versions agree" job runs it directly on every push, as does
+ * bin/build-dist.sh. Inside bin/set-version.sh its own bounded read-back runs
+ * first and would catch most of what this catches; in those two it is alone.
+ *
+ * @param {string} dir A sandbox.
+ * @returns {string} stderr.
+ */
+function assertVersionFails( dir ) {
+	try {
+		execFileSync( 'bash', [ 'bin/assert-version.sh' ], {
+			cwd: dir,
+			encoding: 'utf8',
+			stdio: [ 'ignore', 'pipe', 'pipe' ],
+		} );
+	} catch ( e ) {
+		return String( e.stderr );
+	}
+
+	assert.fail( 'bin/assert-version.sh was expected to refuse, and exited 0' );
+}
+
 /** The `Stable tag:` the run wrote. */
 function stableTag( readme ) {
 	return /^Stable tag:[ \t]*(.*)$/m.exec( readme )[ 1 ].trim();
@@ -272,18 +297,16 @@ test( 'a prerelease section is refused, not deleted, wherever it came from', ( t
 
 test( 'a released heading carrying a date is left alone', ( t ) => {
 	/*
-	 * THE DEFECT THAT ENDED THE PRUNE. Its predicate asked only whether a
-	 * heading held a `-`, which is true of `= 1.0.2 - 2026-10-14 =` — a
-	 * RELEASED section in the shape nearly every other changelog format writes,
-	 * and set-version.sh's own comments invite hand-written entries. The
-	 * heading and its bullets were deleted, the script exited 0, and
-	 * assert-version.sh agreed, because nothing inspects the sections it did
-	 * not write.
+	 * A HEADING CARRYING A DATE IS A RELEASED SECTION, NOT AN INTERNAL BUILD.
 	 *
-	 * Kept after the prune was deleted, because it is the regression that
-	 * would come back with any future attempt to classify these headings for
-	 * removal. The matching assertion in assert-version.sh must not match it
-	 * either, which is what makes this more than a test of nothing.
+	 * `= 1.0.2 - 2026-10-14 =` is the shape nearly every other changelog format
+	 * writes a release in, and set-version.sh's own comments invite hand-written
+	 * entries. Any predicate that classifies headings for removal by looking for
+	 * a `-` matches it, deletes the heading and its bullets, and exits 0 —
+	 * nothing downstream inspects the sections the script did not write.
+	 *
+	 * This pins both halves: nothing removes it, and the prerelease assertion in
+	 * assert-version.sh must not match it either.
 	 */
 	const dir = sandbox(
 		'\n= 1.0.2 - 2026-10-14 =\n* A hand-written entry, dated the way people date them.\n' +
@@ -403,6 +426,111 @@ test( 'a heading elsewhere in the readme does not stand in for the changelog ent
 	assert.ok(
 		readme.includes( '= 1.1.0 =\n* Re-save your settings after upgrading.' ),
 		'and the Upgrade Notice entry it collided with must survive untouched'
+	);
+} );
+
+test( 'a readme that has lost its `== Changelog ==` heading is refused', ( t ) => {
+	/*
+	 * EVERY CHANGELOG CHECK IS ANCHORED TO THAT HEADING, SO LOSING IT MAKES
+	 * THEM ALL VACUOUS — no section is found, no stray is found, and the file
+	 * passes.
+	 *
+	 * bin/set-version.sh used to catch it as a side effect: it inserts under
+	 * the heading and reads the insert back, so a missing heading failed the
+	 * read-back. A prerelease inserts nothing, and `dev` releases a prerelease
+	 * on every push, so that cover does not exist on the path that runs most
+	 * often. bin/assert-version.sh asserts the heading directly.
+	 */
+	const dir = sandbox( SHIPPED );
+
+	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
+
+	const readme = path.join( dir, 'readme.txt' );
+
+	fs.writeFileSync(
+		readme,
+		fs.readFileSync( readme, 'utf8' ).replace( '== Changelog ==', '== Release History ==' )
+	);
+
+	assert.match( assertVersionFails( dir ), /no literal '== Changelog ==' heading/ );
+} );
+
+test( 'an Upgrade Notice heading does not satisfy the changelog check', ( t ) => {
+	/*
+	 * THE SAME BUG, ONE FILE OVER, AND IT OUTLIVED THE FIX IN set-version.sh.
+	 *
+	 * `== Upgrade Notice ==` files its entries under headings that are release
+	 * versions. bin/assert-version.sh grepped the WHOLE readme for
+	 * `= <version> =`, so one of those answered for the changelog: a tree whose
+	 * changelog has no entry for the version being shipped passed, silently.
+	 *
+	 * set-version.sh's own read-back is bounded and would catch it first — but
+	 * only inside set-version.sh's run. ci.yaml's "Shipped versions agree" job
+	 * and bin/build-dist.sh both run assert-version.sh ALONE, and there nothing
+	 * precedes it. Verified against the unbounded version: it exited 0 on the
+	 * tree built below.
+	 */
+	const dir = sandbox( SHIPPED );
+
+	t.after( () => fs.rmSync( dir, { recursive: true, force: true } ) );
+
+	release( dir, '1.1.0', notesFor( '1.1.0', 'a feature landed' ) );
+
+	// Now move the entry out of the changelog and into an Upgrade Notice, which
+	// is the shape a hand edit produces.
+	const readme = path.join( dir, 'readme.txt' );
+	const moved = fs
+		.readFileSync( readme, 'utf8' )
+		.replace( /\n= 1\.1\.0 =\n[\s\S]*?(?=\n= 1\.0\.0 =)/, '' )
+		.concat( '\n== Upgrade Notice ==\n\n= 1.1.0 =\n* Re-save your settings.\n' );
+
+	// NON-VACUITY: the changelog must really have lost it, and the Upgrade
+	// Notice must really have it, or this proves nothing about the bound.
+	assert.ok( ! sections( moved ).includes( '1.1.0' ), 'the changelog must no longer list 1.1.0' );
+	assert.ok( moved.includes( '== Upgrade Notice ==\n\n= 1.1.0 =' ), 'and the Upgrade Notice must' );
+
+	fs.writeFileSync( readme, moved );
+
+	assert.match( assertVersionFails( dir ), /no '= 1\.1\.0 =' changelog section/ );
+} );
+
+test( 'both scripts bound the changelog lookup with the same awk', () => {
+	/*
+	 * THE DUPLICATION IS DELIBERATE, SO THE DRIFT HAS TO BE GUARDED.
+	 *
+	 * bin/set-version.sh and bin/assert-version.sh each carry their own
+	 * `changelog_has_section()`. They are separate executables — bin/ has no
+	 * shared library, and build-dist.sh and three CI jobs invoke
+	 * assert-version.sh by path — so a third file holding eight lines of awk
+	 * would buy less than it costs.
+	 *
+	 * What it costs instead is this: two copies of the predicate that decides
+	 * what counts as "inside == Changelog ==", which is the exact boundary both
+	 * of this ticket's lookup bugs crossed. If one is ever widened and the other
+	 * is not, one script answers a question the other answers differently, and
+	 * the symptom is a release that passes one gate and not the next.
+	 */
+	const bodies = [ 'bin/set-version.sh', 'bin/assert-version.sh' ].map( ( file ) => {
+		const src = fs.readFileSync( path.join( ROOT, file ), 'utf8' );
+		const fn = /changelog_has_section\(\) \{\s*awk -v ver="\$\w+" '([\s\S]*?)'\s*"\$README"/.exec( src );
+
+		assert.ok( fn, `${ file } must define changelog_has_section() around an awk program` );
+
+		// LEADING indentation differs — one sits inside a function, the other
+		// does not — and that is not drift. Interior spacing is NOT normalised:
+		// collapsing every run of whitespace would make `"=  " ver` and
+		// `"= " ver` compare equal, which is a real difference in what the two
+		// scripts match.
+		return [ file, fn[ 1 ].split( '\n' ).map( ( line ) => line.trim() ).join( '\n' ).trim() ];
+	} );
+
+	// NON-VACUITY: an empty match would make the comparison below trivially true.
+	assert.ok( bodies[ 0 ][ 1 ].includes( '== Changelog ==' ), 'the extraction found no awk program' );
+
+	assert.equal(
+		bodies[ 0 ][ 1 ],
+		bodies[ 1 ][ 1 ],
+		`${ bodies[ 0 ][ 0 ] } and ${ bodies[ 1 ][ 0 ] } have drifted on what "inside the changelog" means`
 	);
 } );
 

@@ -235,8 +235,11 @@ const MUTATIONS = [
 		// release versions, and one of those answered for the changelog. No
 		// heading was inserted, the read-back was satisfied by the Upgrade
 		// Notice, and the release shipped with no changelog entry.
+		// It also drifts the two copies apart, which is the other thing that
+		// guards this boundary now that there are two of them.
 		mustFail: [
 			'a heading elsewhere in the readme does not stand in for the changelog entry',
+			'both scripts bound the changelog lookup with the same awk',
 		],
 	},
 
@@ -258,6 +261,34 @@ const MUTATIONS = [
 
 	{
 		suite: 'js',
+		what: 'the `== Changelog ==` heading itself stops being asserted',
+		file: 'bin/assert-version.sh',
+		from: "if ! grep -q '^== Changelog ==$' \"$README\"; then",
+		to: 'if false; then',
+		// Every changelog check in this script is bounded to that heading, so a
+		// readme without it passes all of them vacuously. set-version.sh used to
+		// catch it by reading its own insert back; a prerelease inserts nothing,
+		// and `dev` releases a prerelease on every push.
+		mustFail: [ 'a readme that has lost its `== Changelog ==` heading is refused' ],
+	},
+
+	{
+		suite: 'js',
+		what: 'assert-version.sh greps the whole readme for the changelog entry again',
+		file: 'bin/assert-version.sh',
+		from: '\t\tif ! changelog_has_section; then',
+		to: '\t\tif ! grep -q "^= ${header} =$" "$README"; then',
+		// The shipped state, and the same defect as the set-version.sh lookup
+		// one file over. `== Upgrade Notice ==` files its entries under release
+		// versions, so one of those answered for the changelog and a tree with
+		// no entry for the shipped version passed. set-version.sh's bounded
+		// read-back hides it there; ci.yaml's "Shipped versions agree" job and
+		// bin/build-dist.sh run this script alone.
+		mustFail: [ 'an Upgrade Notice heading does not satisfy the changelog check' ],
+	},
+
+	{
+		suite: 'js',
 		what: 'the stray-prerelease assertion stops recognising one',
 		file: 'bin/assert-version.sh',
 		from: '\tinlog && /^= [0-9]+\\.[0-9]+\\.[0-9]+-[0-9A-Za-z.-]+ =$/ {',
@@ -273,8 +304,12 @@ const MUTATIONS = [
 		suite: 'js',
 		what: 'the stray-prerelease assertion is let loose outside == Changelog ==',
 		file: 'bin/assert-version.sh',
-		from: '\t/^== / { inlog = ( $0 == "== Changelog ==" ); next }',
-		to: '\t/^== / { inlog = 1; next }',
+		// NEWLINE-PREFIXED, BECAUSE THE BARE LINE IS NOT UNIQUE. The same awk
+		// bound appears in changelog_has_section() one indent deeper, so
+		// `\t/^== /` is a substring of `\t\t/^== /`. The leading \n pins the
+		// indent to this one.
+		from: '\n\t/^== / { inlog = ( $0 == "== Changelog ==" ); next }',
+		to: '\n\t/^== / { inlog = 1; next }',
 		// `== Upgrade Notice ==` files its entries under release versions, and a
 		// release candidate parked there is not an internal build of ours.
 		// Unbounded, this aborts every release of a readme that has one.

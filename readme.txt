@@ -4,7 +4,7 @@ Tags: insurance, shipping, maritime, quotes
 Requires at least: 6.4
 Tested up to: 6.8
 Requires PHP: 8.1
-Stable tag: 1.1.0
+Stable tag: 1.1.1-dev.1
 License: Proprietary
 
 War hull and war cargo insurance quote capture for Spot Ship customers. The API
@@ -40,9 +40,14 @@ rather than a WordPress nonce. Under PECR/ePrivacy it therefore requires no
 consent banner, and "necessary/functional" is the accurate classification if
 your consent manager lists it at all.
 
-Submitted quote requests are sent to Spot Ship. The consent checkbox text, the
-time consent was given and a link to your privacy notice are recorded with each
-submission, so configure the privacy notice URL in settings.
+Submitted quote requests are sent to Spot Ship, who pass them to the insurance
+partners that underwrite the cover -- Spot Ship acts solely as an introducer.
+The consent checkbox says so, and the visitor must tick it before the plugin
+will submit anything.
+
+The consent checkbox text, the time consent was given and a link to your privacy
+notice are recorded with each submission, so configure the privacy notice URL in
+settings.
 
 = Requirements =
 

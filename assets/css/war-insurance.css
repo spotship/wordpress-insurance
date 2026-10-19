@@ -52,7 +52,20 @@
 	font-weight: 600;
 }
 
-.spotship-wi input,
+/*
+ * EVERY SELECTOR HERE IS FOR A FIELD YOU TYPE INTO, which is why the checkbox
+ * is excluded rather than left to inherit and be corrected afterwards.
+ *
+ * `width: 100%; max-width: 32rem` on an `input[type="checkbox"]` does not
+ * stretch the tick box — it draws a 32rem box with the control centred in it.
+ * The consent checkbox therefore sat marooned in the middle of the form, its
+ * sentence began 32rem to the right, and the wrap came back to the left margin
+ * underneath the box. The padding and border compounded it.
+ *
+ * Excluding by type keeps that true for any checkbox or radio added later,
+ * which an override scoped to `.sswi-consent` would not.
+ */
+.spotship-wi input:not( [type="checkbox"] ):not( [type="radio"] ),
 .spotship-wi select,
 .spotship-wi textarea {
 	box-sizing: border-box;
@@ -62,6 +75,31 @@
 	border: 1px solid var( --spotship-wi-border );
 	border-radius: 4px;
 	font: inherit;
+}
+
+/*
+ * The consent row is a checkbox and a SENTENCE, not a field and its label, so
+ * it opts out of the block label treatment above: `font-weight: 600` is right
+ * for "Notes" and wrong for running prose. Capped at the same 32rem as the
+ * fields, because a consent sentence set to the full width of a customer's
+ * page is both unreadable and visibly not part of the form.
+ */
+.spotship-wi .sswi-consent label {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.5rem;
+	max-width: 32rem;
+	font-weight: 400;
+}
+
+/*
+ * `flex: none` because the tick box must not be squeezed by a long sentence,
+ * and the top margin optically seats it against the first line's cap height
+ * rather than its line box.
+ */
+.spotship-wi .sswi-consent input[type="checkbox"] {
+	flex: none;
+	margin-block-start: 0.2em;
 }
 
 .spotship-wi input:focus-visible,

@@ -4,7 +4,7 @@ Tags: insurance, shipping, maritime, quotes
 Requires at least: 6.4
 Tested up to: 6.8
 Requires PHP: 8.1
-Stable tag: 1.1.1-dev.1
+Stable tag: 1.1.1
 License: Proprietary
 
 War hull and war cargo insurance quote capture for Spot Ship customers. The API
@@ -109,6 +109,11 @@ submitted enquiry does not use it — those reach the Spot Ship insurance desk
 directly and are answered from there.
 
 == Changelog ==
+
+= 1.1.1 =
+
+Bug Fixes
+* **consent:** ENG-6680 cover partner disclosure, and unbreak the consent row layout
 
 = 1.1.0 =
 

@@ -229,10 +229,19 @@ final class Spotship_WI_Renderer {
 	 * text the visitor was shown. A second copy in a template would let the two
 	 * drift, and the stored consent record would then be evidence of wording
 	 * nobody ever saw.
+	 *
+	 * THE PARTNER CLAUSE IS LOAD-BEARING, NOT PADDING. An enquiry does not stop
+	 * at Spot Ship: it is passed to the insurance partner who underwrites the
+	 * cover, because Spot Ship acts solely as an introducer and underwrites
+	 * nothing itself. The sentence said only "storing and processing ... to
+	 * respond to this enquiry" until 2026-10-15, which authorises the handling
+	 * but not the disclosure — and since this text is recorded verbatim against
+	 * every row, each submission taken under it is durable evidence of consent
+	 * NARROWER than what we then did. Shortening it back reinstates that.
 	 */
 	public static function consent_text(): string {
 		return __(
-			'I consent to Spot Ship storing and processing the details above in order to respond to this enquiry.',
+			'I consent to Spot Ship storing and processing the details above, and passing them to its insurance partners, in order to respond to this enquiry.',
 			'spotship-war-insurance'
 		);
 	}

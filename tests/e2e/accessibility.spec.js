@@ -51,7 +51,15 @@ for ( const [ label, path ] of [ [ 'hull', '/insurance/' ], [ 'cargo', '/insuran
 
 		const input = page.locator( 'input[role="combobox"]' ).first();
 		await input.fill( 'rot' );
-		await page.waitForTimeout( 400 );
+
+		// WAIT FOR THE LISTBOX, NOT FOR A DURATION — and here the fixed wait was
+		// worse than a flake. `waitForTimeout( 400 )` that expired before the
+		// lookup returned left axe scanning a page whose listbox was still
+		// CLOSED, so "axe is clean with the listbox open" passed without ever
+		// having one open. A silent false green, not a failure.
+		await expect(
+			page.locator( '[role="listbox"] [role="option"]' ).first()
+		).toBeVisible();
 
 		const results = await axeOf( page )
 			.analyze();

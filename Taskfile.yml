@@ -62,9 +62,9 @@ tasks:
     desc: "front-end unit tests (jsdom, no browser, no Docker)"
     # Deliberately NOT Playwright. This runs assets/js/war-insurance.js against a
     # DOM shaped like the templates, so the state logic — what is submitted, what
-    # is regenerated, what is invalidated — is covered on a machine where the
-    # browser runner will not start (ENG-6418). It does not replace the e2e
-    # suite: layout, focus order and assistive technology still need a browser.
+    # is regenerated, what is invalidated — is covered with no browser and no
+    # Docker at all. It does not replace the e2e suite: layout, focus order and
+    # assistive technology still need a browser.
     cmds: ["npm run test:js"]
 
   test:mutation:

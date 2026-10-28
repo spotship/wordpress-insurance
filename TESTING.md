@@ -4,11 +4,16 @@ What has been proven, where it was proven, and how to tell the difference.
 
 ## Where the gates run
 
-**CI is the runtime.** This machine has no host PHP and no reachable Docker
-daemon, and Playwright's runner will not start on it (ENG-6418). None of that
-is a gap in coverage — it is a gap in *local* tooling. Every gate runs on a
-GitHub Actions runner, in about four minutes, and that is where to read the
-result.
+**CI is where the result is earned**, because a GitHub Actions runner is a
+machine nobody has configured by hand. Every gate runs there in about four
+minutes.
+
+Every gate also runs locally, Playwright and axe included — ENG-6418 said
+otherwise and was wrong about the cause. What will not start is Chromium inside
+an agent's Seatbelt sandbox, which cannot register a Mach bootstrap port and
+dies before the first page; Playwright cannot reap it afterwards either, so it
+presents as a hang rather than an error. In an ordinary shell the browser suite
+is green in about two minutes. See "Running things" below.
 
 The one suite that also runs anywhere is `npm run test:js`. Keep it that way:
 it must not acquire a browser or a Docker dependency.
@@ -551,8 +556,32 @@ task lint              # PHPCS
 task stan              # PHPStan level 6
 task test:unit         # PHPUnit unit
 task test:integration  # PHPUnit integration, inside wp-env
-npx playwright test    # will not start locally — ENG-6418; read CI instead
 ```
 
-All of these need Docker locally. When it is unavailable, push the branch and
-read the job logs — that is the supported path, not a degraded one.
+Except for `test:js`, all of these need Docker. When it is unavailable, push the
+branch and read the job logs — that is the supported path, not a degraded one.
+
+### The browser suite
+
+It needs three things standing before Playwright starts, which is why it is
+easier to believe it cannot run at all:
+
+```sh
+node bin/e2e-upstream.js &                                  # 8080, and only 8080
+npx wp-env start
+SPOTSHIP_UPSTREAM=http://127.0.0.1:8080 bash bin/seed-e2e.sh
+SPOTSHIP_UPSTREAM_HOST=http://127.0.0.1:8080 npx playwright test
+```
+
+- **8080 is not a preference.** `wp_http_validate_url()` rejects every port
+  outside { 80, 443, 8080 }, before the host checks and with no filter to
+  override it. If something already holds loopback:8080, bind the stand-in to a
+  private-range interface instead — `base_url_is_safe()` accepts plaintext for
+  loopback and private IPs, but **a name is assumed routable**, so
+  `host.docker.internal` is refused.
+- **`wp-env start` can report success having installed nothing.** It decides
+  whether to configure WordPress from a `dns.resolve()` probe, and where raw DNS
+  is blocked it declares itself offline and skips the install. Check
+  `npx wp-env run cli wp core is-installed`, never the exit code.
+- **Forgetting `SPOTSHIP_UPSTREAM_HOST`** fails exactly the six
+  `failure-modes` specs, which default to `http://127.0.0.1:8080`.

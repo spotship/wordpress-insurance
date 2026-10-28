@@ -393,10 +393,10 @@ jobs:
           if-no-files-found: warn
 
   e2e:
-    # This job is where the accessibility claim is actually earned. Playwright's
-    # runner will not start on the development machine (ENG-6418 — a LOCAL
-    # tooling problem, not a gap in coverage), so CI is the only place these
-    # specs execute. axe runs with no rules disabled.
+    # This job is where the accessibility claim is actually earned — not because
+    # it is the only place these specs can execute (they run locally too; see
+    # TESTING.md), but because a runner is a machine nobody has configured by
+    # hand. axe runs with no rules disabled.
     name: Playwright + axe
     runs-on: ubuntu-latest
     steps:

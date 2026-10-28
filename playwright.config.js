@@ -1,12 +1,16 @@
 /**
  * Playwright configuration.
  *
- * THESE SPECS RUN IN CI, NOT LOCALLY. Playwright's runner does not start on the
- * development machine — `playwright --version` itself hangs, before any browser
- * is involved — which is ENG-6418. That is a local tooling fault; the `e2e` job
- * in ci.yaml is where these execute and where the accessibility result comes
- * from, so read CI rather than concluding from a local hang that they are
- * unproven.
+ * THESE SPECS RUN LOCALLY AS WELL AS IN CI. The file used to say otherwise, on
+ * the strength of ENG-6418's hang: what actually fails is Chromium inside an
+ * agent's Seatbelt sandbox, which cannot register a Mach bootstrap port and
+ * dies before the first page — and Playwright cannot even reap it afterwards,
+ * so it presents as a hang rather than an error. In an ordinary shell the whole
+ * suite is green in about two minutes. TESTING.md's "Running things" has the
+ * four commands it needs.
+ *
+ * The `e2e` job in ci.yaml remains where the conformance result is earned, for
+ * the usual reason: it runs on a machine nobody has configured by hand.
  */
 'use strict';
 

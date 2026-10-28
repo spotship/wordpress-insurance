@@ -64,9 +64,19 @@ Playwright never executed.
 
 ## Known gaps
 
-- **ENG-6418** — the Playwright and axe suites do not run on a development
-  machine; the runner will not start locally. They DO run in CI (the `e2e` job),
-  with no axe rules disabled, so the conformance claim rests on those logs. Treat
-  a green local run as unavailable, never as a green suite.
 - **ENG-6383** — the rate values have never been confirmed against the
   commercial Google Sheet.
+
+## The browser suite does run here
+
+ENG-6418 recorded the Playwright and axe suites as unrunnable on a development
+machine. That was the wrong conclusion from a real symptom: Chromium cannot
+register a Mach bootstrap port inside an agent's Seatbelt sandbox, so it dies
+before the first page and cannot be reaped, which presents as a hang. Outside
+that sandbox the suite is green in about two minutes.
+
+`TESTING.md` → "The browser suite" has the four commands and the three things
+that bite: port 8080 is the only one `wp_http_validate_url()` accepts, a *name*
+counts as routable so `host.docker.internal` is refused, and `wp-env start` can
+report success having installed no WordPress at all — check
+`wp core is-installed`, never the exit code.

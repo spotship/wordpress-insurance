@@ -9,9 +9,19 @@ test( 'the hull combobox keeps focus on the input and moves aria-activedescendan
 	await page.goto( '/insurance/' );
 
 	const input = page.locator( '[data-sswi-field="fromPort"] input[role="combobox"]' );
+	const options = page.locator( '[data-sswi-field="fromPort"] [role="option"]' );
 
 	await input.fill( 'rot' );
-	await page.waitForTimeout( 400 );
+
+	// WAIT FOR THE OPTION, NOT FOR A DURATION.
+	//
+	// The lookup is debounced and then crosses the proxy to the API, so a fixed
+	// interval is a guess about how loaded the machine is. This was
+	// `waitForTimeout( 400 )`, and on a busy one ArrowDown landed on a listbox
+	// that had not opened: aria-activedescendant was still null and the test
+	// failed as though the combobox were broken. Retries are 0 locally, so that
+	// reads as a real defect rather than as the flake it is.
+	await expect( options.first() ).toBeVisible();
 	await input.press( 'ArrowDown' );
 
 	// THE classic combobox failure is moving DOM focus into the option list,
@@ -27,9 +37,11 @@ test( 'choosing a location submits the id that was displayed', async ( { page } 
 	await page.goto( '/insurance/' );
 
 	const input = page.locator( '[data-sswi-field="fromPort"] input[role="combobox"]' );
+	const options = page.locator( '[data-sswi-field="fromPort"] [role="option"]' );
 
 	await input.fill( 'rot' );
-	await page.waitForTimeout( 400 );
+	// Same reason as the spec above: the open listbox is the event to wait for.
+	await expect( options.first() ).toBeVisible();
 	await input.press( 'ArrowDown' );
 	await input.press( 'Enter' );
 
@@ -46,9 +58,11 @@ test( 'cargo destinations can be added and removed, and removal is announced', a
 	await page.goto( '/insurance-cargo/' );
 
 	const input = page.locator( '[data-sswi-destinations] input[role="combobox"]' );
+	const options = page.locator( '[data-sswi-destinations] [role="option"]' );
 
 	await input.fill( 'rot' );
-	await page.waitForTimeout( 400 );
+	// Same reason as the spec above: the open listbox is the event to wait for.
+	await expect( options.first() ).toBeVisible();
 	await input.press( 'ArrowDown' );
 	await input.press( 'Enter' );
 

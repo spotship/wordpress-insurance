@@ -1,10 +1,30 @@
 name: ClickUp
 
+# ALL THREE EVENTS, BECAUSE THE SHARED WORKFLOW BRANCHES ON `github.event_name`.
+#
+# It has three status paths: `pull_request` -> in review, `pull_request_review`
+# with changes_requested -> in progress, and `push` to dev -> in test. A caller
+# that subscribes to one of them silently gets a third of the workflow. This
+# repo subscribed to `pull_request` alone, so no ticket here could ever reach
+# "in test" — ENG-6660 shipped to production still showing "in progress", and a
+# "changes requested" review never knocked anything back.
+#
+# `edited` and `reopened` go on the way past: they re-fired the "in review" path
+# on every description edit, which is noise, and it contradicts the convention
+# that a draft PR leaves its ticket in progress. `review_requested` is the event
+# backend relies on and this repo was missing. The types now match backend's
+# caller exactly.
 on:
   pull_request:
-    types: [opened, edited, reopened, ready_for_review]
+    types: [opened, ready_for_review, review_requested]
+  pull_request_review:
+    types: [submitted]
+  push:
+    branches: [dev]
 
 jobs:
   clickup:
     uses: spotship/.github/.github/workflows/clickup.yaml@main
+    with:
+      dev_branch: dev
     secrets: inherit
